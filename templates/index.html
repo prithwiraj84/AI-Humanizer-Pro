@@ -1,0 +1,744 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Humanizer Pro</title>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <style>
+        :root {
+            --bg-dark: #0f172a;
+            --glass-bg: rgba(30, 41, 59, 0.7);
+            --glass-border: rgba(255, 255, 255, 0.08);
+            --primary: #6366f1;
+            --primary-glow: rgba(99, 102, 241, 0.4);
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --success: #10b981;
+            --gradient-1: linear-gradient(135deg, #6366f1 0%, #a855f7 100%);
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Space Grotesk', sans-serif;
+            background-color: var(--bg-dark);
+            background-image: 
+                radial-gradient(circle at 10% 20%, rgba(99, 102, 241, 0.15) 0%, transparent 40%),
+                radial-gradient(circle at 90% 80%, rgba(168, 85, 247, 0.15) 0%, transparent 40%);
+            color: var(--text-main);
+            min-height: 100vh;
+            padding: 2rem;
+            overflow-x: hidden;
+        }
+
+        /* --- UI COMPONENTS --- */
+        .glass-panel {
+            background: var(--glass-bg);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid var(--glass-border);
+            border-radius: 16px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            animation: fadeIn 0.8s ease-out;
+        }
+
+        /* --- HEADER --- */
+        header {
+            text-align: center;
+            margin-bottom: 3rem;
+            position: relative;
+        }
+
+        h1 {
+            font-size: 3.5rem;
+            font-weight: 700;
+            letter-spacing: -1px;
+            background: var(--gradient-1);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 0.5rem;
+            display: inline-block;
+        }
+
+        
+
+.badge-pro {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin-left: 10px;
+    padding: 6px 16px;
+    font-size: 14px;
+    font-weight: 800;
+    letter-spacing: 1px;
+    border-radius: 999px;
+
+    background: linear-gradient(135deg, #ff3cac, #784ba0, #2b86c5);
+    background-size: 300% 300%;
+
+    color: #ffffff !important;
+    -webkit-text-fill-color: #ffffff !important;
+
+    text-shadow:
+        0 0 4px rgba(255,255,255,0.9),
+        0 0 10px rgba(120,75,160,0.8),
+        0 0 20px rgba(43,134,197,0.9);
+
+    box-shadow:
+        0 0 10px rgba(120,75,160,0.7),
+        0 0 25px rgba(43,134,197,0.8);
+
+    animation:
+        gradientMove 4s ease infinite,
+        glowPulse 2s ease-in-out infinite;
+
+    position: relative;
+    top: -4px;
+}
+
+@keyframes gradientMove {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+}
+
+@keyframes glowPulse {
+    0% {
+        transform: scale(1);
+        box-shadow:
+            0 0 10px rgba(120,75,160,0.6),
+            0 0 20px rgba(43,134,197,0.6);
+    }
+    50% {
+        transform: scale(1.08);
+        box-shadow:
+            0 0 18px rgba(255,60,172,0.9),
+            0 0 35px rgba(43,134,197,1);
+    }
+    100% {
+        transform: scale(1);
+        box-shadow:
+            0 0 10px rgba(120,75,160,0.6),
+            0 0 20px rgba(43,134,197,0.6);
+    }
+}
+
+        /* --- CONTROLS BAR --- */
+        .controls-wrapper {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1rem 2rem;
+            margin-bottom: 2rem;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+
+        .control-group {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        select {
+            background: rgba(15, 23, 42, 0.8);
+            border: 1px solid var(--glass-border);
+            color: white;
+            padding: 0.8rem 1.5rem;
+            border-radius: 12px;
+            outline: none;
+            cursor: pointer;
+            font-family: inherit;
+            transition: 0.3s;
+        }
+        select:hover { border-color: var(--primary); }
+
+        /* TOGGLE SWITCH */
+        .switch-label {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            color: var(--text-muted);
+        }
+        
+        .toggle-switch {
+            position: relative;
+            width: 50px;
+            height: 26px;
+        }
+        .toggle-switch input { opacity: 0; width: 0; height: 0; }
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background-color: #334155;
+            border-radius: 34px;
+            transition: .4s;
+        }
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 18px;
+            width: 18px;
+            left: 4px;
+            bottom: 4px;
+            background-color: white;
+            border-radius: 50%;
+            transition: .4s;
+        }
+        input:checked + .slider { background: var(--gradient-1); }
+        input:checked + .slider:before { transform: translateX(24px); }
+
+        /*Chaos Mode*/
+
+        .chaos-mode {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 14px;
+
+    font-family: "JetBrains Mono", monospace;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 1px;
+
+    color: #ff3b3b;
+    background: #0a0202;
+
+    border: 1px solid rgba(255, 59, 59, 0.45);
+    border-radius: 3px;
+
+    box-shadow:
+        0 0 0 1px rgba(255, 59, 59, 0.25),
+        0 0 12px rgba(255, 59, 59, 0.35),
+        inset 0 0 10px rgba(255, 59, 59, 0.15);
+
+    position: relative;
+    transition: all 0.25s ease;
+}
+
+/* Subtle alert scanline */
+.chaos-mode::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: repeating-linear-gradient(
+        to bottom,
+        transparent,
+        transparent 2px,
+        rgba(255, 59, 59, 0.05) 3px
+    );
+    pointer-events: none;
+}
+
+/* Bolt = armed indicator */
+.chaos-mode i {
+    font-size: 0.75rem;
+    color: #ff3b3b;
+    animation: alertPulse 1.2s ease-in-out infinite;
+}
+
+/* Hover = danger escalation */
+.chaos-mode:hover {
+    box-shadow:
+        0 0 0 1px rgba(255, 59, 59, 0.4),
+        0 0 18px rgba(255, 59, 59, 0.75),
+        inset 0 0 14px rgba(255, 59, 59, 0.25);
+}
+
+/* Animations */
+@keyframes alertPulse {
+    0% { opacity: 0.6; }
+    50% { opacity: 1; }
+    100% { opacity: 0.6; }
+}
+
+
+        /* --- MAIN EDITOR --- */
+        .editor-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 2rem;
+        }
+
+        @media (max-width: 900px) { .editor-grid { grid-template-columns: 1fr; } }
+
+        .editor-box {
+            display: flex;
+            flex-direction: column;
+            padding: 1.5rem;
+            position: relative;
+            transition: transform 0.3s;
+        }
+        .editor-box:hover { transform: translateY(-5px); }
+
+        .box-header {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 1rem;
+            color: var(--text-muted);
+            font-weight: 600;
+            text-transform: uppercase;
+            font-size: 0.8rem;
+            letter-spacing: 1px;
+        }
+
+        textarea {
+            width: 100%;
+            height: 400px;
+            background: transparent;
+            border: none;
+            color: var(--text-main);
+            resize: none;
+            font-family: 'Space Grotesk', sans-serif;
+            font-size: 1.05rem;
+            line-height: 1.6;
+            outline: none;
+        }
+
+        #output-display {
+            height: 400px;
+            overflow-y: auto;
+            line-height: 1.6;
+            font-size: 1.05rem;
+            white-space: pre-wrap;
+        }
+
+        /* --- ACTIONS & TOOLS --- */
+        .action-bar {
+            margin-top: 1rem;
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+        }
+
+        .icon-btn {
+            background: rgba(255,255,255,0.05);
+            border: none;
+            color: var(--text-muted);
+            width: 35px; height: 35px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: 0.2s;
+            display: flex; align-items: center; justify-content: center;
+        }
+        .icon-btn:hover { background: var(--primary); color: white; }
+
+        .main-btn {
+            display: block;
+            margin: 3rem auto;
+            padding: 1rem 4rem;
+            border: none;
+            border-radius: 50px;
+            background: var(--gradient-1);
+            color: white;
+            font-size: 1.2rem;
+            font-weight: 700;
+            cursor: pointer;
+            box-shadow: 0 0 25px var(--primary-glow);
+            transition: 0.3s;
+            position: relative;
+            overflow: hidden;
+        }
+        .main-btn:hover { transform: scale(1.05); box-shadow: 0 0 40px var(--primary-glow); }
+        .main-btn:disabled { opacity: 0.6; cursor: wait; }
+
+        /* --- STATS DASHBOARD (CIRCULAR) --- */
+        .stats-row {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 2rem;
+            margin-top: 2rem;
+            opacity: 0;
+            transform: translateY(20px);
+            transition: 0.5s all;
+        }
+        .stats-row.visible { opacity: 1; transform: translateY(0); }
+
+        .stat-card {
+            padding: 1.5rem;
+            text-align: center;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+
+        /* Circular Progress */
+        .progress-circle {
+            position: relative;
+            width: 100px; height: 100px;
+            border-radius: 50%;
+            background: conic-gradient(var(--color) var(--percent), #334155 0deg);
+            display: flex; align-items: center; justify-content: center;
+            margin-bottom: 1rem;
+            box-shadow: 0 0 15px rgba(0,0,0,0.3);
+        }
+        .progress-circle::before {
+            content: "";
+            position: absolute;
+            width: 85px; height: 85px;
+            background: var(--bg-dark);
+            border-radius: 50%;
+        }
+        .progress-value {
+            position: relative;
+            font-size: 1.5rem;
+            font-weight: 700;
+            z-index: 2;
+        }
+
+
+        /* Diff Highlighting */
+        .added { color: var(--success); font-weight: 600; background: rgba(16, 185, 129, 0.1); padding: 0 2px; border-radius: 2px; }
+        .unchanged { color: var(--text-muted); }
+
+        /* HISTORY SIDEBAR */
+        .history-panel {
+            margin-top: 4rem;
+            border-top: 1px solid var(--glass-border);
+            padding-top: 2rem;
+        }
+        .history-item {
+            padding: 1rem;
+            background: rgba(255,255,255,0.03);
+            margin-bottom: 10px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: 0.2s;
+            border-left: 3px solid transparent;
+        }
+        .history-item:hover { background: rgba(255,255,255,0.06); border-left-color: var(--primary); }
+
+        /* Animations */
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .spin { animation: spin 1s linear infinite; }
+        @keyframes spin { 100% { transform: rotate(360deg); } }
+
+        .chat-footer {
+    text-align: center;
+    padding: 16px;
+    font-size: 15px;
+    background: transparent;
+    font-family: 'Poppins', sans-serif;
+    color: #bfbfbf;
+    position: relative;
+    overflow: hidden;
+    letter-spacing: 0.5px;
+    animation: floatUp 4s ease-in-out infinite;
+}
+
+.chat-footer strong {
+    background: linear-gradient(
+        90deg,
+        #00f2ff,
+        #9d4edd,
+        #ff5edf,
+        #00f2ff
+    );
+    background-size: 300%;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    font-weight: 600;
+    animation: gradientMove 5s linear infinite;
+    text-shadow: 0 0 12px rgba(157, 78, 221, 0.6);
+}
+
+/* Soft glowing underline */
+.chat-footer::after {
+    content: "";
+    position: absolute;
+    bottom: 6px;
+    left: 50%;
+    width: 0%;
+    height: 2px;
+    background: linear-gradient(90deg, #00f2ff, #9d4edd);
+    transform: translateX(-50%);
+    animation: glowLine 3s ease-in-out infinite;
+    border-radius: 50px;
+}
+
+/* Hover interaction */
+.chat-footer:hover strong {
+    text-shadow:
+        0 0 15px #9d4edd,
+        0 0 30px #00f2ff;
+}
+
+/* Animations */
+@keyframes gradientMove {
+    0% { background-position: 0%; }
+    100% { background-position: 300%; }
+}
+
+@keyframes glowLine {
+    0% { width: 0%; opacity: 0.3; }
+    50% { width: 70%; opacity: 1; }
+    100% { width: 0%; opacity: 0.3; }
+}
+
+@keyframes floatUp {
+    0%, 100% {
+        transform: translateY(0);
+    }
+    50% {
+        transform: translateY(-4px);
+    }
+}
+
+
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <header>
+        <h1>AI Humanizer <span class="badge-pro">Pro</span></h1>
+        <p style="color: var(--text-muted);">Transform robotic text into natural human language.</p>
+    </header>
+
+    <div class="glass-panel controls-wrapper">
+        <div class="control-group">
+            <i class="fa-solid fa-sliders" style="color:var(--primary)"></i>
+            <select id="toneSelect">
+                <option value="standard">Standard Tone</option>
+                <option value="professional">Professional / Formal</option>
+                <option value="casual">Casual / Conversational</option>
+                <option value="academic">Academic / Complex</option>
+            </select>
+        </div>
+
+        <label class="switch-label">
+            <div class="toggle-switch">
+                <input type="checkbox" id="deepMode">
+                <span class="slider"></span>
+            </div>
+            <span class="chaos-mode">Chaos Mode<i class="fa-solid fa-bolt"></i></span>
+
+        </label>
+    </div>
+
+    <div class="editor-grid">
+        <div class="glass-panel editor-box">
+            <div class="box-header">
+                <span><i class="fa-solid fa-robot"></i> AI Input</span>
+                <span id="inputWordCount">0 Words</span>
+            </div>
+            <textarea id="inputText" placeholder="Paste your AI-generated text here..."></textarea>
+            <div class="action-bar">
+                <button class="icon-btn" onclick="document.getElementById('inputText').value=''; updateCounts();" title="Clear">
+                    <i class="fa-solid fa-trash"></i>
+                </button>
+                <button class="icon-btn" onclick="pasteText()" title="Paste">
+                    <i class="fa-solid fa-paste"></i>
+                </button>
+            </div>
+        </div>
+
+        <div class="glass-panel editor-box" style="border-color: rgba(16, 185, 129, 0.3);">
+            <div class="box-header">
+                <span style="color: var(--success)"><i class="fa-solid fa-user-check"></i> Humanized Result</span>
+                <span id="statusText">Waiting...</span>
+            </div>
+            <div id="output-display"></div>
+            <div class="action-bar">
+                <button class="icon-btn" onclick="downloadText()" title="Download TXT">
+                    <i class="fa-solid fa-download"></i>
+                </button>
+                <button class="icon-btn" onclick="copyResult()" title="Copy">
+                    <i class="fa-solid fa-copy"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <button id="actionBtn" class="main-btn" onclick="processText()">
+        <i class="fa-solid fa-wand-magic-sparkles"></i> Humanize Text
+    </button>
+
+    <div class="stats-row" id="statsSection">
+        <div class="glass-panel stat-card">
+            <div class="progress-circle" id="aiCircle" style="--color: #ef4444; --percent: 0deg;">
+                <span class="progress-value" id="aiProb">0%</span>
+            </div>
+            <div style="color:var(--text-muted); font-size:0.9rem">AI Probability</div>
+        </div>
+
+        <div class="glass-panel stat-card">
+            <div class="progress-circle" id="humanCircle" style="--color: #3b82f6; --percent: 0deg;">
+                <span class="progress-value" id="confScore">0%</span>
+            </div>
+            <div style="color:var(--text-muted); font-size:0.9rem">Human Confidence</div>
+        </div>
+
+        <div class="glass-panel stat-card">
+            <i class="fa-solid fa-shuffle" style="font-size: 2rem; color: #f59e0b; margin-bottom: 10px;"></i>
+            <div class="progress-value" id="structChange">0%</div>
+            <div style="color:var(--text-muted); font-size:0.9rem">Structural Shift</div>
+        </div>
+
+         <div class="glass-panel stat-card">
+            <i class="fa-solid fa-quote-left" style="font-size: 2rem; color: #8b5cf6; margin-bottom: 10px;"></i>
+            <div style="font-size:0.9rem; color:#cbd5e1; font-style: italic;" id="longestUnchanged">"None"</div>
+            <div style="color:var(--text-muted); font-size:0.8rem; margin-top:5px">Longest Unchanged Segment</div>
+        </div>
+    </div>
+    <footer class="chat-footer">
+            Developed by <strong>Prithwiraj Das</strong>
+        </footer>
+
+    <div class="history-panel">
+        <h3 style="margin-bottom: 1rem;"><i class="fa-solid fa-clock-rotate-left"></i> Recent History</h3>
+        <div id="historyList">
+            <p style="color: var(--text-muted); font-size: 0.9rem;">No recent conversions.</p>
+        </div>
+    </div>
+    
+
+</div>
+
+<script>
+    // --- UTILS ---
+    const updateCounts = () => {
+        const text = document.getElementById('inputText').value;
+        const count = text.trim() ? text.split(/\s+/).length : 0;
+        document.getElementById('inputWordCount').innerText = `${count} Words`;
+    };
+
+    document.getElementById('inputText').addEventListener('input', updateCounts);
+
+    async function pasteText() {
+        const text = await navigator.clipboard.readText();
+        document.getElementById('inputText').value = text;
+        updateCounts();
+    }
+
+    function copyResult() {
+        const text = document.getElementById('output-display').innerText;
+        if(text) {
+            navigator.clipboard.writeText(text);
+            alert("Copied to clipboard!");
+        }
+    }
+
+    function downloadText() {
+        const text = document.getElementById('output-display').innerText;
+        if(!text) return;
+        const blob = new Blob([text], { type: 'text/plain' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'humanized_text.txt';
+        a.click();
+    }
+
+    // --- CIRCULAR PROGRESS ANIMATION ---
+    function setCircle(id, percent, color) {
+        const degree = (percent / 100) * 360;
+        const el = document.getElementById(id);
+        el.style.setProperty('--percent', `${degree}deg`);
+        el.style.setProperty('--color', color);
+    }
+
+    // --- HISTORY SYSTEM ---
+    function saveToHistory(original, result) {
+        let history = JSON.parse(localStorage.getItem('ai_humanizer_history') || '[]');
+        const newItem = {
+            time: new Date().toLocaleTimeString(),
+            preview: result.substring(0, 60) + "..."
+        };
+        history.unshift(newItem); // Add to top
+        if(history.length > 5) history.pop(); // Keep only 5
+        localStorage.setItem('ai_humanizer_history', JSON.stringify(history));
+        renderHistory();
+    }
+
+    function renderHistory() {
+        const history = JSON.parse(localStorage.getItem('ai_humanizer_history') || '[]');
+        const container = document.getElementById('historyList');
+        if(history.length === 0) return;
+        
+        container.innerHTML = history.map(item => `
+            <div class="history-item">
+                <div style="font-size:0.8rem; color:var(--primary)">${item.time}</div>
+                <div style="color:var(--text-muted)">${item.preview}</div>
+            </div>
+        `).join('');
+    }
+    
+    // Load history on startup
+    renderHistory();
+
+    // --- MAIN LOGIC ---
+    async function processText() {
+        const input = document.getElementById('inputText').value;
+        const tone = document.getElementById('toneSelect').value;
+        const deepMode = document.getElementById('deepMode').checked;
+        const btn = document.getElementById('actionBtn');
+        const status = document.getElementById('statusText');
+
+        if (!input.trim()) { alert("Please enter text first."); return; }
+
+        // UI Loading
+        btn.innerHTML = '<i class="fa-solid fa-spinner spin"></i> Processing...';
+        btn.disabled = true;
+        status.innerText = "Humanizing...";
+        status.style.color = "#f59e0b";
+        document.getElementById('statsSection').classList.remove('visible');
+
+        try {
+            const response = await fetch('/humanize', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ text: input, tone: tone, deep_mode: deepMode })
+            });
+            const data = await response.json();
+
+            if (response.ok) {
+                // Render HTML diff
+                document.getElementById('output-display').innerHTML = data.diff_html;
+                
+                // Update Text Stats
+                document.getElementById('aiProb').innerText = data.ai_probability;
+                document.getElementById('confScore').innerText = data.confidence;
+                document.getElementById('structChange').innerText = data.structural_changes;
+                document.getElementById('longestUnchanged').innerText = '"' + data.longest_unchanged + '"';
+                
+                // Update Circular Stats (Parse numbers)
+                const aiVal = parseFloat(data.ai_probability);
+                const confVal = parseFloat(data.confidence);
+                setCircle('aiCircle', aiVal, '#ef4444');
+                setCircle('humanCircle', confVal, '#3b82f6');
+
+                // Show Section
+                document.getElementById('statsSection').classList.add('visible');
+                status.innerText = "Completed";
+                status.style.color = "var(--success)";
+
+                // Save History
+                saveToHistory(input, data.humanized);
+            } else {
+                alert("Error: " + data.error);
+            }
+        } catch (e) {
+            console.error(e);
+            alert("Connection Error.");
+        } finally {
+            btn.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles"></i> Humanize Text';
+            btn.disabled = false;
+        }
+    }
+    
+</script>
+
+</body>
+</html>
