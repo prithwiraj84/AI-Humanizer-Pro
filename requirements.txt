@@ -1,0 +1,4 @@
+Flask==3.0.0
+deep-translator==1.11.4
+nltk==3.8.1
+gunicorn==21.2.0
