@@ -8,13 +8,14 @@ import nltk
 import secrets
 import sqlite3
 import hashlib
+import hmac
 import smtplib
 from datetime import datetime, timedelta
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
 from fastapi import FastAPI, Depends, Request
-from fastapi.responses import ORJSONResponse, HTMLResponse, RedirectResponse
+from fastapi.responses import ORJSONResponse
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.concurrency import run_in_threadpool
 
@@ -28,16 +29,18 @@ except LookupError:
     from nltk.corpus import wordnet
 
 # --- CRITICAL CONFIGURATION ---
-# 1. Secret Key: used to sign the session cookie (Starlette SessionMiddleware,
-#    the FastAPI equivalent of Flask's signed-cookie session).
-SECRET_KEY = secrets.token_hex(32)
+# 1. Secret Key: signs the session cookie (Starlette SessionMiddleware).
+#    MUST be set via env in production: a fresh random key on every restart logs
+#    everyone out, and different keys per worker break auth across processes.
+SECRET_KEY = os.getenv("SECRET_KEY") or secrets.token_hex(32)
 
 # --- EMAIL CONFIGURATION (FOR FORGOT PASSWORD) ---
+# Set these via environment variables. Create a Google App Password at:
 # GOOGLE ACCOUNT -> SECURITY -> 2-STEP VERIFICATION -> APP PASSWORDS
-SMTP_SERVER = "smtp.gmail.com"
-SMTP_PORT = 587
-SENDER_EMAIL = "prithwirajdas84@gmail.com"      # <--- REPLACE WITH YOUR EMAIL
-SENDER_PASSWORD = "airc auoy eyax ouus"    # <--- REPLACE WITH YOUR APP PASSWORD
+SMTP_SERVER = os.getenv("SMTP_SERVER", "smtp.gmail.com")
+SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
+SENDER_EMAIL = os.getenv("SENDER_EMAIL", "")
+SENDER_PASSWORD = os.getenv("SENDER_PASSWORD", "")
 
 # --- ADMIN LOGIN CONFIGURATION ---
 # Set these in environment variables for production deployments.
@@ -45,26 +48,6 @@ ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "admin@aih.local")
 ADMIN_PASSWORD_HASH = hashlib.sha256(
     os.getenv("ADMIN_PASSWORD", "ChangeAdminPassword123!").encode()
 ).hexdigest()
-
-# --- TEMPLATE LOADING (cached in memory at startup for speed) ---
-TEMPLATES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'templates')
-_TEMPLATE_CACHE = {}
-
-def _load_templates():
-    if not os.path.isdir(TEMPLATES_DIR):
-        return
-    for filename in os.listdir(TEMPLATES_DIR):
-        if filename.endswith('.html'):
-            with open(os.path.join(TEMPLATES_DIR, filename), encoding='utf-8') as f:
-                _TEMPLATE_CACHE[filename] = f.read()
-
-def render_template(name):
-    html = _TEMPLATE_CACHE.get(name)
-    if html is None:
-        with open(os.path.join(TEMPLATES_DIR, name), encoding='utf-8') as f:
-            html = f.read()
-        _TEMPLATE_CACHE[name] = html
-    return HTMLResponse(html)
 
 # --- DATABASE SETUP ---
 def init_db():
@@ -132,7 +115,6 @@ def init_db():
 
 # Initialize DB on startup
 init_db()
-_load_templates()
 
 # --- HELPER FUNCTIONS ---
 def hash_password(password):
@@ -198,24 +180,15 @@ class UnauthorizedJSON(Exception):
         self.payload = payload
         self.status = status
 
-class RedirectTo(Exception):
-    def __init__(self, location, status=302):
-        self.location = location
-        self.status = status
-
 def require_login(request: Request):
+    # API-only backend: always answer with JSON. The Next.js frontend handles
+    # redirecting unauthenticated browsers to the login page.
     if 'user_id' not in request.session:
-        # If accessing via API, return 401 JSON
-        if request.url.path.startswith('/api/'):
-            raise UnauthorizedJSON({"error": "Unauthorized"}, 401)
-        # If accessing via Browser, redirect to login
-        raise RedirectTo('/login')
+        raise UnauthorizedJSON({"error": "Unauthorized"}, 401)
 
 def require_admin(request: Request):
     if not request.session.get('admin_authenticated'):
-        if request.url.path.startswith('/admin/api/'):
-            raise UnauthorizedJSON({"error": "Admin authorization required"}, 401)
-        raise RedirectTo('/admin/login')
+        raise UnauthorizedJSON({"error": "Admin authorization required"}, 401)
 
 # --- ACTIVITY LOGGING PIPELINE ---
 def normalize_path(path):
@@ -616,10 +589,6 @@ app.add_middleware(
 async def _unauthorized_handler(request: Request, exc: UnauthorizedJSON):
     return ORJSONResponse(exc.payload, status_code=exc.status)
 
-@app.exception_handler(RedirectTo)
-async def _redirect_handler(request: Request, exc: RedirectTo):
-    return RedirectResponse(exc.location, status_code=exc.status)
-
 def J(content, status=200):
     return ORJSONResponse(content, status_code=status)
 
@@ -653,26 +622,21 @@ async def get_json_silent(request: Request):
         return None
 
 # ==========================================
-#   PAGE ROUTES
+#   AUTH & SESSION ROUTES
 # ==========================================
 
-@app.api_route('/admin/login', methods=['GET', 'POST'])
+@app.post('/admin/login')
 async def admin_login(request: Request):
-    if request.method == 'POST':
-        data = (await get_json_silent(request)) or {}
-        email = (data.get('email') or '').strip().lower()
-        raw_password = data.get('password') or ''
+    data = (await get_json_silent(request)) or {}
+    email = (data.get('email') or '').strip().lower()
+    raw_password = data.get('password') or ''
 
-        if email == ADMIN_EMAIL.lower() and hash_password(raw_password) == ADMIN_PASSWORD_HASH:
-            request.session['admin_authenticated'] = True
-            request.session['admin_email'] = ADMIN_EMAIL
-            return J({"success": True, "message": "Admin login successful"})
+    if email == ADMIN_EMAIL.lower() and hmac.compare_digest(hash_password(raw_password), ADMIN_PASSWORD_HASH):
+        request.session['admin_authenticated'] = True
+        request.session['admin_email'] = ADMIN_EMAIL
+        return J({"success": True, "message": "Admin login successful"})
 
-        return J({"success": False, "message": "Invalid admin credentials"}, 401)
-
-    if request.session.get('admin_authenticated'):
-        return RedirectResponse('/admin', status_code=302)
-    return render_template('admin_login.html')
+    return J({"success": False, "message": "Invalid admin credentials"}, 401)
 
 @app.get('/admin/auth/check')
 def admin_auth_check(request: Request):
@@ -686,79 +650,62 @@ def admin_logout(request: Request, _=Depends(require_admin)):
     request.session.pop('admin_email', None)
     return J({"success": True})
 
-@app.get('/admin')
-def admin_dashboard(request: Request, _=Depends(require_admin)):
-    return render_template('admin_dashboard.html')
+@app.api_route('/', methods=['GET', 'HEAD'])
+def api_root():
+    # API root / health check (the UI lives in the Next.js frontend).
+    # HEAD is included so platform health pings (e.g. Render) get a 200.
+    return J({"service": "AI Humanizer Pro API", "status": "ok"})
 
-@app.get('/')
-def home(request: Request, _=Depends(require_login)):
-    return render_template('index.html')
-
-@app.api_route('/login', methods=['GET', 'POST'])
+@app.post('/login')
 async def login(request: Request):
-    if request.method == 'POST':
-        data = await parse_json_body(request)
-        email = data.get('email')
-        password = hash_password(data.get('password'))
+    data = await parse_json_body(request)
+    email = data.get('email')
+    password = hash_password(data.get('password'))
 
-        def _find_user():
-            conn = get_db()
-            user = conn.execute('SELECT * FROM users WHERE email = ? AND password = ?',
-                                (email, password)).fetchone()
-            conn.close()
-            return user
+    def _find_user():
+        conn = get_db()
+        user = conn.execute('SELECT * FROM users WHERE email = ? AND password = ?',
+                            (email, password)).fetchone()
+        conn.close()
+        return user
 
-        user = await run_in_threadpool(_find_user)
+    user = await run_in_threadpool(_find_user)
 
-        if user:
-            request.session['user_id'] = user['id']
-            request.session['username'] = user['username']
-            return J({"success": True, "message": "Login successful"})
-        else:
-            return J({"success": False, "message": "Invalid credentials"}, 401)
+    if user:
+        request.session['user_id'] = user['id']
+        request.session['username'] = user['username']
+        return J({"success": True, "message": "Login successful"})
+    else:
+        return J({"success": False, "message": "Invalid credentials"}, 401)
 
-    return render_template('login.html')
-
-@app.api_route('/signup', methods=['GET', 'POST'])
+@app.post('/signup')
 async def signup(request: Request):
-    if request.method == 'POST':
-        data = await parse_json_body(request)
-        username = data.get('username')
-        email = data.get('email')
-        raw_password = data.get('password')
+    data = await parse_json_body(request)
+    username = data.get('username')
+    email = data.get('email')
+    raw_password = data.get('password')
 
-        if not username or not email or not raw_password:
-            return J({"success": False, "message": "All fields are required"}, 400)
+    if not username or not email or not raw_password:
+        return J({"success": False, "message": "All fields are required"}, 400)
 
-        password = hash_password(raw_password)
+    password = hash_password(raw_password)
 
-        def _create_user():
-            conn = get_db()
-            try:
-                conn.execute('INSERT INTO users (username, email, password) VALUES (?, ?, ?)',
-                             (username, email, password))
-                conn.commit()
-                conn.close()
-                return True
-            except sqlite3.IntegrityError:
-                conn.close()
-                return False
+    def _create_user():
+        conn = get_db()
+        try:
+            conn.execute('INSERT INTO users (username, email, password) VALUES (?, ?, ?)',
+                         (username, email, password))
+            conn.commit()
+            conn.close()
+            return True
+        except sqlite3.IntegrityError:
+            conn.close()
+            return False
 
-        created = await run_in_threadpool(_create_user)
-        if created:
-            return J({"success": True, "message": "Account created successfully"})
-        return J({"success": False, "message": "Username or email already exists"}, 400)
-
-    return render_template('signup.html')
-
-@app.get('/forgot-password')
-def forgot_password_page():
-    return render_template('forgot_password.html')
-
-@app.get('/logout')
-def logout(request: Request):
-    request.session.clear()
-    return RedirectResponse('/login', status_code=302)
+    created = await run_in_threadpool(_create_user)
+    if created:
+        return J({"success": True, "message": "Account created successfully"})
+    return J({"success": False, "message": "Username or email already exists"}, 400)
 
 @app.post('/auth/logout')
 def auth_logout(request: Request):
@@ -771,14 +718,6 @@ def check_auth(request: Request):
         return J({"authenticated": True, "username": request.session.get('username')})
     else:
         return J({"authenticated": False}, 401)
-
-@app.get('/docs')
-def docs():
-    return render_template('docs.html')
-
-@app.get('/dashboard')
-def dashboard(request: Request, _=Depends(require_login)):
-    return render_template('dashboard.html')
 
 # ==========================================
 #   API ROUTES: FORGOT PASSWORD (OTP)

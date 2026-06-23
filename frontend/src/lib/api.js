@@ -47,4 +47,22 @@ export const api = {
     request("/api/keys", { method: "POST", body: { name } }),
   deleteKey: (id) => request(`/api/keys/${id}`, { method: "DELETE" }),
   getUsage: () => request("/api/usage"),
+
+  // ---- Admin ----
+  adminLogin: (email, password) =>
+    request("/admin/login", { method: "POST", body: { email, password } }),
+  adminLogout: () => request("/admin/logout", { method: "POST" }),
+  adminCheck: () => request("/admin/auth/check"),
+  adminOverview: () => request("/admin/api/overview"),
+  adminUsers: () => request("/admin/api/users"),
+  adminUserUsage: (id) => request(`/admin/api/users/${id}/usage`),
+  adminDeleteUser: (id) =>
+    request(`/admin/api/users/${id}`, { method: "DELETE" }),
+  adminKeys: () => request("/admin/api/keys"),
+  adminDeleteKey: (id) =>
+    request(`/admin/api/keys/${id}`, { method: "DELETE" }),
+  adminActivityLog: (limit = 200, includeAdmin = false) =>
+    request(
+      `/admin/api/activity-log?limit=${limit}&include_admin=${includeAdmin}`
+    ),
 };
