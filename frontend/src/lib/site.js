@@ -2,7 +2,7 @@
 export const SITE = {
   name: "AI Humanizer Pro",
   shortName: "AI Humanizer",
-  url: process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000",
+  url: process.env.NEXT_PUBLIC_SITE_URL || "https://noai.devprithwiraj.in",
   description:
     "AI Humanizer Pro rewrites AI-generated text into natural, human-sounding writing that bypasses AI detectors. Built for students and working professionals — adjustable tone, deep mode, and a developer API.",
   keywords: [

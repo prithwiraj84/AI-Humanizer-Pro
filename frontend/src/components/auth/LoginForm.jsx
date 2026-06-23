@@ -21,7 +21,7 @@ export default function LoginForm() {
     setLoading(true);
     try {
       await login(email, password);
-      router.push("/dashboard");
+      router.push("/humanizer");
     } catch (e) {
       setErr(e.message || "Invalid credentials");
     } finally {

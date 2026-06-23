@@ -27,7 +27,7 @@ const RESPONSE_FIELDS = [
   { name: "diff_html", type: "string", desc: "HTML diff with added/unchanged spans." },
 ];
 
-const curl = `curl -X POST https://your-domain.com/humanize \\
+const curl = `curl -X POST https://noai.devprithwiraj.in/humanize \\
   -H "Content-Type: application/json" \\
   -H "X-API-Key: hmnz_your_api_key_here" \\
   -d '{
@@ -36,7 +36,7 @@ const curl = `curl -X POST https://your-domain.com/humanize \\
     "deep_mode": true
   }'`;
 
-const js = `const res = await fetch("https://your-domain.com/humanize", {
+const js = `const res = await fetch("https://noai.devprithwiraj.in/humanize", {
   method: "POST",
   headers: {
     "Content-Type": "application/json",
@@ -55,7 +55,7 @@ console.log(data.humanized);`;
 const py = `import requests
 
 res = requests.post(
-    "https://your-domain.com/humanize",
+    "https://noai.devprithwiraj.in/humanize",
     headers={
         "Content-Type": "application/json",
         "X-API-Key": "hmnz_your_api_key_here",

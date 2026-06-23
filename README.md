@@ -173,14 +173,14 @@ Open **http://localhost:3000** 🎉
 <summary>🧪 Examples</summary>
 
 ```bash
-curl -X POST https://your-domain.com/humanize \
+curl -X POST https://noai.devprithwiraj.in/humanize \
   -H "Content-Type: application/json" \
   -H "X-API-Key: hmnz_your_api_key_here" \
   -d '{"text":"...","tone":"professional","deep_mode":true}'
 ```
 
 ```js
-const res = await fetch("https://your-domain.com/humanize", {
+const res = await fetch("https://noai.devprithwiraj.in/humanize", {
   method: "POST",
   headers: { "Content-Type": "application/json", "X-API-Key": "hmnz_..." },
   body: JSON.stringify({ text: "...", tone: "professional", deep_mode: true }),
