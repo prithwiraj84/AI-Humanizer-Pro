@@ -241,8 +241,7 @@ sequenceDiagram
 
 ## 👤 Author
 
-**Prithwiraj** — Toshi Consulting
-📧 `digital.toshiconsulting@gmail.com`
+**Prithwiraj** 
 🌐 [noai.devprithwiraj.in](https://noai.devprithwiraj.in)
 
 <div align="center">
