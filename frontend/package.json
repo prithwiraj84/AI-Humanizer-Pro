@@ -1,0 +1,27 @@
+{
+  "name": "ai-humanizer-web",
+  "version": "1.0.0",
+  "private": true,
+  "description": "AI Humanizer Pro — Next.js frontend with Three.js scroll experience",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "next": "^14.2.0",
+    "react": "^18.3.0",
+    "react-dom": "^18.3.0",
+    "three": "^0.169.0",
+    "@react-three/fiber": "^8.17.0",
+    "@react-three/drei": "^9.114.0",
+    "framer-motion": "^11.11.0",
+    "lucide-react": "^0.460.0"
+  },
+  "devDependencies": {
+    "tailwindcss": "^3.4.0",
+    "postcss": "^8.4.0",
+    "autoprefixer": "^10.4.0"
+  }
+}

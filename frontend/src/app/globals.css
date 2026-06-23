@@ -1,0 +1,139 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: dark;
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply bg-ink-950 text-slate-100 font-sans antialiased;
+    background-image:
+      radial-gradient(circle at 12% 18%, rgba(99, 102, 241, 0.16), transparent 42%),
+      radial-gradient(circle at 88% 8%, rgba(168, 85, 247, 0.14), transparent 40%),
+      radial-gradient(circle at 50% 120%, rgba(34, 211, 238, 0.12), transparent 45%);
+  }
+
+  /* Respect the OS "reduce motion" setting (WCAG 2.3.3) */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.001ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.001ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+
+  ::selection {
+    @apply bg-brand-violet/40 text-white;
+  }
+
+  /* Custom scrollbar */
+  ::-webkit-scrollbar {
+    width: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: #0a0a1a;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: linear-gradient(180deg, #6366f1, #a855f7);
+    border-radius: 999px;
+    border: 2px solid #0a0a1a;
+  }
+}
+
+@layer components {
+  .gradient-text {
+    @apply bg-clip-text text-transparent;
+    background-image: linear-gradient(120deg, #818cf8, #c084fc 45%, #22d3ee);
+  }
+
+  .gradient-text-animated {
+    @apply bg-clip-text text-transparent;
+    background-image: linear-gradient(
+      120deg,
+      #818cf8,
+      #c084fc,
+      #22d3ee,
+      #ec4899,
+      #818cf8
+    );
+    background-size: 200% auto;
+    @apply animate-shimmer;
+  }
+
+  .glass {
+    @apply border border-white/10 bg-white/[0.04] backdrop-blur-xl;
+  }
+
+  .glass-strong {
+    @apply border border-white/10 bg-ink-800/70 backdrop-blur-2xl;
+  }
+
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-5 py-3 text-sm font-semibold
+      transition-all duration-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-indigo/60
+      disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .btn-primary {
+    @apply btn text-white shadow-glow;
+    background-image: linear-gradient(120deg, #6366f1, #a855f7 55%, #22d3ee);
+    background-size: 160% auto;
+  }
+  .btn-primary:hover {
+    background-position: right center;
+    @apply -translate-y-0.5 shadow-glow-violet;
+  }
+
+  .btn-ghost {
+    @apply btn border border-white/10 bg-white/[0.04] text-slate-100 hover:border-white/25 hover:bg-white/[0.08];
+  }
+
+  .field {
+    @apply w-full rounded-xl border border-white/10 bg-ink-900/60 px-4 py-3 text-sm text-slate-100
+      placeholder:text-slate-500 transition focus:border-brand-indigo/60 focus:outline-none
+      focus:ring-2 focus:ring-brand-indigo/30;
+  }
+
+  .chip {
+    @apply inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.05]
+      px-3 py-1 text-xs font-medium text-slate-300;
+  }
+
+  .section-pad {
+    @apply px-5 py-20 sm:px-8 md:py-28;
+  }
+
+  .container-x {
+    @apply mx-auto w-full max-w-6xl;
+  }
+}
+
+/* Rendered diff output coming from the FastAPI /humanize response */
+.diff-output .added {
+  background: rgba(34, 211, 238, 0.18);
+  color: #a5f3fc;
+  border-radius: 4px;
+  padding: 0 2px;
+}
+.diff-output .unchanged {
+  color: #cbd5e1;
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+  .mask-fade-b {
+    -webkit-mask-image: linear-gradient(to bottom, black 70%, transparent);
+    mask-image: linear-gradient(to bottom, black 70%, transparent);
+  }
+}
