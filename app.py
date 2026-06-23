@@ -18,6 +18,11 @@ from fastapi import FastAPI, Depends, Request
 from fastapi.responses import ORJSONResponse
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.concurrency import run_in_threadpool
+from dotenv import load_dotenv
+
+# Load variables from a local .env file. No-op on hosts (e.g. Render) that
+# inject real environment variables, so it is safe in every environment.
+load_dotenv()
 
 # --- SETUP: DOWNLOAD NLTK DATA (Runs once on startup) ---
 try:

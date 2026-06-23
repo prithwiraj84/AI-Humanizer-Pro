@@ -18,6 +18,7 @@ ENV/
 # ---- Flask / app secrets & runtime ----
 .env
 .env.*
+!.env.example
 instance/
 *.cfg
 !requirements.txt
