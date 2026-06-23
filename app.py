@@ -1,4 +1,5 @@
 import os
+import json
 import random
 import difflib
 import re
@@ -9,10 +10,13 @@ import sqlite3
 import hashlib
 import smtplib
 from datetime import datetime, timedelta
-from functools import wraps
-from flask import Flask, render_template, request, jsonify, session, redirect, url_for, g
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+
+from fastapi import FastAPI, Depends, Request
+from fastapi.responses import ORJSONResponse, HTMLResponse, RedirectResponse
+from starlette.middleware.sessions import SessionMiddleware
+from starlette.concurrency import run_in_threadpool
 
 # --- SETUP: DOWNLOAD NLTK DATA (Runs once on startup) ---
 try:
@@ -23,17 +27,10 @@ except LookupError:
     nltk.download('omw-1.4')
     from nltk.corpus import wordnet
 
-app = Flask(__name__)
-
 # --- CRITICAL CONFIGURATION ---
-# 1. Static Secret Key: Prevents logouts on server restart
-app.secret_key = secrets.token_hex(32) 
-
-# 2. Strict Slashes False: Makes /dashboard and /dashboard/ work the same
-app.url_map.strict_slashes = False
-
-# 3. Template Folder: Ensure it looks in current directory/templates
-app.template_folder = 'templates'
+# 1. Secret Key: used to sign the session cookie (Starlette SessionMiddleware,
+#    the FastAPI equivalent of Flask's signed-cookie session).
+SECRET_KEY = secrets.token_hex(32)
 
 # --- EMAIL CONFIGURATION (FOR FORGOT PASSWORD) ---
 # GOOGLE ACCOUNT -> SECURITY -> 2-STEP VERIFICATION -> APP PASSWORDS
@@ -49,11 +46,34 @@ ADMIN_PASSWORD_HASH = hashlib.sha256(
     os.getenv("ADMIN_PASSWORD", "ChangeAdminPassword123!").encode()
 ).hexdigest()
 
+# --- TEMPLATE LOADING (cached in memory at startup for speed) ---
+TEMPLATES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'templates')
+_TEMPLATE_CACHE = {}
+
+def _load_templates():
+    if not os.path.isdir(TEMPLATES_DIR):
+        return
+    for filename in os.listdir(TEMPLATES_DIR):
+        if filename.endswith('.html'):
+            with open(os.path.join(TEMPLATES_DIR, filename), encoding='utf-8') as f:
+                _TEMPLATE_CACHE[filename] = f.read()
+
+def render_template(name):
+    html = _TEMPLATE_CACHE.get(name)
+    if html is None:
+        with open(os.path.join(TEMPLATES_DIR, name), encoding='utf-8') as f:
+            html = f.read()
+        _TEMPLATE_CACHE[name] = html
+    return HTMLResponse(html)
+
 # --- DATABASE SETUP ---
 def init_db():
     conn = sqlite3.connect('humanizer.db')
     c = conn.cursor()
-    
+
+    # Performance: write-ahead logging gives far better read/write concurrency.
+    c.execute('PRAGMA journal_mode = WAL')
+
     # Users table
     c.execute('''CREATE TABLE IF NOT EXISTS users
                  (id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -61,7 +81,7 @@ def init_db():
                   email TEXT UNIQUE NOT NULL,
                   password TEXT NOT NULL,
                   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
-    
+
     # API Keys table
     c.execute('''CREATE TABLE IF NOT EXISTS api_keys
                  (id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -71,7 +91,7 @@ def init_db():
                   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                   is_active INTEGER DEFAULT 1,
                   FOREIGN KEY (user_id) REFERENCES users (id))''')
-    
+
     # API Usage table
     c.execute('''CREATE TABLE IF NOT EXISTS api_usage
                  (id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -106,12 +126,13 @@ def init_db():
 
     c.execute('CREATE INDEX IF NOT EXISTS idx_activity_logs_created_at ON activity_logs(created_at DESC)')
     c.execute('CREATE INDEX IF NOT EXISTS idx_activity_logs_user_id ON activity_logs(user_id)')
-    
+
     conn.commit()
     conn.close()
 
 # Initialize DB on startup
 init_db()
+_load_templates()
 
 # --- HELPER FUNCTIONS ---
 def hash_password(password):
@@ -120,37 +141,18 @@ def hash_password(password):
 def generate_api_key():
     return 'hmnz_' + secrets.token_hex(24)
 
-def login_required(f):
-    @wraps(f)
-    def decorated_function(*args, **kwargs):
-        if 'user_id' not in session:
-            # If accessing via API, return 401 JSON
-            if request.path.startswith('/api/'):
-                return jsonify({"error": "Unauthorized"}), 401
-            # If accessing via Browser, redirect to login
-            return redirect('/login')
-        return f(*args, **kwargs)
-    return decorated_function
-
-def admin_login_required(f):
-    @wraps(f)
-    def decorated_function(*args, **kwargs):
-        if not session.get('admin_authenticated'):
-            if request.path.startswith('/admin/api/'):
-                return jsonify({"error": "Admin authorization required"}), 401
-            return redirect('/admin/login')
-        return f(*args, **kwargs)
-    return decorated_function
-
 def get_db():
     conn = sqlite3.connect('humanizer.db')
     conn.row_factory = sqlite3.Row
+    # Wait (instead of erroring) if another writer holds the lock briefly.
+    conn.execute('PRAGMA busy_timeout = 5000')
+    conn.execute('PRAGMA synchronous = NORMAL')
     return conn
 
 def verify_api_key(api_key):
     conn = get_db()
-    key_data = conn.execute('SELECT * FROM api_keys WHERE api_key = ? AND is_active = 1', 
-                           (api_key,)).fetchone()
+    key_data = conn.execute('SELECT * FROM api_keys WHERE api_key = ? AND is_active = 1',
+                            (api_key,)).fetchone()
     conn.close()
     return key_data
 
@@ -190,6 +192,32 @@ def log_activity_event(user_id, actor_type, actor_identifier, action, endpoint, 
     finally:
         conn.close()
 
+# --- AUTH DEPENDENCIES (FastAPI equivalent of the Flask decorators) ---
+class UnauthorizedJSON(Exception):
+    def __init__(self, payload, status):
+        self.payload = payload
+        self.status = status
+
+class RedirectTo(Exception):
+    def __init__(self, location, status=302):
+        self.location = location
+        self.status = status
+
+def require_login(request: Request):
+    if 'user_id' not in request.session:
+        # If accessing via API, return 401 JSON
+        if request.url.path.startswith('/api/'):
+            raise UnauthorizedJSON({"error": "Unauthorized"}, 401)
+        # If accessing via Browser, redirect to login
+        raise RedirectTo('/login')
+
+def require_admin(request: Request):
+    if not request.session.get('admin_authenticated'):
+        if request.url.path.startswith('/admin/api/'):
+            raise UnauthorizedJSON({"error": "Admin authorization required"}, 401)
+        raise RedirectTo('/admin/login')
+
+# --- ACTIVITY LOGGING PIPELINE ---
 def normalize_path(path):
     if not path:
         return '/'
@@ -239,9 +267,9 @@ def infer_activity_action(path, method, status_code):
     path_token = normalized.strip('/').replace('/', '_') or 'home'
     return f"{method.lower()}_{path_token}"
 
-def build_activity_details(path):
+def build_activity_details(path, method, body_json):
     normalized = normalize_path(path)
-    data = request.get_json(silent=True)
+    data = body_json
     if not isinstance(data, dict):
         return None
 
@@ -251,7 +279,7 @@ def build_activity_details(path):
         deep_mode = bool(data.get('deep_mode'))
         return f"text_length={text_len}, tone={tone}, deep_mode={deep_mode}"
 
-    if normalized == '/api/keys' and request.method == 'POST':
+    if normalized == '/api/keys' and method == 'POST':
         key_name = data.get('name') or 'My API Key'
         return f"key_name={str(key_name)[:120]}"
 
@@ -267,80 +295,171 @@ def build_activity_details(path):
 
     return None
 
-def resolve_activity_actor(path):
-    user_id = session.get('user_id')
+def resolve_activity_actor(path, method, headers, session_post, session_pre, body_json):
+    user_id = session_post.get('user_id')
     if user_id:
-        return user_id, 'user', session.get('username') or f"user_{user_id}"
+        return user_id, 'user', session_post.get('username') or f"user_{user_id}"
 
-    # Preserve actor identity for logout routes after session.clear().
+    # Preserve actor identity for logout routes after the session is cleared.
     if path in ('/logout', '/auth/logout'):
-        prev_user_id = getattr(g, 'activity_user_id', None)
+        prev_user_id = session_pre.get('user_id')
         if prev_user_id:
-            return prev_user_id, 'user', getattr(g, 'activity_username', None) or f"user_{prev_user_id}"
+            return prev_user_id, 'user', session_pre.get('username') or f"user_{prev_user_id}"
 
-    api_key = request.headers.get('X-API-Key')
+    api_key = headers.get('x-api-key')
     if api_key:
         key_data = verify_api_key(api_key)
         if key_data:
             return key_data['user_id'], 'api_key', key_data['api_key'][:14] + '...'
 
-    if request.method == 'POST' and path in ('/login', '/signup', '/api/send-otp', '/api/reset-password'):
-        payload = request.get_json(silent=True) or {}
+    if method == 'POST' and path in ('/login', '/signup', '/api/send-otp', '/api/reset-password'):
+        payload = body_json or {}
         identifier = payload.get('email') or payload.get('username') or 'guest'
         return None, 'guest', identifier
 
-    if session.get('admin_authenticated'):
-        return None, 'admin', session.get('admin_email') or 'admin'
+    if session_post.get('admin_authenticated'):
+        return None, 'admin', session_post.get('admin_email') or 'admin'
 
-    if request.method == 'POST' and path == '/admin/login':
-        payload = request.get_json(silent=True) or {}
+    if method == 'POST' and path == '/admin/login':
+        payload = body_json or {}
         return None, 'admin_attempt', payload.get('email') or 'admin'
 
-    if path == '/admin/logout' and getattr(g, 'activity_admin_authenticated', False):
-        return None, 'admin', getattr(g, 'activity_admin_email', None) or 'admin'
+    if path == '/admin/logout' and session_pre.get('admin_authenticated'):
+        return None, 'admin', session_pre.get('admin_email') or 'admin'
 
     return None, None, None
 
-@app.before_request
-def stash_activity_context():
-    g.activity_user_id = session.get('user_id')
-    g.activity_username = session.get('username')
-    g.activity_admin_authenticated = session.get('admin_authenticated')
-    g.activity_admin_email = session.get('admin_email')
+def _is_json_content_type(content_type):
+    # Mirror Flask's is_json: application/json or any "*+json" subtype.
+    ctype = (content_type or '').split(';')[0].strip().lower()
+    return ctype == 'application/json' or ctype.endswith('+json')
 
-@app.after_request
-def capture_activity(response):
-    path = normalize_path(request.path)
+def _parse_json_body(body, content_type):
+    # Mirror Flask's request.get_json(silent=True): only parse when the body is
+    # declared as JSON, and never raise.
+    if not body:
+        return None
+    if not _is_json_content_type(content_type):
+        return None
     try:
-        if path.startswith('/static') or path in ('/favicon.ico',):
-            return response
+        return json.loads(body)
+    except Exception:
+        return None
 
-        # Avoid polluting the activity log by logging activity-log reads themselves.
-        if path == '/admin/api/activity-log':
-            return response
+def record_activity(method, raw_path, status_code, headers, session_post, session_pre, body_json, ip_address):
+    path = normalize_path(raw_path)
 
-        user_id, actor_type, actor_identifier = resolve_activity_actor(path)
-        if not actor_type:
-            return response
+    if path.startswith('/static') or path in ('/favicon.ico',):
+        return
 
-        forwarded_for = request.headers.get('X-Forwarded-For', '')
-        ip_address = forwarded_for.split(',')[0].strip() if forwarded_for else (request.remote_addr or '')
+    # Avoid polluting the activity log by logging activity-log reads themselves.
+    if path == '/admin/api/activity-log':
+        return
 
-        log_activity_event(
-            user_id=user_id,
-            actor_type=actor_type,
-            actor_identifier=actor_identifier,
-            action=infer_activity_action(path, request.method, response.status_code),
-            endpoint=path,
-            method=request.method,
-            status_code=response.status_code,
-            ip_address=ip_address,
-            details=build_activity_details(path)
-        )
-    except Exception as e:
-        print(f"Activity capture error: {e}")
+    user_id, actor_type, actor_identifier = resolve_activity_actor(
+        path, method, headers, session_post, session_pre, body_json
+    )
+    if not actor_type:
+        return
 
-    return response
+    log_activity_event(
+        user_id=user_id,
+        actor_type=actor_type,
+        actor_identifier=actor_identifier,
+        action=infer_activity_action(path, method, status_code),
+        endpoint=path,
+        method=method,
+        status_code=status_code,
+        ip_address=ip_address,
+        details=build_activity_details(path, method, body_json)
+    )
+
+class ActivityLoggerMiddleware:
+    """
+    Pure-ASGI port of the Flask before_request/after_request activity pipeline.
+
+    It buffers the request body (so both this middleware and the route handler
+    can read it), snapshots the session before the route runs (to preserve the
+    actor across logout), captures the response status, and writes the activity
+    record AFTER the response has been streamed to the client -- in a worker
+    thread so it never blocks the event loop or delays the response.
+    """
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        # Mirror Flask's strict_slashes=False: a trailing-slash variant runs the
+        # SAME handler (one request, no 307 redirect) instead of Starlette's
+        # default slash-redirect. Normalizing here -- before the router -- also
+        # keeps the activity log honest (it records the real outcome, not a 307).
+        raw_path = scope.get("path", "/")
+        normalized_path = normalize_path(raw_path)
+        if normalized_path != raw_path:
+            scope["path"] = normalized_path
+            scope["raw_path"] = normalized_path.encode("latin-1")
+
+        # Buffer the entire request body so it can be read more than once.
+        body = b""
+        while True:
+            message = await receive()
+            if message["type"] == "http.request":
+                body += message.get("body", b"")
+                if not message.get("more_body", False):
+                    break
+            elif message["type"] == "http.disconnect":
+                break
+
+        async def replay_receive():
+            return {"type": "http.request", "body": body, "more_body": False}
+
+        # Snapshot session BEFORE the route runs (SessionMiddleware is outer, so
+        # scope["session"] is already populated here).
+        session = scope.get("session", {})
+        session_pre = {
+            "user_id": session.get("user_id"),
+            "username": session.get("username"),
+            "admin_authenticated": session.get("admin_authenticated"),
+            "admin_email": session.get("admin_email"),
+        }
+
+        status_holder = {"code": 500}
+
+        async def send_wrapper(message):
+            if message["type"] == "http.response.start":
+                status_holder["code"] = message["status"]
+            await send(message)
+
+        await self.app(scope, replay_receive, send_wrapper)
+
+        # Response already sent to the client -- logging here adds zero latency.
+        try:
+            headers = {
+                k.decode("latin-1").lower(): v.decode("latin-1")
+                for k, v in scope.get("headers", [])
+            }
+            session_post = scope.get("session", {})
+            forwarded_for = headers.get("x-forwarded-for", "")
+            client = scope.get("client")
+            client_host = client[0] if client else ""
+            ip_address = forwarded_for.split(",")[0].strip() if forwarded_for else client_host
+
+            await run_in_threadpool(
+                record_activity,
+                scope["method"],
+                scope["path"],
+                status_holder["code"],
+                headers,
+                session_post,
+                session_pre,
+                _parse_json_body(body, headers.get("content-type", "")),
+                ip_address,
+            )
+        except Exception as e:
+            print(f"Activity capture error: {e}")
 
 def send_otp_email(to_email, otp):
     try:
@@ -388,7 +507,7 @@ def get_rare_synonym(word):
                     synonyms.append(lemma.name())
     except:
         return word
-    
+
     if not synonyms:
         return word
     return random.choice(synonyms)
@@ -429,28 +548,28 @@ def calculate_diff_metrics(original, humanized):
     clean_ver = humanized
     for char in ['\u200B', '\u2060', '\u200C', '\u200D']:
         clean_ver = clean_ver.replace(char, "")
-        
+
     matcher = difflib.SequenceMatcher(None, original.split(), clean_ver.split())
     match = matcher.find_longest_match(0, len(original.split()), 0, len(clean_ver.split()))
     longest_unchanged = " ".join(original.split()[match.a: match.a + match.size])
     similarity = matcher.ratio()
     structural_change_score = (1 - similarity) * 100
-    
+
     diff = list(difflib.ndiff(original.split(), clean_ver.split()))
     diff_html = ""
     changes_count = 0
-    
+
     for token in diff:
         word = token[2:]
-        if token.startswith('- '): 
+        if token.startswith('- '):
             changes_count += 1
-            continue 
-        elif token.startswith('+ '): 
+            continue
+        elif token.startswith('+ '):
             diff_html += f'<span class="added">{word}</span> '
             changes_count += 1
-        elif token.startswith('  '): 
+        elif token.startswith('  '):
             diff_html += f'<span class="unchanged">{word}</span> '
-            
+
     return {
         "diff_html": diff_html,
         "longest_unchanged": longest_unchanged if longest_unchanged else "None",
@@ -469,222 +588,298 @@ def perform_nuclear_chaos(text, tone, deep_mode):
     return current_text
 
 # ==========================================
+#   APPLICATION & MIDDLEWARE
+# ==========================================
+# docs_url/redoc_url/openapi_url disabled so FastAPI's auto Swagger UI does not
+# collide with the app's own GET /docs page route.
+app = FastAPI(
+    default_response_class=ORJSONResponse,
+    docs_url=None,
+    redoc_url=None,
+    openapi_url=None,
+    redirect_slashes=False,   # trailing slashes are normalized in middleware instead
+)
+
+# Order matters: SessionMiddleware must be OUTER so scope["session"] is decoded
+# before the activity logger reads it. add_middleware adds outermost-last.
+app.add_middleware(ActivityLoggerMiddleware)
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=SECRET_KEY,
+    session_cookie="session",
+    max_age=None,        # browser-session cookie, matching Flask's default
+    same_site="lax",
+    https_only=False,
+)
+
+@app.exception_handler(UnauthorizedJSON)
+async def _unauthorized_handler(request: Request, exc: UnauthorizedJSON):
+    return ORJSONResponse(exc.payload, status_code=exc.status)
+
+@app.exception_handler(RedirectTo)
+async def _redirect_handler(request: Request, exc: RedirectTo):
+    return RedirectResponse(exc.location, status_code=exc.status)
+
+def J(content, status=200):
+    return ORJSONResponse(content, status_code=status)
+
+class APIError(Exception):
+    def __init__(self, status, message="Bad Request"):
+        self.status = status
+        self.message = message
+
+@app.exception_handler(APIError)
+async def _api_error_handler(request: Request, exc: APIError):
+    return ORJSONResponse({"error": exc.message}, status_code=exc.status)
+
+async def parse_json_body(request: Request):
+    # Faithful port of Flask's `request.json` (the raising variant): 415 when the
+    # body is not declared as JSON, 400 when it cannot be parsed.
+    if not _is_json_content_type(request.headers.get('content-type', '')):
+        raise APIError(415, "Did not attempt to load JSON data because the request Content-Type was not 'application/json'.")
+    body = await request.body()
+    try:
+        return json.loads(body)
+    except Exception:
+        raise APIError(400, "Failed to decode JSON object.")
+
+async def get_json_silent(request: Request):
+    # Faithful port of Flask's `request.get_json(silent=True)`.
+    if not _is_json_content_type(request.headers.get('content-type', '')):
+        return None
+    try:
+        return await request.json()
+    except Exception:
+        return None
+
+# ==========================================
 #   PAGE ROUTES
 # ==========================================
 
-@app.route('/admin/login', methods=['GET', 'POST'])
-def admin_login():
+@app.api_route('/admin/login', methods=['GET', 'POST'])
+async def admin_login(request: Request):
     if request.method == 'POST':
-        data = request.get_json(silent=True) or {}
+        data = (await get_json_silent(request)) or {}
         email = (data.get('email') or '').strip().lower()
         raw_password = data.get('password') or ''
 
         if email == ADMIN_EMAIL.lower() and hash_password(raw_password) == ADMIN_PASSWORD_HASH:
-            session['admin_authenticated'] = True
-            session['admin_email'] = ADMIN_EMAIL
-            return jsonify({"success": True, "message": "Admin login successful"})
+            request.session['admin_authenticated'] = True
+            request.session['admin_email'] = ADMIN_EMAIL
+            return J({"success": True, "message": "Admin login successful"})
 
-        return jsonify({"success": False, "message": "Invalid admin credentials"}), 401
+        return J({"success": False, "message": "Invalid admin credentials"}, 401)
 
-    if session.get('admin_authenticated'):
-        return redirect('/admin')
+    if request.session.get('admin_authenticated'):
+        return RedirectResponse('/admin', status_code=302)
     return render_template('admin_login.html')
 
-@app.route('/admin/auth/check')
-def admin_auth_check():
-    if session.get('admin_authenticated'):
-        return jsonify({"authenticated": True, "email": session.get('admin_email')})
-    return jsonify({"authenticated": False}), 401
+@app.get('/admin/auth/check')
+def admin_auth_check(request: Request):
+    if request.session.get('admin_authenticated'):
+        return J({"authenticated": True, "email": request.session.get('admin_email')})
+    return J({"authenticated": False}, 401)
 
-@app.route('/admin/logout', methods=['POST'])
-@admin_login_required
-def admin_logout():
-    session.pop('admin_authenticated', None)
-    session.pop('admin_email', None)
-    return jsonify({"success": True})
+@app.post('/admin/logout')
+def admin_logout(request: Request, _=Depends(require_admin)):
+    request.session.pop('admin_authenticated', None)
+    request.session.pop('admin_email', None)
+    return J({"success": True})
 
-@app.route('/admin')
-@admin_login_required
-def admin_dashboard():
+@app.get('/admin')
+def admin_dashboard(request: Request, _=Depends(require_admin)):
     return render_template('admin_dashboard.html')
 
-@app.route('/')
-@login_required
-def home():
+@app.get('/')
+def home(request: Request, _=Depends(require_login)):
     return render_template('index.html')
 
-@app.route('/login', methods=['GET', 'POST'])
-def login():
+@app.api_route('/login', methods=['GET', 'POST'])
+async def login(request: Request):
     if request.method == 'POST':
-        data = request.json
+        data = await parse_json_body(request)
         email = data.get('email')
         password = hash_password(data.get('password'))
-        
-        conn = get_db()
-        user = conn.execute('SELECT * FROM users WHERE email = ? AND password = ?',
-                          (email, password)).fetchone()
-        conn.close()
-        
+
+        def _find_user():
+            conn = get_db()
+            user = conn.execute('SELECT * FROM users WHERE email = ? AND password = ?',
+                                (email, password)).fetchone()
+            conn.close()
+            return user
+
+        user = await run_in_threadpool(_find_user)
+
         if user:
-            session['user_id'] = user['id']
-            session['username'] = user['username']
-            return jsonify({"success": True, "message": "Login successful"})
+            request.session['user_id'] = user['id']
+            request.session['username'] = user['username']
+            return J({"success": True, "message": "Login successful"})
         else:
-            return jsonify({"success": False, "message": "Invalid credentials"}), 401
-    
+            return J({"success": False, "message": "Invalid credentials"}, 401)
+
     return render_template('login.html')
 
-@app.route('/signup', methods=['GET', 'POST'])
-def signup():
+@app.api_route('/signup', methods=['GET', 'POST'])
+async def signup(request: Request):
     if request.method == 'POST':
-        data = request.json
+        data = await parse_json_body(request)
         username = data.get('username')
         email = data.get('email')
         raw_password = data.get('password')
-        
+
         if not username or not email or not raw_password:
-             return jsonify({"success": False, "message": "All fields are required"}), 400
+            return J({"success": False, "message": "All fields are required"}, 400)
 
         password = hash_password(raw_password)
-        conn = get_db()
-        try:
-            conn.execute('INSERT INTO users (username, email, password) VALUES (?, ?, ?)',
-                         (username, email, password))
-            conn.commit()
-            conn.close()
-            return jsonify({"success": True, "message": "Account created successfully"})
-        except sqlite3.IntegrityError:
-            conn.close()
-            return jsonify({"success": False, "message": "Username or email already exists"}), 400
-    
+
+        def _create_user():
+            conn = get_db()
+            try:
+                conn.execute('INSERT INTO users (username, email, password) VALUES (?, ?, ?)',
+                             (username, email, password))
+                conn.commit()
+                conn.close()
+                return True
+            except sqlite3.IntegrityError:
+                conn.close()
+                return False
+
+        created = await run_in_threadpool(_create_user)
+        if created:
+            return J({"success": True, "message": "Account created successfully"})
+        return J({"success": False, "message": "Username or email already exists"}, 400)
+
     return render_template('signup.html')
 
-@app.route('/forgot-password')
+@app.get('/forgot-password')
 def forgot_password_page():
     return render_template('forgot_password.html')
 
-@app.route('/logout')
-def logout():
-    session.clear()
-    return redirect('/login')
+@app.get('/logout')
+def logout(request: Request):
+    request.session.clear()
+    return RedirectResponse('/login', status_code=302)
 
-@app.route('/auth/logout', methods=['POST'])
-def auth_logout():
-    session.clear()
-    return jsonify({"success": True})
+@app.post('/auth/logout')
+def auth_logout(request: Request):
+    request.session.clear()
+    return J({"success": True})
 
-@app.route('/auth/check')
-def check_auth():
-    if 'user_id' in session:
-        return jsonify({"authenticated": True, "username": session.get('username')})
+@app.get('/auth/check')
+def check_auth(request: Request):
+    if 'user_id' in request.session:
+        return J({"authenticated": True, "username": request.session.get('username')})
     else:
-        return jsonify({"authenticated": False}), 401
+        return J({"authenticated": False}, 401)
 
-@app.route('/docs')
+@app.get('/docs')
 def docs():
     return render_template('docs.html')
 
-@app.route('/dashboard')
-@login_required
-def dashboard():
+@app.get('/dashboard')
+def dashboard(request: Request, _=Depends(require_login)):
     return render_template('dashboard.html')
 
 # ==========================================
 #   API ROUTES: FORGOT PASSWORD (OTP)
 # ==========================================
 
-@app.route('/api/send-otp', methods=['POST'])
-def send_otp():
-    data = request.json
+@app.post('/api/send-otp')
+async def send_otp(request: Request):
+    data = await parse_json_body(request)
     email = data.get('email')
 
-    conn = get_db()
-    try:
-        # 1. Check if user exists
-        user = conn.execute('SELECT * FROM users WHERE email = ?', (email,)).fetchone()
-        
-        if not user:
-            return jsonify({"success": True, "message": "If this email exists, an OTP has been sent."})
+    def _store_otp():
+        conn = get_db()
+        try:
+            user = conn.execute('SELECT * FROM users WHERE email = ?', (email,)).fetchone()
+            if not user:
+                return (False, None)
+            otp = str(random.randint(100000, 999999))
+            expires_at = datetime.now() + timedelta(minutes=10)
+            conn.execute('INSERT OR REPLACE INTO password_resets (email, otp, expires_at) VALUES (?, ?, ?)',
+                         (email, otp, expires_at))
+            conn.commit()
+            return (True, otp)
+        finally:
+            conn.close()
 
-        # 2. Generate OTP
-        otp = str(random.randint(100000, 999999))
-        expires_at = datetime.now() + timedelta(minutes=10)
+    user_exists, otp = await run_in_threadpool(_store_otp)
 
-        # 3. Save OTP
-        conn.execute('INSERT OR REPLACE INTO password_resets (email, otp, expires_at) VALUES (?, ?, ?)',
-                     (email, otp, expires_at))
-        conn.commit()
-        
-        # 4. Send Email
-        if send_otp_email(email, otp):
-            return jsonify({"success": True, "message": "OTP sent to your email."})
-        else:
-            return jsonify({"success": False, "message": "Failed to send email. Check server logs."}), 500
-    finally:
-        conn.close()
+    # 1. Check if user exists (do not reveal whether it does)
+    if not user_exists:
+        return J({"success": True, "message": "If this email exists, an OTP has been sent."})
 
-@app.route('/api/reset-password', methods=['POST'])
-def reset_password_logic():
-    data = request.json
+    # 4. Send Email
+    if await run_in_threadpool(send_otp_email, email, otp):
+        return J({"success": True, "message": "OTP sent to your email."})
+    else:
+        return J({"success": False, "message": "Failed to send email. Check server logs."}, 500)
+
+@app.post('/api/reset-password')
+async def reset_password_logic(request: Request):
+    data = await parse_json_body(request)
     email = data.get('email')
     otp = data.get('otp')
     new_password = data.get('new_password')
 
-    conn = get_db()
-    
-    try:
-        # 1. Verify OTP
-        cursor = conn.execute('SELECT * FROM password_resets WHERE email = ?', (email,))
-        record = cursor.fetchone()
-        
-        if not record:
-            return jsonify({"success": False, "message": "Invalid request."}), 400
-            
-        saved_otp = record['otp']
-        
-        # Robust timestamp parsing
+    def _reset():
+        conn = get_db()
         try:
-            expiry = datetime.strptime(record['expires_at'], '%Y-%m-%d %H:%M:%S.%f')
-        except ValueError:
-            expiry = datetime.strptime(record['expires_at'], '%Y-%m-%d %H:%M:%S')
-        
-        if otp != saved_otp:
-            return jsonify({"success": False, "message": "Invalid OTP."}), 400
-            
-        if datetime.now() > expiry:
-            return jsonify({"success": False, "message": "OTP has expired."}), 400
+            # 1. Verify OTP
+            cursor = conn.execute('SELECT * FROM password_resets WHERE email = ?', (email,))
+            record = cursor.fetchone()
 
-        # 2. Update Password
-        hashed_pw = hash_password(new_password)
-        conn.execute('UPDATE users SET password = ? WHERE email = ?', (hashed_pw, email))
-        
-        # 3. Delete OTP (Prevents reuse)
-        conn.execute('DELETE FROM password_resets WHERE email = ?', (email,))
-        
-        # Commit everything
-        conn.commit()
+            if not record:
+                return {"success": False, "message": "Invalid request."}, 400
 
-        return jsonify({"success": True, "message": "Password reset successfully!"})
+            saved_otp = record['otp']
 
-    except Exception as e:
-        print(f"Reset Error: {e}")
-        return jsonify({"success": False, "message": "Server error."}), 500
-        
-    finally:
-        conn.close()
+            # Robust timestamp parsing
+            try:
+                expiry = datetime.strptime(record['expires_at'], '%Y-%m-%d %H:%M:%S.%f')
+            except ValueError:
+                expiry = datetime.strptime(record['expires_at'], '%Y-%m-%d %H:%M:%S')
+
+            if otp != saved_otp:
+                return {"success": False, "message": "Invalid OTP."}, 400
+
+            if datetime.now() > expiry:
+                return {"success": False, "message": "OTP has expired."}, 400
+
+            # 2. Update Password
+            hashed_pw = hash_password(new_password)
+            conn.execute('UPDATE users SET password = ? WHERE email = ?', (hashed_pw, email))
+
+            # 3. Delete OTP (Prevents reuse)
+            conn.execute('DELETE FROM password_resets WHERE email = ?', (email,))
+
+            # Commit everything
+            conn.commit()
+
+            return {"success": True, "message": "Password reset successfully!"}, 200
+
+        except Exception as e:
+            print(f"Reset Error: {e}")
+            return {"success": False, "message": "Server error."}, 500
+
+        finally:
+            conn.close()
+
+    payload, status = await run_in_threadpool(_reset)
+    return J(payload, status)
 
 # ==========================================
 #   API ROUTES: DASHBOARD & USAGE
 # ==========================================
 
-@app.route('/api/keys', methods=['GET'])
-@login_required
-def get_api_keys():
-    user_id = session['user_id']
+@app.get('/api/keys')
+def get_api_keys(request: Request, _=Depends(require_login)):
+    user_id = request.session['user_id']
     conn = get_db()
     keys = conn.execute('SELECT * FROM api_keys WHERE user_id = ? ORDER BY created_at DESC', (user_id,)).fetchall()
     conn.close()
-    
+
     keys_list = []
     for key in keys:
         keys_list.append({
@@ -694,24 +889,26 @@ def get_api_keys():
             "created_at": key['created_at'],
             "is_active": key['is_active']
         })
-    return jsonify({"keys": keys_list})
+    return J({"keys": keys_list})
 
-@app.route('/api/keys', methods=['POST'])
-@login_required
-def create_api_key_endpoint():
-    data = request.json
+@app.post('/api/keys')
+async def create_api_key_endpoint(request: Request, _=Depends(require_login)):
+    data = await parse_json_body(request)
     key_name = data.get('name', 'My API Key')
-    user_id = session['user_id']
+    user_id = request.session['user_id']
     api_key = generate_api_key()
-    
-    conn = get_db()
-    conn.execute('INSERT INTO api_keys (user_id, key_name, api_key) VALUES (?, ?, ?)',
-                 (user_id, key_name, api_key))
-    conn.commit()
-    conn.close()
-    
-    return jsonify({
-        "success": True, 
+
+    def _insert():
+        conn = get_db()
+        conn.execute('INSERT INTO api_keys (user_id, key_name, api_key) VALUES (?, ?, ?)',
+                     (user_id, key_name, api_key))
+        conn.commit()
+        conn.close()
+
+    await run_in_threadpool(_insert)
+
+    return J({
+        "success": True,
         "key": {
             "name": key_name,
             "api_key": api_key,
@@ -720,24 +917,22 @@ def create_api_key_endpoint():
         }
     })
 
-@app.route('/api/keys/<int:key_id>', methods=['DELETE'])
-@login_required
-def delete_api_key_endpoint(key_id):
-    user_id = session['user_id']
+@app.delete('/api/keys/{key_id:int}')
+def delete_api_key_endpoint(key_id: int, request: Request, _=Depends(require_login)):
+    user_id = request.session['user_id']
     conn = get_db()
     conn.execute('DELETE FROM api_keys WHERE id = ? AND user_id = ?', (key_id, user_id))
     conn.commit()
     conn.close()
-    return jsonify({"success": True})
+    return J({"success": True})
 
-@app.route('/api/usage', methods=['GET'])
-@login_required
-def get_dashboard_stats():
-    user_id = session['user_id']
+@app.get('/api/usage')
+def get_dashboard_stats(request: Request, _=Depends(require_login)):
+    user_id = request.session['user_id']
     conn = get_db()
-    
+
     stats = conn.execute('''
-        SELECT 
+        SELECT
             COUNT(*) as total_requests,
             AVG(response_time) as avg_latency
         FROM api_usage u
@@ -752,16 +947,16 @@ def get_dashboard_stats():
         WHERE k.user_id = ?
         ORDER BY u.timestamp DESC LIMIT 10
     ''', (user_id,)).fetchall()
-    
+
     conn.close()
 
     total_req = stats['total_requests'] if stats['total_requests'] else 0
     avg_lat = round(stats['avg_latency'], 2) if stats['avg_latency'] else 0
 
-    return jsonify({
+    return J({
         "stats": {
             "total_requests": total_req,
-            "success_rate": "100%", 
+            "success_rate": "100%",
             "avg_latency_ms": avg_lat
         },
         "logs": [
@@ -778,9 +973,8 @@ def get_dashboard_stats():
 #   ADMIN API ROUTES
 # ==========================================
 
-@app.route('/admin/api/overview', methods=['GET'])
-@admin_login_required
-def admin_overview():
+@app.get('/admin/api/overview')
+def admin_overview(request: Request, _=Depends(require_admin)):
     conn = get_db()
 
     metrics = conn.execute('''
@@ -827,7 +1021,7 @@ def admin_overview():
     error_requests = metrics['error_requests'] or 0
     success_rate = round(((total_requests - error_requests) / total_requests) * 100, 2) if total_requests else 100.0
 
-    return jsonify({
+    return J({
         "stats": {
             "total_users": metrics['total_users'] or 0,
             "total_api_keys": metrics['total_api_keys'] or 0,
@@ -861,11 +1055,10 @@ def admin_overview():
         ]
     })
 
-@app.route('/admin/api/activity-log', methods=['GET'])
-@admin_login_required
-def admin_activity_log():
-    raw_limit = request.args.get('limit', '200')
-    include_admin = request.args.get('include_admin', 'false').lower() == 'true'
+@app.get('/admin/api/activity-log')
+def admin_activity_log(request: Request, _=Depends(require_admin)):
+    raw_limit = request.query_params.get('limit', '200')
+    include_admin = request.query_params.get('include_admin', 'false').lower() == 'true'
 
     try:
         limit = max(1, min(int(raw_limit), 500))
@@ -916,7 +1109,7 @@ def admin_activity_log():
         ''', (limit,)).fetchall()
     conn.close()
 
-    return jsonify({
+    return J({
         "logs": [
             {
                 "id": row['id'],
@@ -937,9 +1130,8 @@ def admin_activity_log():
         ]
     })
 
-@app.route('/admin/api/users', methods=['GET'])
-@admin_login_required
-def admin_list_users():
+@app.get('/admin/api/users')
+def admin_list_users(request: Request, _=Depends(require_admin)):
     conn = get_db()
     users = conn.execute('''
         SELECT u.id,
@@ -958,7 +1150,7 @@ def admin_list_users():
     ''').fetchall()
     conn.close()
 
-    return jsonify({
+    return J({
         "users": [
             {
                 "id": row['id'],
@@ -974,9 +1166,8 @@ def admin_list_users():
         ]
     })
 
-@app.route('/admin/api/users/<int:user_id>/usage', methods=['GET'])
-@admin_login_required
-def admin_user_usage(user_id):
+@app.get('/admin/api/users/{user_id:int}/usage')
+def admin_user_usage(user_id: int, request: Request, _=Depends(require_admin)):
     conn = get_db()
 
     user = conn.execute(
@@ -985,7 +1176,7 @@ def admin_user_usage(user_id):
     ).fetchone()
     if not user:
         conn.close()
-        return jsonify({"error": "User not found"}), 404
+        return J({"error": "User not found"}, 404)
 
     keys = conn.execute('''
         SELECT k.id,
@@ -1031,7 +1222,7 @@ def admin_user_usage(user_id):
 
     conn.close()
 
-    return jsonify({
+    return J({
         "user": {
             "id": user['id'],
             "username": user['username'],
@@ -1073,15 +1264,14 @@ def admin_user_usage(user_id):
         ]
     })
 
-@app.route('/admin/api/users/<int:user_id>', methods=['DELETE'])
-@admin_login_required
-def admin_delete_user(user_id):
+@app.delete('/admin/api/users/{user_id:int}')
+def admin_delete_user(user_id: int, request: Request, _=Depends(require_admin)):
     conn = get_db()
 
     user = conn.execute('SELECT id, username, email FROM users WHERE id = ?', (user_id,)).fetchone()
     if not user:
         conn.close()
-        return jsonify({"success": False, "message": "User not found"}), 404
+        return J({"success": False, "message": "User not found"}, 404)
 
     # Delete usage logs first, then keys, then the user account.
     conn.execute('DELETE FROM api_usage WHERE api_key_id IN (SELECT id FROM api_keys WHERE user_id = ?)', (user_id,))
@@ -1090,14 +1280,13 @@ def admin_delete_user(user_id):
     conn.commit()
     conn.close()
 
-    return jsonify({
+    return J({
         "success": True,
         "message": f"Deleted user {user['username']} and all related API data"
     })
 
-@app.route('/admin/api/keys', methods=['GET'])
-@admin_login_required
-def admin_list_keys():
+@app.get('/admin/api/keys')
+def admin_list_keys(request: Request, _=Depends(require_admin)):
     conn = get_db()
     keys = conn.execute('''
         SELECT k.id,
@@ -1118,7 +1307,7 @@ def admin_list_keys():
     ''').fetchall()
     conn.close()
 
-    return jsonify({
+    return J({
         "keys": [
             {
                 "id": row['id'],
@@ -1136,62 +1325,65 @@ def admin_list_keys():
         ]
     })
 
-@app.route('/admin/api/keys/<int:key_id>', methods=['DELETE'])
-@admin_login_required
-def admin_delete_key(key_id):
+@app.delete('/admin/api/keys/{key_id:int}')
+def admin_delete_key(key_id: int, request: Request, _=Depends(require_admin)):
     conn = get_db()
     key = conn.execute('SELECT id, key_name FROM api_keys WHERE id = ?', (key_id,)).fetchone()
     if not key:
         conn.close()
-        return jsonify({"success": False, "message": "API key not found"}), 404
+        return J({"success": False, "message": "API key not found"}, 404)
 
     conn.execute('DELETE FROM api_usage WHERE api_key_id = ?', (key_id,))
     conn.execute('DELETE FROM api_keys WHERE id = ?', (key_id,))
     conn.commit()
     conn.close()
 
-    return jsonify({"success": True, "message": f"API key '{key['key_name']}' deleted"})
+    return J({"success": True, "message": f"API key '{key['key_name']}' deleted"})
 
 # ==========================================
 #   CORE HUMANIZER ENDPOINT
 # ==========================================
 
-@app.route('/humanize', methods=['POST'])
-def humanize():
+@app.post('/humanize')
+async def humanize(request: Request):
     api_key = request.headers.get('X-API-Key')
     start_time = datetime.now()
     api_key_id = None
-    
+
     if api_key:
-        key_data = verify_api_key(api_key)
+        key_data = await run_in_threadpool(verify_api_key, api_key)
         if not key_data:
-            return jsonify({"error": "Invalid or inactive API key"}), 401
+            return J({"error": "Invalid or inactive API key"}, 401)
         api_key_id = key_data['id']
     else:
-        if 'user_id' not in session:
-            return jsonify({"error": "Authentication required"}), 401
-    
-    data = request.json
+        if 'user_id' not in request.session:
+            return J({"error": "Authentication required"}, 401)
+
+    data = await parse_json_body(request)
     text = data.get('text', '')
     tone = data.get('tone', 'standard')
     deep_mode = data.get('deep_mode', False)
 
     if not text:
-        return jsonify({"error": "No text provided"}), 400
+        return J({"error": "No text provided"}, 400)
 
     try:
-        humanized_text = perform_nuclear_chaos(text, tone, deep_mode)
-        metrics = calculate_diff_metrics(text, humanized_text)
-        
+        def _process():
+            humanized_text = perform_nuclear_chaos(text, tone, deep_mode)
+            metrics = calculate_diff_metrics(text, humanized_text)
+            return humanized_text, metrics
+
+        humanized_text, metrics = await run_in_threadpool(_process)
+
         ai_prob = random.uniform(0.0, 0.9) if deep_mode else random.uniform(5.0, 12.0)
         confidence = random.uniform(99.5, 100.0) if deep_mode else random.uniform(88.0, 95.0)
-        
+
         response_time = (datetime.now() - start_time).total_seconds() * 1000
-        
+
         if api_key_id:
-            log_api_usage(api_key_id, '/humanize', 'success', response_time)
-        
-        return jsonify({
+            await run_in_threadpool(log_api_usage, api_key_id, '/humanize', 'success', response_time)
+
+        return J({
             "original": text,
             "humanized": humanized_text,
             "ai_probability": f"{ai_prob:.1f}%",
@@ -1205,10 +1397,11 @@ def humanize():
 
     except Exception as e:
         if api_key_id:
-            log_api_usage(api_key_id, '/humanize', 'error', 0, str(e))
+            await run_in_threadpool(log_api_usage, api_key_id, '/humanize', 'error', 0, str(e))
         print(f"Error: {e}")
-        return jsonify({"error": "Processing failed."}), 500
+        return J({"error": "Processing failed."}, 500)
 
 if __name__ == '__main__':
-    # Running on 5001 to avoid conflicts
-    app.run(debug=True, port=5001)
+    import uvicorn
+    # Running on 5001 to avoid conflicts (mirrors the original Flask dev server).
+    uvicorn.run("app:app", host="127.0.0.1", port=5001, reload=True)

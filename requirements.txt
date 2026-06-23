@@ -1,4 +1,7 @@
-Flask==3.0.0
-deep-translator==1.11.4
+fastapi>=0.110
+uvicorn[standard]>=0.27
+itsdangerous>=2.1
+orjson>=3.9
 nltk==3.8.1
+deep-translator==1.11.4
 gunicorn==21.2.0
