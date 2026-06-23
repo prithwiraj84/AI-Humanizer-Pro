@@ -5,7 +5,9 @@
 
 # next.js
 /.next/
-/out/
+# NOTE: /out/ (the static export) is intentionally COMMITTED so a plain Python
+# host can serve the prebuilt site without a Node build step. Rebuild with:
+#   STATIC_EXPORT=true NEXT_PUBLIC_API_BASE= NEXT_PUBLIC_SITE_URL=<your-url> npm run build
 
 # production
 /build

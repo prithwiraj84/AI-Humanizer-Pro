@@ -15,7 +15,7 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
 from fastapi import FastAPI, Depends, Request
-from fastapi.responses import ORJSONResponse, FileResponse
+from fastapi.responses import ORJSONResponse, FileResponse, Response
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.concurrency import run_in_threadpool
 from dotenv import load_dotenv
@@ -1360,6 +1360,13 @@ FRONTEND_DIST = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'fronte
 
 if os.path.isdir(FRONTEND_DIST):
     _DIST_ROOT = os.path.abspath(FRONTEND_DIST)
+
+    @app.get('/favicon.ico')
+    def favicon_ico():
+        # Browsers auto-request /favicon.ico; serve the SVG icon (or 204) so it
+        # never 404s.
+        svg = os.path.join(_DIST_ROOT, 'favicon.svg')
+        return FileResponse(svg) if os.path.isfile(svg) else Response(status_code=204)
 
     @app.get('/{full_path:path}')
     def serve_frontend(full_path: str):

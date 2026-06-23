@@ -1,0 +1,8 @@
+User-Agent: *
+Allow: /
+Disallow: /dashboard
+Disallow: /admin
+Disallow: /backend/
+
+Host: https://noai.devprithwiraj.in
+Sitemap: https://noai.devprithwiraj.in/sitemap.xml
