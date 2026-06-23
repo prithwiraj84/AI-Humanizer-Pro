@@ -1,0 +1,52 @@
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# ---- Virtual environments ----
+.venv/
+venv/
+env/
+ENV/
+
+# ---- Flask / app secrets & runtime ----
+.env
+.env.*
+instance/
+*.cfg
+!requirements.txt
+
+# ---- Databases (SQLite) ----
+*.db
+*.sqlite
+*.sqlite3
+humanizer.db
+
+# ---- NLTK downloaded data ----
+nltk_data/
+
+# ---- Logs ----
+*.log
+logs/
+
+# ---- Test / coverage ----
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# ---- IDE / editors ----
+.vscode/
+.idea/
+*.swp
+
+# ---- OS ----
+.DS_Store
+Thumbs.db
+desktop.ini
