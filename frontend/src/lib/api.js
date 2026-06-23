@@ -1,6 +1,7 @@
-// Thin client for the FastAPI backend. Every call goes through the Next.js
-// rewrite at /backend/* so the session cookie stays same-origin.
-const BASE = "/backend";
+// Thin client for the FastAPI backend.
+// - Dev / two-service: BASE = "/backend" (proxied by next.config rewrites).
+// - Single-server static export: BASE = "" (calls the API same-origin).
+const BASE = process.env.NEXT_PUBLIC_API_BASE ?? "/backend";
 
 async function request(path, { method = "GET", body, headers = {} } = {}) {
   const opts = { method, credentials: "include", headers: { ...headers } };

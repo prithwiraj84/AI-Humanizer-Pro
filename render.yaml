@@ -1,24 +1,18 @@
-# Render blueprint — deploys BOTH the API (FastAPI) and the website (Next.js).
-# Docs: https://render.com/docs/blueprint-spec
-#
-# The Next.js service is your WEBSITE. It proxies /backend/* to the FastAPI
-# service (set BACKEND_URL), so the browser only ever talks to the website
-# origin — cookies work with no CORS setup.
-
+# Render blueprint — ONE web service serving the website + API together.
+# Build via the Dockerfile (Node builds the Next.js export, Python serves it
+# alongside the FastAPI API). Docs: https://render.com/docs/blueprint-spec
 services:
-  # ---------- Backend: FastAPI API ----------
   - type: web
-    name: ai-humanizer-api
-    runtime: python
+    name: ai-humanizer
+    runtime: docker
     plan: free
-    buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn app:app
-    healthCheckPath: /
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /healthz
     envVars:
       - key: SECRET_KEY
         generateValue: true        # Render generates a stable random value
       - key: ADMIN_EMAIL
-        sync: false                # set in dashboard
+        sync: false                # set real values in the dashboard
       - key: ADMIN_PASSWORD
         sync: false
       - key: SENDER_EMAIL
@@ -29,19 +23,3 @@ services:
         value: smtp.gmail.com
       - key: SMTP_PORT
         value: "587"
-
-  # ---------- Frontend: Next.js website ----------
-  - type: web
-    name: ai-humanizer-web
-    runtime: node
-    plan: free
-    rootDir: frontend
-    buildCommand: npm install && npm run build
-    startCommand: npm run start
-    envVars:
-      # Full URL of the API service above, e.g. https://ai-humanizer-api.onrender.com
-      - key: BACKEND_URL
-        sync: false
-      # Public URL of THIS website, e.g. https://ai-humanizer-web.onrender.com
-      - key: NEXT_PUBLIC_SITE_URL
-        sync: false

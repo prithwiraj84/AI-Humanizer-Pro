@@ -15,7 +15,7 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
 from fastapi import FastAPI, Depends, Request
-from fastapi.responses import ORJSONResponse
+from fastapi.responses import ORJSONResponse, FileResponse
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.concurrency import run_in_threadpool
 from dotenv import load_dotenv
@@ -370,6 +370,12 @@ class ActivityLoggerMiddleware:
             await self.app(scope, receive, send)
             return
 
+        # Static frontend assets: serve without the logging machinery.
+        _p = scope.get("path", "")
+        if _p.startswith("/_next/") or _p in ("/favicon.ico", "/favicon.svg"):
+            await self.app(scope, receive, send)
+            return
+
         # Mirror Flask's strict_slashes=False: a trailing-slash variant runs the
         # SAME handler (one request, no 307 redirect) instead of Starlette's
         # default slash-redirect. Normalizing here -- before the router -- also
@@ -655,10 +661,9 @@ def admin_logout(request: Request, _=Depends(require_admin)):
     request.session.pop('admin_email', None)
     return J({"success": True})
 
-@app.api_route('/', methods=['GET', 'HEAD'])
-def api_root():
-    # API root / health check (the UI lives in the Next.js frontend).
-    # HEAD is included so platform health pings (e.g. Render) get a 200.
+@app.api_route('/healthz', methods=['GET', 'HEAD'])
+def healthz():
+    # Lightweight health check for platform pings (e.g. Render).
     return J({"service": "AI Humanizer Pro API", "status": "ok"})
 
 @app.post('/login')
@@ -1344,6 +1349,47 @@ async def humanize(request: Request):
             await run_in_threadpool(log_api_usage, api_key_id, '/humanize', 'error', 0, str(e))
         print(f"Error: {e}")
         return J({"error": "Processing failed."}, 500)
+
+# ==========================================
+#   STATIC FRONTEND (single-server deploy)
+# ==========================================
+# If the Next.js static export exists (frontend/out), serve it from FastAPI so
+# the website AND the API run on ONE web server / URL. Registered LAST so every
+# API route above wins. Without the export, GET / falls back to a JSON root.
+FRONTEND_DIST = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'frontend', 'out')
+
+if os.path.isdir(FRONTEND_DIST):
+    _DIST_ROOT = os.path.abspath(FRONTEND_DIST)
+
+    @app.get('/{full_path:path}')
+    def serve_frontend(full_path: str):
+        if full_path:
+            candidates = [
+                os.path.join(_DIST_ROOT, full_path),
+                os.path.join(_DIST_ROOT, full_path + '.html'),
+                os.path.join(_DIST_ROOT, full_path, 'index.html'),
+            ]
+        else:
+            candidates = [os.path.join(_DIST_ROOT, 'index.html')]
+
+        for candidate in candidates:
+            resolved = os.path.abspath(candidate)
+            if resolved.startswith(_DIST_ROOT) and os.path.isfile(resolved):
+                headers = (
+                    {'Cache-Control': 'public, max-age=31536000, immutable'}
+                    if full_path.startswith('_next/')
+                    else None
+                )
+                return FileResponse(resolved, headers=headers)
+
+        not_found = os.path.join(_DIST_ROOT, '404.html')
+        if os.path.isfile(not_found):
+            return FileResponse(not_found, status_code=404)
+        return FileResponse(os.path.join(_DIST_ROOT, 'index.html'), status_code=404)
+else:
+    @app.api_route('/', methods=['GET', 'HEAD'])
+    def api_root():
+        return J({"service": "AI Humanizer Pro API", "status": "ok"})
 
 if __name__ == '__main__':
     import uvicorn

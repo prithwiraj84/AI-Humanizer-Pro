@@ -220,10 +220,13 @@ sequenceDiagram
 
 ## ☁️ Deployment
 
-- **Backend → Render**: `gunicorn app:app` (uses `gunicorn.conf.py` → Uvicorn worker). Set the env vars above.
-- **Frontend → Vercel**: set `BACKEND_URL` to your live API and `NEXT_PUBLIC_SITE_URL` to your domain.
+**One service — website + API on a single URL (Docker):**
 
-> 🔴 **Note:** SQLite on ephemeral hosts resets on redeploy — use a managed Postgres or persistent disk for durable data.
+- Render → **New + → Blueprint** (uses `render.yaml` + `Dockerfile`), or set the service's **Runtime = Docker** (`./Dockerfile`).
+- The image builds the Next.js **static export** and serves it with FastAPI — no separate frontend host.
+- Set `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `SENDER_EMAIL`, `SENDER_PASSWORD` in the dashboard (`SECRET_KEY` is auto-generated). Health check: `/healthz`.
+
+> 🔴 **Note:** SQLite on ephemeral hosts resets on redeploy — use managed Postgres or a persistent disk for durable data.
 
 <img src="https://raw.githubusercontent.com/andreasbm/readme/master/assets/lines/rainbow.png" width="100%" alt="divider" />
 

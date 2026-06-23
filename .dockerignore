@@ -1,0 +1,15 @@
+# Keep the build context small & avoid copying local artifacts into the image.
+.git
+.venv
+__pycache__
+*.db
+*.db-wal
+*.db-shm
+.env
+.env.*
+
+# Frontend local artifacts (the image rebuilds these)
+frontend/node_modules
+frontend/.next
+frontend/out
+frontend/.env*.local
