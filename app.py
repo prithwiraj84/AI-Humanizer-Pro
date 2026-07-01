@@ -661,7 +661,7 @@ def admin_logout(request: Request, _=Depends(require_admin)):
     request.session.pop('admin_email', None)
     return J({"success": True})
 
-@app.api_route('/healthz', methods=['GET', 'HEAD'])
+@app.api_route('/healthz', methods=['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'])
 def healthz():
     # Lightweight health check for platform pings (e.g. Render).
     return J({"service": "AI Humanizer Pro API", "status": "ok"})
