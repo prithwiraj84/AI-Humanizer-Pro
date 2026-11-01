@@ -3,14 +3,12 @@
 services:
   - type: web
     name: ai-humanizer
-    runtime: python
+    # Built from the Dockerfile (Python 3.11, dependencies, GeoIP download) and started with gunicorn
+    runtime: docker
     plan: free
-    buildCommand: pip install -r requirements.txt && python scripts/fetch_geoip.py
-    startCommand: gunicorn app:app
+    dockerfilePath: ./Dockerfile
     healthCheckPath: /healthz
     envVars:
-      - key: PYTHON_VERSION
-        value: 3.11.11
       - key: SECRET_KEY
         generateValue: true
       # PostgreSQL connection string (e.g. a free Neon database). Required in production:

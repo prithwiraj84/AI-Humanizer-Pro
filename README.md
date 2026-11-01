@@ -130,7 +130,7 @@ production. Leaving an optional value empty turns that feature off.
 ## Deploy on Render
 
 1. Push this repository to GitHub, then in Render choose **New → Blueprint** and select it.
-   `render.yaml` creates a free Python web service and asks for the secrets.
+   `render.yaml` creates a free web service built from the `Dockerfile` and asks for the secrets.
 2. Set `DATABASE_URL` to a PostgreSQL database. The free tier's disk is wiped on every restart, so
    SQLite is only for local use.
 3. In Razorpay, add a webhook to `https://your-domain/api/billing/webhook` with the events
@@ -138,8 +138,13 @@ production. Leaving an optional value empty turns that feature off.
 4. For plan-expiry reminders, add `SITE_URL` and `CRON_SECRET` as GitHub Actions secrets
    (Settings → Secrets and variables → Actions). The workflow runs daily at 09:00 IST.
 
-The build downloads the spaCy model and the DB-IP country database. Memory use stays around 200 MB,
-within the free tier's 512 MB.
+The image build installs the spaCy model and downloads the DB-IP country database. Memory use stays
+around 200 MB, within the free tier's 512 MB. The same image runs on any Docker host:
+
+```bash
+docker build -t ai-humanizer .
+docker run -p 10000:10000 --env-file .env ai-humanizer
+```
 
 ## API quick start
 

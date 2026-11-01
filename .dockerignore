@@ -1,0 +1,12 @@
+# Keep secrets, local data and tooling out of the image
+.env
+.git
+.github
+__pycache__/
+*.pyc
+*.db
+data/geoip/
+venv/
+.venv/
+.vscode/
+.idea/
