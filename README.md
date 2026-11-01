@@ -13,10 +13,18 @@ Razorpay, priced by region so it stays affordable everywhere.
 - Word-level diff highlighting, change statistics and the longest unchanged phrase.
 - The six most recent results are kept in the browser's local storage (never on the server).
 
-**Rewriting engine**
-- spaCy (`en_core_web_sm`) for parsing, lemminflect for correct word forms.
-- A synonym table built offline from WordNet, the Brown corpus and SemCor (`scripts/build_synonyms.py`),
-  so the server only loads a few MB of data and fits Render's 512 MB free tier.
+**Rewriting engine** (rule-based, no external AI service)
+- Six layers: stock AI phrases and transitions; contractions by tone; word choice; sentence
+  structure (passive to active, moving adverbial phrases and clauses, "allow you to" → "with X, you
+  can"); rhythm (splitting and joining sentences so their lengths vary like human writing, with
+  varied openings); punctuation.
+- spaCy (`en_core_web_sm`) for tags, entities and the dependency parse; lemminflect for word forms.
+- Data built offline with NLTK: a WordNet synonym table that keeps only senses both words are
+  mainly used in (SemCor counts, `scripts/build_synonyms.py`), and Brown corpus word pairs that
+  check a synonym fits its neighbours (`scripts/build_collocations.py`). Together about 10 MB in
+  memory, so the app fits Render's 512 MB free tier.
+- Names, numbers, dates, acronyms, quotes and citations are never changed; headings and list items
+  only get word-level edits.
 - Text is processed in memory and never stored or logged.
 
 **Developer API**
@@ -66,8 +74,8 @@ mailer.py            Transactional email over SMTP
 db.py                SQLite / PostgreSQL access layer
 templates/           Pages, partials and email templates
 static/              CSS, JavaScript and images
-data/                Synonym table and WordNet licence (the GeoIP database is downloaded at build time)
-scripts/             build_synonyms.py, fetch_geoip.py
+data/                Synonym table, word-pair table, WordNet licence (GeoIP is downloaded at build time)
+scripts/             build_synonyms.py, build_collocations.py, fetch_geoip.py
 .github/workflows/   Daily job that sends plan-expiry reminders
 render.yaml          Render Blueprint
 gunicorn.conf.py     Server settings tuned for small instances

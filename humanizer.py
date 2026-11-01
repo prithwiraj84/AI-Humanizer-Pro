@@ -1,18 +1,26 @@
 """
 Humanizer engine: rewrites text in a chosen tone and measures what changed.
 
+AI-written text is recognisable by its stock phrases, its predictable word choices and its even
+rhythm: sentences of similar length that all open the same way. Each layer below works on one
+of those, using spaCy (tags, lemmas, entities, dependency parse) and data built offline with
+NLTK (WordNet synonyms and Brown corpus word pairs), so the server needs no language model.
+
 Pipeline (perform_nuclear_chaos):
-  1. Phrase rules  - AI-style transitions, fillers and wordy phrases ("Furthermore,",
-                     "It is important to note that", "in order to") become plainer wording.
-  2. Contractions  - Casual adds them; Professional and Academic expand them.
-  3. spaCy pass    - using part-of-speech tags, lemmas, named entities and the parse:
-                     * AI-favourite words ("utilize", "delve", "robust") get plain replacements
-                     * other content words get WordNet synonyms of the same part of speech and
-                       sense, re-inflected to match ("demonstrates" -> "shows")
-                     * names, places, organisations, dates, numbers and acronyms are never touched
-                     * "a"/"an" is corrected after a swap
-                     * Chaos Mode and Casual split long compound sentences in two
-If spaCy isn't installed, step 3 falls back to plain word swaps so the app still runs.
+  1. Phrases       - AI-style transitions, fillers and stock phrases ("Furthermore,", "plays a
+                     crucial role in", "not only X but also Y") become plainer wording.
+  2. Contractions  - Casual uses them, Standard some of them; Professional and Academic expand them.
+  3. Words         - AI-favourite words get curated replacements; other content words get WordNet
+                     synonyms of the same part of speech and sense, re-inflected ("demonstrates" ->
+                     "shows"), and only if they fit their neighbours in real English (Brown pairs).
+  4. Structure     - passive sentences turn active, adverbial phrases and clauses move between the
+                     start and the end of their sentence, and safe split points are found.
+  5. Rhythm        - long sentences are split and short neighbours joined until sentence lengths
+                     vary the way they do in human writing; repeated sentence openings are avoided.
+  6. Punctuation   - fewer em dashes; spacing, capitals and "a"/"an" are tidied.
+Names, places, organisations, dates, numbers, acronyms, quotes and citations are never changed,
+and headings and list items only get word-level edits.
+If spaCy isn't installed, only the safe curated swaps of steps 1-3 run, so the app still works.
 """
 import difflib
 import gzip
@@ -30,9 +38,17 @@ TONES = ('standard', 'professional', 'casual', 'academic')
 
 # --- SYNONYM TABLE (built offline with NLTK by scripts/build_synonyms.py) ---
 # "lemma|pos" -> [lemma_frequency, [[synonym, frequency], ...]], best synonyms first
-with gzip.open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data', 'synonyms.json.gz'),
-               'rt', encoding='utf-8') as _f:
+DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data')
+with gzip.open(os.path.join(DATA_DIR, 'synonyms.json.gz'), 'rt', encoding='utf-8') as _f:
     SYNONYMS = json.load(_f)
+
+# --- WORD PAIRS (built offline with NLTK from the Brown corpus by scripts/build_collocations.py) ---
+# "first second" -> how often the two words appear side by side; ~9 MB in memory
+with gzip.open(os.path.join(DATA_DIR, 'bigrams.json.gz'), 'rt', encoding='utf-8') as _f:
+    BIGRAMS = json.load(_f)
+
+def pair_count(first, second):
+    return BIGRAMS.get(f'{first} {second}', 0) if first and second else 0
 
 # --- SPACY (optional at runtime) ---
 try:
@@ -101,6 +117,18 @@ TRANSITIONS = [
         'professional': ['That said,', 'Still,'],
         'academic': ['Nevertheless,', 'Even so,'],
     }),
+    (('on the other hand',), 0.8, {
+        'standard': ['Then again,', 'By contrast,'],
+        'casual': ['Then again,', 'But'],
+        'professional': ['By contrast,', 'Then again,'],
+        'academic': ['By contrast,', 'Conversely,'],
+    }),
+    (('ultimately', 'in essence', 'essentially'), 0.8, {
+        'standard': ['In the end,', 'All told,'],
+        'casual': ['In the end,', 'At the end of the day,', 'Basically,'],
+        'professional': ['In the end,', 'All told,'],
+        'academic': ['Ultimately,', 'In the end,'],
+    }),
     (('first and foremost', 'firstly'), 1.0, {'*': ['First,']}),
     (('secondly',), 1.0, {'*': ['Second,']}),
     (('thirdly',), 1.0, {'*': ['Third,']}),
@@ -159,6 +187,36 @@ PHRASES = [
      {'*': ['about', 'on'], 'professional': ['regarding'], 'academic': ['regarding', 'concerning']}),
     (("in the event that",), {'*': ['if']}),
     (("prior to",), {'*': ['before']}),
+    (("a crucial role", "a pivotal role", "a vital role", "an essential role", "a significant role", "an integral role",
+      "an instrumental role", "a critical role"),
+     {'standard': ['a big part', 'a key role', 'a major part'], 'casual': ['a big part', 'a huge part'],
+      'professional': ['a key role', 'a major role'], 'academic': ['a central role', 'a major role']}),
+    (("we are pleased to announce that", "we are excited to announce that", "we are thrilled to announce that",
+      "we're pleased to announce that", "we're excited to announce that", "we're thrilled to announce that"),
+     {'standard': ["we're happy to share that", 'good news:'], 'casual': ["we're happy to say that", 'great news:'],
+      'professional': ['we are glad to report that', 'we are happy to share that'], 'academic': ['we report that']}),
+    (("serves as",), {'*': ['acts as', 'works as'], 'academic': ['functions as', 'acts as']}),
+    (("serve as",), {'*': ['act as', 'work as'], 'academic': ['function as', 'act as']}),
+    (("served as",), {'*': ['acted as', 'worked as'], 'academic': ['functioned as', 'acted as']}),
+    (("embark on", "embark upon"), {'*': ['start', 'begin'], 'casual': ['start', 'kick off']}),
+    (("embarks on", "embarks upon"), {'*': ['starts', 'begins']}),
+    (("embarked on", "embarked upon"), {'*': ['started', 'began']}),
+    (("embarking on", "embarking upon"), {'*': ['starting', 'beginning']}),
+    (("in a timely manner",), {'*': ['promptly', 'on time'], 'casual': ['quickly', 'on time']}),
+    (("a key aspect of", "an important aspect of", "a crucial aspect of", "a vital aspect of"),
+     {'*': ['a key part of', 'an important part of'], 'casual': ['a big part of'],
+      'academic': ['a central part of', 'an important part of']}),
+    (("it is evident that", "it is clear that", "it is apparent that", "it's clear that", "it's evident that"),
+     {'*': ['clearly,'], 'casual': ['clearly,', 'obviously,']}),
+    (("has the potential to", "have the potential to"), {'*': ['could', 'can'], 'academic': ['could', 'may']}),
+    (("is able to", "are able to"), {'*': ['can']}),
+    (("it is essential to", "it is crucial to", "it is vital to", "it is imperative to"),
+     {'standard': ['it pays to', "it's key to"], 'casual': ["it's key to", 'you need to'],
+      'professional': ['it helps to', 'it is wise to'], 'academic': ['it is necessary to']}),
+    (("more important than ever", "more crucial than ever", "more vital than ever"),
+     {'*': ['especially important', 'more important than it used to be'], 'casual': ['a bigger deal than ever'],
+      'professional': ['especially important'], 'academic': ['increasingly important']}),
+    (("a deep dive into",), {'*': ['a close look at']}),
 ]
 # An optional "a"/"an" in front is captured so it can agree with the replacement
 PHRASE_RULES = [(re.compile(r"(?P<art>\b(?:a|an)\s+)?\b(?P<phrase>" + phrase_regex(words) + r")\b", re.I), options)
@@ -172,9 +230,25 @@ def rewrite_phrase(match, options, tone):
     wanted = 'an' if starts_with_vowel_sound(new) else 'a'
     return match_case(article.strip(), wanted) + article[len(article.rstrip()):] + new
 
+# "is not only fast but also cheap" -> "is fast and cheap". Lowercase "not" only: a sentence that opens
+# with "Not only ..." uses inverted word order and is left alone.
+NOT_ONLY = re.compile(r"\bnot only\s+(?P<a>[^,.;:!?\"“”()]{1,80}?)\s+but(?:\s+also)?\s+")
+
+def pick_fresh(options, tone, used):
+    """Like pick(), but avoids repeating a replacement already used in this text ("Also, ... Also, ...")."""
+    choices = options.get(tone) or options['*']
+    fresh = [c for c in choices if c not in used] or choices
+    choice = random.choice(fresh)
+    used.add(choice)
+    return choice
+
 def apply_phrase_rules(text, tone):
+    text = NOT_ONLY.sub(lambda m: m.group('a') + ' ' + random.choice(['and', 'and also']) + ' ', text)
+
+    used = set()
     for pattern, chance, options in TRANSITION_RULES:
-        text = pattern.sub(lambda m: m.group('pre') + pick(options, tone) + ' ' if random.random() < chance else m.group(0), text)
+        text = pattern.sub(lambda m: m.group('pre') + pick_fresh(options, tone, used) + ' '
+                           if random.random() < chance else m.group(0), text)
 
     signpost = FILLER_SIGNPOSTS.get(tone)
     text = FILLER_AT_START.sub(
@@ -199,22 +273,34 @@ CONTRACTIONS = {
 EXPANSIONS = {short: full for full, short in CONTRACTIONS.items()}
 EXPANSIONS.update({"i'm": "i am", "you're": "you are", "we're": "we are", "they're": "they are"})
 
+# Contracted only when another word follows ("it's done", but never "I know what it is.")
+PRONOUN_CONTRACTIONS = {
+    "it is": "it's", "that is": "that's", "there is": "there's", "what is": "what's",
+    "we are": "we're", "they are": "they're", "you are": "you're", "i am": "i'm",
+    "we will": "we'll", "you will": "you'll", "it will": "it'll", "they will": "they'll",
+}
+
 CONTRACT_PATTERN = re.compile(r"\b" + phrase_regex(CONTRACTIONS) + r"\b", re.I)
+PRONOUN_PATTERN = re.compile(r"\b" + phrase_regex(PRONOUN_CONTRACTIONS) + r"\b(?=\s+[a-z])", re.I)
 EXPAND_PATTERN = re.compile(r"\b" + phrase_regex(EXPANSIONS) + r"\b", re.I)
 
+# People contract in everyday writing; AI text rarely does. Standard mixes both.
+CONTRACT_CHANCE = {'casual': 1.0, 'standard': 0.5}
+
 def apply_tone_contractions(text, tone):
-    if tone == 'casual':
-        pattern, table = CONTRACT_PATTERN, CONTRACTIONS
-    elif tone in ('professional', 'academic'):
-        pattern, table = EXPAND_PATTERN, EXPANSIONS
-    else:
-        return text
+    def replace_from(table, chance=1.0):
+        def replace(match):
+            if random.random() >= chance:
+                return match.group(0)
+            key = re.sub(r'\s+', ' ', match.group(0).lower()).replace('’', "'")
+            return match_case(match.group(0), table[key])
+        return replace
 
-    def replace(match):
-        key = re.sub(r'\s+', ' ', match.group(0).lower()).replace('’', "'")
-        return match_case(match.group(0), table[key])
-
-    return pattern.sub(replace, text)
+    if tone in CONTRACT_CHANCE:
+        chance = CONTRACT_CHANCE[tone]
+        text = CONTRACT_PATTERN.sub(replace_from(CONTRACTIONS, chance), text)
+        return PRONOUN_PATTERN.sub(replace_from(PRONOUN_CONTRACTIONS, chance), text)
+    return EXPAND_PATTERN.sub(replace_from(EXPANSIONS), text)
 
 # ==========================================
 #   STEP 3: WORD-LEVEL REWRITING
@@ -229,9 +315,33 @@ SKIP_TAGS = {'JJR', 'JJS', 'RBR', 'RBS'}  # comparatives re-inflect badly ("beau
 SYNONYM_FLOOR = {'standard': 0.3, 'casual': 0.5, 'professional': 0.3, 'academic': 0.0}
 CHAOS_FLOOR = 0.1
 
+# Share of eligible content words that get a WordNet synonym. Predictable word choice is one of the
+# strongest signs of AI text, and the word-pair check below keeps the swaps idiomatic.
+WORD_RATE = {'standard': 0.4, 'casual': 0.45, 'professional': 0.3, 'academic': 0.3}
+CHAOS_WORD_RATE = 0.7
+
 # Nouns carry most of a sentence's meaning and WordNet's noun synonyms often miss the context
-# ("updated the details" is not "updated the points"), so only Chaos Mode swaps them, and half as often
-CHAOS_NOUN_WEIGHT = 0.5
+# ("updated the details" is not "updated the points"), so only Chaos Mode swaps them, less often,
+# and only when the new word is attested next to a neighbour in real English
+NOUN_WEIGHT = {False: 0.0, True: 0.35}
+
+# Curated adverb swaps that only read well in some positions ("manage time effectively" -> "well",
+# but not "effectively reduces" -> "well reduces"; "truly matters" but not "truly unique" -> "really unique")
+AFTER_VERB_ONLY = {'effectively|ADV', 'tirelessly|ADV'}
+VERB_HEAD_ONLY = {'truly|ADV'}
+# ...and verb swaps that only work with a direct object ("reduce costs" -> "cut costs", but
+# "provide that ..." or "establish whether ..." can't take "give" or "build")
+OBJECT_ONLY = {'reduce|VERB', 'pose|VERB', 'provide|VERB', 'organize|VERB', 'implement|VERB', 'establish|VERB',
+               'maintain|VERB', 'identify|VERB', 'examine|VERB', 'analyze|VERB', 'analyse|VERB', 'investigate|VERB',
+               'acquire|VERB', 'emphasize|VERB', 'highlight|VERB'}
+# Adjectives swapped only in front of a noun ("a significant change" -> "a major change", but
+# "statistically significant" and "is significant for" keep their technical sense)
+BEFORE_NOUN_ONLY = {'significant|ADJ', 'substantial|ADJ', 'various|ADJ', 'fundamental|ADJ', 'appropriate|ADJ',
+                    'consistent|ADJ', 'traditional|ADJ', 'frequent|ADJ', 'effective|ADJ'}
+POSITION_DEPENDENT = AFTER_VERB_ONLY | VERB_HEAD_ONLY | OBJECT_ONLY | BEFORE_NOUN_ONLY
+# Plain-English swaps Academic doesn't make (its readers expect the technical word)
+ACADEMIC_KEEPS = {'significant|ADJ', 'substantial|ADJ', 'fundamental|ADJ', 'effective|ADJ', 'traditional|ADJ',
+                  'analyze|VERB', 'analyse|VERB', 'investigate|VERB', 'examine|VERB', 'identify|VERB'}
 
 # Names are never touched. Inside dates, times, amounts and other number phrases only the curated
 # swaps apply ("approximately three additional days" -> "about three extra days").
@@ -292,6 +402,32 @@ AI_WORDS = {
     'paradigm|NOUN': {'*': ['model', 'pattern']},
     'holistic|ADJ': {'*': ['complete'], 'academic': ['integrated']},
     'transformative|ADJ': {'*': ['major', 'powerful'], 'academic': ['far-reaching']},
+    'ensure|VERB': {'*': ['make sure'], 'professional': ['make sure', 'ensure'], 'academic': ['ensure']},
+    'empower|VERB': {'*': ['help', 'enable'], 'casual': ['help'], 'academic': ['enable']},
+    'elevate|VERB': {'*': ['raise', 'improve'], 'casual': ['boost', 'lift']},
+    'garner|VERB': {'*': ['gain', 'earn'], 'casual': ['get', 'earn']},
+    'spearhead|VERB': {'*': ['lead']},
+    'underpin|VERB': {'*': ['support'], 'academic': ['support', 'underlie']},
+    'encompass|VERB': {'*': ['include', 'cover']},
+    'boast|VERB': {'*': ['have', 'offer']},
+    'optimize|VERB': {'*': ['improve', 'fine-tune'], 'academic': ['optimize']},
+    'optimise|VERB': {'*': ['improve', 'fine-tune'], 'academic': ['optimise']},
+    'revolutionize|VERB': {'*': ['transform', 'change'], 'casual': ['shake up', 'change']},
+    'resonate|VERB': {'*': ['connect', 'click'], 'professional': ['connect'], 'academic': ['connect']},
+    'cultivate|VERB': {'*': ['build', 'develop'], 'academic': ['develop']},
+    'intricacy|NOUN': {'*': ['detail', 'complexity']},
+    'nuance|NOUN': {'*': ['subtlety', 'detail']},
+    'nuanced|ADJ': {'*': ['subtle', 'detailed']},
+    'unprecedented|ADJ': {'*': ['record', 'unheard-of'], 'academic': ['unprecedented']},
+    'commendable|ADJ': {'*': ['admirable', 'impressive']},
+    'pressing|ADJ': {'*': ['urgent', 'serious']},
+    'decisive|ADJ': {'*': ['firm', 'strong'], 'academic': ['firm', 'resolute']},
+    'viable|ADJ': {'*': ['workable', 'practical'], 'academic': ['feasible', 'practical']},
+    'valuable|ADJ': {'*': ['useful', 'helpful'], 'academic': ['useful', 'important']},
+    'utmost|ADJ': {'*': ['greatest', 'highest']},
+    'tirelessly|ADV': {'*': ['hard', 'nonstop'], 'professional': ['hard'], 'academic': ['persistently']},
+    'effectively|ADV': {'*': ['well'], 'academic': ['effectively', 'well']},
+    'truly|ADV': {'*': ['really'], 'professional': ['genuinely'], 'academic': ['genuinely']},
 }
 
 # Formal words with plain everyday equivalents, the kind of edit a copy editor makes.
@@ -336,23 +472,82 @@ PLAIN_WORDS = {
     'component|NOUN': ['part'],
     'nevertheless|ADV': ['still'],
     'nonetheless|ADV': ['still'],
+    'reduce|VERB': ['cut', 'lower'],
+    'pose|VERB': ['present', 'raise'],
+    'provide|VERB': ['give', 'offer'],
+    'organize|VERB': ['arrange', 'sort out'],
+    'implement|VERB': ['apply', 'use'],
+    'establish|VERB': ['build', 'set up'],
+    'maintain|VERB': ['keep'],
+    'identify|VERB': ['spot', 'find'],
+    'examine|VERB': ['look at', 'study'],
+    'analyze|VERB': ['study', 'look at'],
+    'analyse|VERB': ['study', 'look at'],
+    'investigate|VERB': ['look into', 'study'],
+    'acquire|VERB': ['get', 'gain'],
+    'emphasize|VERB': ['stress', 'highlight'],
+    'highlight|VERB': ['point out', 'show'],
+    'enable|VERB': ['allow'],
+    'significant|ADJ': ['major', 'big', 'notable'],
+    'substantial|ADJ': ['large', 'major'],
+    'various|ADJ': ['different', 'several'],
+    'fundamental|ADJ': ['basic', 'core'],
+    'appropriate|ADJ': ['suitable', 'fitting'],
+    'consistent|ADJ': ['steady', 'regular'],
+    'traditional|ADJ': ['conventional', 'standard'],
+    'frequent|ADJ': ['common', 'regular'],
+    'effective|ADJ': ['useful', 'working'],
+    'immediately|ADV': ['right away', 'at once'],
+    'primarily|ADV': ['mainly', 'mostly'],
+    'particularly|ADV': ['especially'],
+    'typically|ADV': ['usually'],
+    'rapidly|ADV': ['quickly', 'fast'],
+    'continuously|ADV': ['constantly'],
 }
 # Chance of making a plain-English swap; Academic keeps its formal vocabulary
 PLAIN_CHANCE = {'casual': 1.0, 'standard': 0.7, 'professional': 0.4, 'academic': 0.0}
 IRREGULAR_PLURALS = {'person': 'people'}
 
-def pick_synonym(entry, tone, floor, avoid):
+def neighbours(token):
+    """The lowercase words either side of a token (None next to punctuation or at the edge)."""
+    doc = token.doc
+    before = doc[token.i - 1].lower_ if token.i > 0 and doc[token.i - 1].is_alpha else None
+    after = doc[token.i + 1].lower_ if token.i + 1 < len(doc) and doc[token.i + 1].is_alpha else None
+    return before, after
+
+def context_score(before, word, after):
+    words = word.lower().split()
+    return pair_count(before, words[0]) + pair_count(words[-1], after)
+
+def choose_synonym(token, entry, tone, floor, avoid, need_evidence):
+    """(lemma, inflected word) for a WordNet synonym in the tone's style that fits the token's neighbours,
+    or (None, None). If the original is an established pairing in the Brown corpus ("rely on", seen
+    at least twice), the synonym must be attested there too; nouns always need that evidence."""
     lemma_frequency, candidates = entry
     pool = [word for word, frequency in candidates if frequency >= floor * lemma_frequency and word not in avoid]
-    if not pool:
-        return None
     if tone == 'casual':
-        return min(pool[:4], key=len)
-    if tone == 'academic':
-        return max(pool, key=len)
-    if tone == 'professional':
-        return pool[0]
-    return random.choice(pool[:3])
+        order = sorted(pool[:4], key=len) + pool[4:]
+    elif tone == 'academic':
+        order = sorted(pool, key=len, reverse=True)
+    elif tone == 'professional':
+        order = pool
+    else:
+        order = random.sample(pool[:3], len(pool[:3])) + pool[3:]
+    before, after = neighbours(token)
+    attested = context_score(before, token.lower_, after) >= 2
+    # A noun right after its modifier ("remote sensing") must keep a known pairing with it
+    modified = need_evidence and token.i > 0 and token.doc[token.i - 1].head == token and \
+        token.doc[token.i - 1].dep_ in ('amod', 'compound', 'nmod')
+    for lemma in order:
+        word = inflect(lemma, token.tag_)
+        if not word or word.lower() == token.lower_:
+            continue
+        if modified and not pair_count(before, word.lower().split()[0]):
+            continue
+        if (attested or need_evidence) and not context_score(before, word, after):
+            continue
+        return lemma, word
+    return None, None
 
 def inflect(lemma, tag):
     # Multi-word replacements ("find out") inflect their first word only
@@ -391,40 +586,29 @@ def takes_preposition(token):
     return token.pos_ in ('VERB', 'ADJ') and any(
         child.dep_ in ('prep', 'prt') and 0 < child.i - token.i <= 2 for child in token.children)
 
-def plan_sentence_split(sent, edits, capitalize):
-    """Turn "X, and Y" into "X. Y" when both halves are long, complete clauses."""
-    if len(sent) < 22:
-        return
-    for token in sent:
-        if token.dep_ != 'cc' or token.lower_ not in ('and', 'but') or token.head.dep_ != 'ROOT':
-            continue
-        if token.i == sent.start or token.doc[token.i - 1].text != ',':
-            continue
-        clause = next((c for c in token.head.children if c.dep_ == 'conj' and c.i > token.i), None)
-        if clause is None or clause.pos_ not in ('VERB', 'AUX'):
-            continue
-        if not any(c.dep_ in ('nsubj', 'nsubjpass', 'expl') for c in clause.children):
-            continue
-        if token.i - sent.start < 8 or sent.end - token.i < 8:
-            continue
-        edits[token.i - 1] = '.'
-        if token.lower_ == 'and':
-            edits[token.i] = ''
-            capitalize.add(token.i + 1)
-        else:
-            edits[token.i] = 'But'
-        return
+def curated_fits(token, key):
+    if key in AFTER_VERB_ONLY:
+        return token.head.pos_ in ('VERB', 'AUX') and token.i > token.head.i
+    if key in VERB_HEAD_ONLY:
+        return token.head.pos_ in ('VERB', 'AUX')
+    if key in OBJECT_ONLY:
+        return any(c.dep_ == 'dobj' for c in token.children) and not takes_preposition(token)
+    if key in BEFORE_NOUN_ONLY:
+        before = token.doc[token.i - 1].lower_ if token.i > 0 else ''
+        return token.dep_ == 'amod' and token.head.i > token.i and not before.endswith('ly')
+    return True
 
-def rewrite_with_spacy(text, tone, deep_mode):
-    with _NLP_LOCK:
-        doc = NLP(text)
+def fixed_frame(token):
+    """Words whose synonyms rarely fit the same construction: "rely on"-style pairs and verbs
+    with a to-infinitive ("struggle to manage" is not "fight to manage")."""
+    return takes_preposition(token) or (token.pos_ == 'VERB' and any(c.dep_ == 'xcomp' for c in token.children))
 
-    intensity = 0.4 if deep_mode else 0.1
+def plan_word_edits(doc, tone, deep_mode):
+    """Layer 3: token index -> replacement text, for curated and WordNet swaps."""
+    rate = CHAOS_WORD_RATE if deep_mode else WORD_RATE[tone]
     floor = CHAOS_FLOOR if deep_mode else SYNONYM_FLOOR[tone]
-    plain_chance = (1.0 if deep_mode and tone != 'academic' else PLAIN_CHANCE[tone])
-    edits = {}         # token index -> new text ('' drops the token and its trailing space)
-    capitalize = set()
-
+    plain_chance = 1.0 if deep_mode and tone != 'academic' else PLAIN_CHANCE[tone]
+    edits = {}
     for sent in doc.sents:
         avoid = {t.lower_ for t in sent} | {t.lemma_.lower() for t in sent}
         for token in sent:
@@ -432,24 +616,25 @@ def rewrite_with_spacy(text, tone, deep_mode):
                 continue
             lemma = token.lemma_.lower()
             key = f'{lemma}|{token.pos_}'
-            weight = (CHAOS_NOUN_WEIGHT if deep_mode else 0.0) if token.pos_ == 'NOUN' else 1.0
-            if key in AI_WORDS:
+            word = None
+            if key in AI_WORDS and curated_fits(token, key):
                 replacement = pick(AI_WORDS[key], tone)
-            elif key in PLAIN_WORDS and random.random() < plain_chance:
+            elif (key in PLAIN_WORDS and curated_fits(token, key) and random.random() < plain_chance
+                  and not (tone == 'academic' and key in ACADEMIC_KEEPS)):
                 replacement = random.choice(PLAIN_WORDS[key])
-            elif token.ent_type_ or takes_preposition(token):
-                continue  # number phrases and "rely on"-style pairs only get the curated swaps above
-            elif random.random() < intensity * weight:
+            elif token.ent_type_ or fixed_frame(token) or key in AI_WORDS or key in PLAIN_WORDS:
+                continue  # number phrases, fixed constructions and curated words out of place stay as they are
+            elif random.random() < rate * (NOUN_WEIGHT[deep_mode] if token.pos_ == 'NOUN' else 1.0):
                 entry = SYNONYMS.get(f'{lemma}|{UPOS_TO_WORDNET[token.pos_]}')
-                replacement = pick_synonym(entry, tone, floor, avoid) if entry else None
+                if not entry:
+                    continue
+                replacement, word = choose_synonym(token, entry, tone, floor, avoid, token.pos_ == 'NOUN')
             else:
                 continue
-            word = inflect(replacement, token.tag_) if replacement else None
+            word = word or (inflect(replacement, token.tag_) if replacement else None)
             if word and word.lower() != token.lower_:
                 edits[token.i] = match_case(token.text, word)
                 avoid.add(replacement)
-        if deep_mode or tone == 'casual':
-            plan_sentence_split(sent, edits, capitalize)
 
     # "a" / "an" must agree with a swapped word that follows it
     for i in list(edits):
@@ -458,14 +643,472 @@ def rewrite_with_spacy(text, tone, deep_mode):
         wanted = 'an' if starts_with_vowel_sound(edits[i]) else 'a'
         if doc[i - 1].lower_ != wanted:
             edits[i - 1] = match_case(doc[i - 1].text, wanted)
+    return edits
 
-    out = []
-    for token in doc:
-        new = edits.get(token.i, token.text)
-        if token.i in capitalize and new:
-            new = new[0].upper() + new[1:]
-        out.append(new + ('' if new == '' else token.whitespace_))
+# ==========================================
+#   STEP 4: SENTENCE STRUCTURE
+# ==========================================
+# A sentence is a list of pieces, [token index or None for inserted words, text], so phrases can
+# be moved, split off and joined while keeping track of where each word came from.
+
+NO_SPACE_BEFORE = {',', '.', ';', ':', '!', '?', ')', ']', '}', '%', '”', "n't", "n’t"}
+NO_SPACE_AFTER = {'(', '[', '{', '“', '$'}
+
+def render(pieces, doc):
+    """Words that are still neighbours keep their original spacing; moved or inserted ones get
+    standard English spacing."""
+    out, previous = [], None
+    for index, text in pieces:
+        if not text:
+            continue
+        if previous is not None:
+            prev_index, prev_text = previous
+            if prev_index is not None and index is not None and index == prev_index + 1:
+                out.append(doc[prev_index].whitespace_)
+            elif not (text in NO_SPACE_BEFORE or text.startswith(("'", "’")) or prev_text in NO_SPACE_AFTER):
+                out.append(' ')
+        out.append(text)
+        previous = (index, text)
     return ''.join(out)
+
+def keeps_capital(token):
+    return (token.pos_ == 'PROPN' or token.ent_type_ in NAME_ENTITIES or token.text == 'I'
+            or (token.is_upper and len(token.text) > 1) or any(c.isupper() for c in token.text[1:]))
+
+def first_piece(pieces):
+    return next((p for p in pieces if p[1]), None)
+
+def capitalize_first(pieces):
+    piece = first_piece(pieces)
+    if piece:
+        piece[1] = piece[1][0].upper() + piece[1][1:]
+
+def lowercase_first(pieces, doc):
+    piece = first_piece(pieces)
+    if piece and (piece[0] is None or not keeps_capital(doc[piece[0]])):
+        piece[1] = piece[1][0].lower() + piece[1][1:]
+
+def take(pieces, start, end):
+    """Copies of the pieces for tokens start..end (inclusive)."""
+    return [list(p) for p in pieces if p[0] is not None and start <= p[0] <= end]
+
+class Sentence:
+    """One sentence on its way through the structure and rhythm layers."""
+
+    def __init__(self, pieces, doc, span=None, origin=None):
+        self.pieces, self.doc, self.span = pieces, doc, span
+        self.splits = []        # (piece position of the "," or ";", kind) while the sentence is in its original order
+        self.reordered = False
+        self.origin = origin    # halves of one split share it, so they aren't simply joined back
+
+    def words(self):
+        return sum(1 for _, text in self.pieces if text and text[0].isalnum())
+
+    def opener(self):
+        piece = first_piece(self.pieces)
+        return piece[1].lower() if piece else ''
+
+    def text(self):
+        return render(self.pieces, self.doc)
+
+def restructurable(sent):
+    """Plain statements only: ends in a full stop, no quotes, brackets, colons, dashes or links."""
+    texts = {t.text for t in sent}
+    return (sent[-1].text == '.' and 6 <= len(sent) <= 45 and sent.root.pos_ in ('VERB', 'AUX')
+            and not texts & {'"', '“', '”', '(', ')', '[', ']', ':', '—', '–'}
+            and not any(t.like_url or t.like_email for t in sent))
+
+# --- Moving adverbial phrases and clauses between the start and the end of a sentence ---
+
+TIME_NOUNS = {'year', 'month', 'week', 'day', 'decade', 'century', 'time', 'period', 'past', 'future', 'era',
+              'morning', 'evening', 'night', 'quarter', 'season', 'hour', 'minute', 'moment', 'age', 'today', 'recent'}
+ALWAYS_MOVABLE_PREPS = {'during', 'after', 'before', 'since', 'throughout', 'despite', 'following', 'amid', 'until'}
+SETTING_PREPS = {'in', 'on', 'at', 'over', 'within', 'across', 'for'}     # movable when they give a time or place
+UNMOVABLE_PREPS = {'of', 'as', 'like', 'than', 'to'}
+MOVABLE_MARKS = {'because', 'since', 'although', 'though', 'when', 'whenever', 'while', 'after', 'before', 'if',
+                 'unless', 'once', 'whereas', 'until'}
+CONCESSIVE = {'although', 'though', 'whereas', 'while', 'despite', 'even'}   # keep a comma when moved to the end
+DISCOURSE_PHRASES = {
+    'in addition', 'in short', 'in conclusion', 'in sum', 'in particular', 'in fact', 'in general', 'in contrast',
+    'in the end', 'in other words', 'on top of that', 'beyond that', 'beyond this', 'for example', 'for instance',
+    'of course', 'by contrast', 'as a result', 'because of this', 'because of that', 'on the other hand',
+    'at the same time', 'all in all', 'after all', 'above all', 'at the end of the day', 'in turn', 'to date', 'so far',
+    'in practice', 'in theory', 'in reality', 'in total', 'in brief', 'in summary', 'at first', 'at last', 'at times',
+    'by default', 'on average', 'on balance', 'for now', 'for this reason', 'to this end', 'in this case',
+    'in that case', 'in this way', 'with this in mind', 'as such', 'by comparison', 'in comparison',
+}
+PRONOUN_SUBJECTS = {'it', 'they', 'he', 'she', 'this', 'these', 'those', 'that', 'them', 'its', 'their'}
+
+def adjunct_span(child):
+    span = child.doc[child.left_edge.i: child.right_edge.i + 1]
+    if span.text.lower() in DISCOURSE_PHRASES or not 2 <= len(span) <= 14:
+        return None
+    if child.dep_ == 'advcl':
+        # "because"/"although" are tagged as markers, "when"/"while" as adverbs of the clause's verb
+        first = span[0]
+        return span if first.dep_ in ('mark', 'advmod') and first.head == child and first.lower_ in MOVABLE_MARKS else None
+    return span if child.dep_ == 'prep' else None
+
+def front_trailing_adjunct(sent, pieces):
+    """"Many studies lack data despite recent advances." -> "Despite recent advances, many studies lack data.\""""
+    doc, root, stop = sent.doc, sent.root, sent[-1].i
+    child = next((c for c in reversed(list(root.rights)) if not c.is_punct), None)
+    if child is None or child.right_edge.i != stop - 1:
+        return None
+    span = adjunct_span(child)
+    if span is None:
+        return None
+    if child.dep_ == 'prep' and child.lower_ not in ALWAYS_MOVABLE_PREPS and not (
+            child.lower_ in SETTING_PREPS and any(t.ent_type_ in ('DATE', 'TIME', 'GPE', 'LOC', 'EVENT')
+                                                  or t.lemma_.lower() in TIME_NOUNS for t in span)):
+        return None
+    if span.start - sent.start < 4 or (span.start <= root.i + 2 and takes_preposition(root)):
+        return None
+    moved = take(pieces, span.start, span.end - 1)
+    main = take(pieces, sent.start, span.start - 1)
+    while main and main[-1][1] in (',', ''):
+        main.pop()      # "X, although Y." -> "Although Y, X."
+    capitalize_first(moved)
+    lowercase_first(main, doc)
+    return moved + [[None, ',']] + main + take(pieces, stop, stop)
+
+def back_fronted_adjunct(sent, pieces):
+    """"When a user asks, the system checks the cache." -> "The system checks the cache when a user asks.\""""
+    doc, root, stop = sent.doc, sent.root, sent[-1].i
+    child = next((c for c in root.lefts if c.left_edge.i == sent.start), None)
+    if child is None or (child.dep_ == 'prep' and child.lower_ in UNMOVABLE_PREPS):
+        return None
+    span = adjunct_span(child)
+    if span is None or span.end >= stop or doc[span.end].text != ',' or stop - (span.end + 1) < 4:
+        return None
+    if child.dep_ == 'prep' and len(span) < 3:
+        return None     # short signposts ("In practice,", "At first,") read oddly at the end
+    subject = next((c for c in root.children if c.dep_ in ('nsubj', 'nsubjpass', 'expl')), None)
+    if subject is None or subject.i <= span.end or subject.lower_ in PRONOUN_SUBJECTS:
+        return None     # "If it's cached, it is returned" can't become "It is returned if it's cached"
+    if any(t.text in (',', ';') or t.lower_ in PRONOUN_SUBJECTS for t in doc[span.end + 1: stop]):
+        return None     # a pronoun would come before the noun it stands for ("stores it ... if the data ...")
+    moved = take(pieces, span.start, span.end - 1)
+    main = take(pieces, span.end + 1, stop - 1)
+    lowercase_first(moved, doc)
+    capitalize_first(main)
+    joiner = [[None, ',']] if doc[span.start].lower_ in CONCESSIVE else []
+    return main + joiner + moved + take(pieces, stop, stop)
+
+# --- Passive to active: "The cache is updated by a worker." -> "A worker updates the cache." ---
+
+SUBJECT_FORMS = {'me': 'I', 'him': 'he', 'her': 'she', 'us': 'we', 'them': 'they'}
+OBJECT_FORMS = {'i': 'me', 'he': 'him', 'she': 'her', 'we': 'us', 'they': 'them'}
+PLURAL_PRONOUNS = {'they', 'them', 'we', 'us', 'you', 'i', 'me'}
+
+def is_time_phrase(token):
+    return any(t.ent_type_ in ('DATE', 'TIME') or t.lemma_.lower() in TIME_NOUNS for t in token.subtree)
+
+def leading_signpost(sent, start):
+    """Tokens before `start` if they are a discourse opener plus comma ("However,", "In practice,"), else None."""
+    prefix = sent.doc[sent.start:start]
+    if not len(prefix):
+        return prefix
+    if prefix[-1].text != ',' or len(prefix) > 5 or prefix[0].head != sent.root or prefix[0].dep_ not in ('advmod', 'prep', 'cc'):
+        return None
+    return prefix
+
+def passive_to_active(sent, pieces):
+    doc, root, stop = sent.doc, sent.root, sent[-1].i
+    if root.tag_ != 'VBN' or next((p[1] for p in pieces if p[0] == root.i), None) != root.text:
+        return None     # not passive, or the verb was already swapped for a synonym
+    kids = list(root.children)
+    auxpass = [c for c in kids if c.dep_ == 'auxpass']
+    subject = next((c for c in kids if c.dep_ == 'nsubjpass'), None)
+    agent = next((c for c in kids if c.dep_ == 'agent' and c.i > root.i), None)
+    if (len(auxpass) != 1 or auxpass[0].lower_ not in ('is', 'are', 'was', 'were') or subject is None or agent is None
+            or any(c.dep_ in ('aux', 'neg') for c in kids) or subject.lower_ in ('which', 'that', 'who', 'what')):
+        return None
+    doer = next((c for c in agent.children if c.dep_ == 'pobj'), None)
+    prefix = leading_signpost(sent, subject.left_edge.i)
+    between = doc[auxpass[0].i + 1: root.i]     # adverbs inside the verb: "is often limited"
+    if (doer is None or prefix is None or doer.left_edge.i != agent.i + 1 or agent.right_edge.i - agent.i > 10
+            or subject.right_edge.i + 1 != auxpass[0].i or any(t.dep_ != 'advmod' for t in between)
+            or root.i - subject.left_edge.i > 14):
+        return None
+    if auxpass[0].lower_ in ('was', 'were'):
+        tag = 'VBD'
+    else:
+        plural = (doer.tag_ in ('NNS', 'NNPS') or doer.lower_ in PLURAL_PRONOUNS
+                  or any(c.dep_ == 'conj' for c in doer.children))
+        tag = 'VBP' if plural else 'VBZ'
+    forms = getInflection(root.lemma_, tag=tag)
+    if not forms:
+        return None
+    # A time phrase the parser hung on the doer ("by a worker every five minutes") goes to the end
+    doer_end = agent.right_edge.i
+    trailing = next((c for c in doer.rights if c.dep_ in ('appos', 'npadvmod') and is_time_phrase(c)), None)
+    if trailing is not None:
+        doer_end = trailing.left_edge.i - 1
+    doers = take(pieces, agent.i + 1, doer_end)
+    receivers = take(pieces, subject.left_edge.i, subject.right_edge.i)
+    rest = [p for p in take(pieces, root.i + 1, stop - 1) if not agent.i <= p[0] <= doer_end]
+    if len(doers) == 1 and doers[0][1].lower() in SUBJECT_FORMS:
+        doers[0][1] = SUBJECT_FORMS[doers[0][1].lower()]
+    if len(receivers) == 1 and receivers[0][1].lower() in OBJECT_FORMS:
+        receivers[0][1] = OBJECT_FORMS[receivers[0][1].lower()]
+    lowercase_first(receivers, doc)
+    head = take(pieces, prefix.start, prefix.end - 1) if len(prefix) else []
+    if head:
+        lowercase_first(doers, doc)
+    else:
+        capitalize_first(doers)
+    adverbs = take(pieces, between.start, between.end - 1) if len(between) else []
+    return head + doers + adverbs + [[None, forms[0]]] + receivers + rest + take(pieces, stop, stop)
+
+# --- "Task managers allow you to plan your day." -> "With task managers, you can plan your day." ---
+
+ENABLING_VERBS = {'allow', 'enable', 'let'}
+
+def enabling_to_with(sent, pieces):
+    doc, root, stop = sent.doc, sent.root, sent[-1].i
+    if root.lemma_.lower() not in ENABLING_VERBS or root.tag_ not in ('VBZ', 'VBP', 'VBD'):
+        return None
+    kids = list(root.children)
+    subject = next((c for c in kids if c.dep_ == 'nsubj' and c.i < root.i), None)
+    action = next((c for c in kids if c.dep_ in ('xcomp', 'ccomp') and c.i > root.i), None)
+    # The person is the verb's object ("enable users to work") or, as spaCy often parses "allow you
+    # to work", the subject of the action
+    person = next((c for c in kids if c.dep_ == 'dobj' and c.i > root.i), None)
+    if person is None and action is not None:
+        person = next((c for c in action.children if c.dep_ == 'nsubj' and c.i < action.i), None)
+    if subject is None or person is None or action is None or any(c.dep_ in ('aux', 'neg') for c in kids):
+        return None
+    if subject.lower_ in PRONOUN_SUBJECTS or subject.left_edge.i != sent.start or subject.pos_ == 'PRON':
+        return None
+    to = doc[action.i - 1]
+    if person.right_edge.i + 1 != (to.i if to.lower_ == 'to' else action.i) or action.tag_ != 'VB':
+        return None
+    adverbs = [c for c in kids if c.dep_ == 'advmod' and subject.right_edge.i < c.i < root.i]
+    if root.i - subject.right_edge.i - 1 != len(adverbs):
+        return None
+    actor = take(pieces, person.left_edge.i, person.right_edge.i)
+    if len(actor) == 1 and actor[0][1].lower() in SUBJECT_FORMS:
+        actor[0][1] = SUBJECT_FORMS[actor[0][1].lower()]
+    means = take(pieces, subject.left_edge.i, subject.right_edge.i)
+    lowercase_first(means, doc)
+    adverb_pieces = [list(p) for p in pieces if p[0] in {a.i for a in adverbs}]
+    tense = [[None, 'could']] if root.tag_ == 'VBD' else [[None, 'can']]
+    return ([[None, 'With']] + means + [[None, ',']] + actor + tense + adverb_pieces
+            + take(pieces, action.i, stop - 1) + take(pieces, stop, stop))
+
+# Chance of changing a sentence's structure, by tone (Academic keeps more of its passive voice)
+PASSIVE_RATE = {'standard': 0.6, 'casual': 0.8, 'professional': 0.5, 'academic': 0.15}
+MOVE_RATE = {'standard': 0.3, 'casual': 0.35, 'professional': 0.2, 'academic': 0.2}
+CHAOS_STRUCTURE_BOOST = 0.2
+
+def restructure(sent, pieces, tone, deep_mode, after_move):
+    boost = CHAOS_STRUCTURE_BOOST if deep_mode else 0.0
+    if random.random() < PASSIVE_RATE[tone] + boost:
+        new = passive_to_active(sent, pieces)
+        if new:
+            return new
+    if not after_move and random.random() < MOVE_RATE[tone] + boost:
+        moves = [front_trailing_adjunct, back_fronted_adjunct, enabling_to_with]
+        random.shuffle(moves)
+        for move in moves:
+            new = move(sent, pieces)
+            if new:
+                return new
+    return None
+
+# --- Where a sentence could become two ---
+
+def split_points(sent, pieces):
+    """", and"/", but" before a clause with its own subject, "; " before a clause, ", which ..." at the end."""
+    doc, stop = sent.doc, sent[-1].i
+    position = {p[0]: k for k, p in enumerate(pieces) if p[0] is not None}
+    points = []
+    for token in sent:
+        i = token.i
+        if i - sent.start < 6 or stop - i < 6:
+            continue
+        before = doc[i - 1]
+        if token.dep_ == 'cc' and token.lower_ in ('and', 'but') and before.text == ',' and token.head.dep_ == 'ROOT':
+            clause = next((c for c in token.head.children if c.dep_ == 'conj' and c.i > i), None)
+            if clause is not None and clause.pos_ in ('VERB', 'AUX') and any(
+                    c.dep_ in ('nsubj', 'nsubjpass', 'expl') for c in clause.children):
+                points.append((position[i - 1], token.lower_))
+        elif token.text == ';':
+            if any(t.dep_ in ('nsubj', 'nsubjpass', 'expl') and t.head.i > i for t in doc[i + 1: stop]):
+                points.append((position[i], ';'))
+        elif (token.lower_ == 'which' and before.text == ',' and token.dep_ in ('nsubj', 'nsubjpass')
+              and token.head.dep_ == 'relcl' and token.head.right_edge.i == stop - 1):
+            verb = token.head
+            plural = verb.tag_ == 'VBP' or any(c.lower_ in ('are', 'were', 'have') for c in verb.children)
+            points.append((position[i - 1], 'which-plural' if plural else 'which'))
+    return points
+
+def split_sentence(sentence, point, tone):
+    position, kind = point
+    left = [list(p) for p in sentence.pieces[:position]] + [[None, '.']]
+    rest = [list(p) for p in sentence.pieces[position + 1:]]
+    if kind == 'and':
+        rest = rest[1:]
+    elif kind == 'but':
+        rest = [[None, 'However,' if tone == 'academic' else 'But']] + rest[1:]
+    elif kind == 'which':
+        rest = [[None, random.choice(['This', 'That'])]] + rest[1:]
+    elif kind == 'which-plural':
+        rest = [[None, 'They']] + rest[1:]
+    capitalize_first(rest)
+    origin = object()
+    return [Sentence(left, sentence.doc, origin=origin), Sentence(rest, sentence.doc, origin=origin)]
+
+# ==========================================
+#   STEP 5: RHYTHM
+# ==========================================
+# People mix short and long sentences; AI text keeps them evenly sized. The spread of sentence
+# lengths (standard deviation / mean) is pushed toward a human-like level by splitting long
+# sentences at safe points and joining short neighbours.
+
+RHYTHM_TARGET = {'standard': 0.5, 'casual': 0.55, 'professional': 0.4, 'academic': 0.4}
+RHYTHM_OPS = {'standard': 0.35, 'casual': 0.45, 'professional': 0.25, 'academic': 0.25}   # changes per sentence
+CHAOS_RHYTHM_TARGET, CHAOS_RHYTHM_OPS = 0.6, 0.6
+MERGE_MAX_WORDS = 14
+
+# Openers that become the joining word when two sentences merge ("X. However, Y." -> "X, but Y.")
+JOINING_OPENERS = {'also': 'and', 'plus': 'and', 'however': 'but', 'but': 'but', 'still': 'but', 'yet': 'but', 'so': 'so'}
+
+def spread(lengths):
+    mean = sum(lengths) / len(lengths)
+    return (sum((x - mean) ** 2 for x in lengths) / len(lengths)) ** 0.5 / mean if mean else 0.0
+
+def mergeable(a, b):
+    if a.origin is not None and a.origin is b.origin:
+        return False
+    for s in (a, b):
+        last = s.pieces[-1][1] if s.pieces else ''
+        if last != '.' or s.words() > MERGE_MAX_WORDS or any(t in (';', ':', '"', '“', '”', '(') for _, t in s.pieces):
+            return False
+    return True
+
+def merge_sentences(a, b, tone):
+    left = [list(p) for p in a.pieces[:-1]]
+    right = [list(p) for p in b.pieces]
+    conjunction = 'and'
+    head = first_piece(right)
+    opener = head[1].lower().rstrip(',') if head else ''
+    if opener in JOINING_OPENERS:
+        conjunction = JOINING_OPENERS[opener]
+        right = right[right.index(head) + 1:]
+        if right and right[0][1] == ',':
+            right = right[1:]
+    lowercase_first(right, a.doc)
+    joiner = [[None, ';']] if tone == 'academic' and conjunction == 'and' else [[None, ','], [None, conjunction]]
+    return Sentence(left + joiner + right, a.doc)
+
+def vary_rhythm(sentences, tone, deep_mode):
+    target = CHAOS_RHYTHM_TARGET if deep_mode else RHYTHM_TARGET[tone]
+    budget = max(1, round(len(sentences) * (CHAOS_RHYTHM_OPS if deep_mode else RHYTHM_OPS[tone])))
+    for _ in range(budget):
+        lengths = [s.words() for s in sentences]
+        current = spread(lengths) if len(lengths) > 1 else 0.0
+        if current >= target and random.random() < 0.7:
+            break
+        options = []
+        for k, s in enumerate(sentences):
+            for point in s.splits:
+                left = sum(1 for _, t in s.pieces[:point[0]] if t and t[0].isalnum())
+                options.append((spread(lengths[:k] + [left, lengths[k] - left] + lengths[k + 1:]) - current, 'split', k, point))
+        for k in range(len(sentences) - 1):
+            if mergeable(sentences[k], sentences[k + 1]):
+                merged = lengths[:k] + [lengths[k] + lengths[k + 1]] + lengths[k + 2:]
+                options.append(((spread(merged) if len(merged) > 1 else 0.0) - current, 'merge', k, None))
+        if not options:
+            break
+        random.shuffle(options)
+        gain, operation, k, point = max(options, key=lambda option: option[0])
+        if gain <= 0.01:
+            break
+        if operation == 'split':
+            sentences[k:k + 1] = split_sentence(sentences[k], point, tone)
+        else:
+            sentences[k:k + 2] = [merge_sentences(sentences[k], sentences[k + 1], tone)]
+    return sentences
+
+def vary_openings(sentences):
+    """Two sentences in a row that open with the same word: restructure the second if possible."""
+    for k in range(1, len(sentences)):
+        s = sentences[k]
+        if s.opener() != sentences[k - 1].opener() or s.span is None or s.reordered:
+            continue
+        for transform in (front_trailing_adjunct, passive_to_active, back_fronted_adjunct, enabling_to_with):
+            new = transform(s.span, s.pieces)
+            if new:
+                s.pieces, s.reordered, s.splits = new, True, []
+                break
+
+# ==========================================
+#   STEP 6: PUNCTUATION
+# ==========================================
+
+EM_DASH_PAIR = re.compile(r'\s*—\s*([^—\n]{1,80}?)\s*—\s*')
+EM_DASH_ONE = re.compile(r'\s*—\s*(?=[a-z])')
+
+def soften_dashes(text, tone):
+    """AI text leans on em dashes; most become parentheses (or commas, in Casual)."""
+    if '—' not in text or random.random() < 0.3:
+        return text
+    aside = (lambda m: ', ' + m.group(1) + ', ') if tone == 'casual' else (lambda m: ' (' + m.group(1) + ') ')
+    return EM_DASH_ONE.sub(', ', EM_DASH_PAIR.sub(aside, text))
+
+def tidy(text):
+    # Only spacing the layers can introduce; the writer's own spacing is left alone
+    text = re.sub(r'[ \t]+([,.;:!?)])(?=\s|$)', r'\1', text)
+    return re.sub(r'\([ \t]+', '(', text)
+
+# ==========================================
+#   PUTTING THE LAYERS TOGETHER
+# ==========================================
+
+BULLET = re.compile(r'^\s*(?:[-*•▪◦]|\d+[.)]|[A-Za-z][.)])\s')
+PROSE_END = re.compile(r'[.!?]["”’)\]]?\s*$')
+LINE_BREAKS = re.compile(r'(\s*\n\s*)')
+
+def is_prose(block):
+    """Running text, as opposed to a heading or list item (those only get word-level edits)."""
+    return not BULLET.match(block) and bool(PROSE_END.search(block)) and len(block.split()) >= 6
+
+def rewrite_block(doc, tone, deep_mode, prose):
+    edits = plan_word_edits(doc, tone, deep_mode)
+    if not prose:
+        return ''.join(edits.get(t.i, t.text) + t.whitespace_ for t in doc)
+    sentences = []
+    for sent in doc.sents:
+        pieces = [[t.i, edits.get(t.i, t.text)] for t in sent if not t.is_space]
+        if not pieces:
+            continue
+        sentence = Sentence(pieces, doc, sent)
+        if restructurable(sent):
+            new = restructure(sent, pieces, tone, deep_mode, after_move=bool(sentences and sentences[-1].reordered))
+            if new:
+                sentence.pieces, sentence.reordered = new, True
+            else:
+                sentence.splits = split_points(sent, pieces)
+        sentences.append(sentence)
+    sentences = vary_rhythm(sentences, tone, deep_mode)
+    vary_openings(sentences)
+    return ' '.join(soften_dashes(s.text(), tone) for s in sentences)
+
+def rewrite_with_spacy(text, tone, deep_mode):
+    parts = LINE_BREAKS.split(text)      # paragraphs and lines at even positions, the breaks between them at odd ones
+    jobs = []
+    for k in range(0, len(parts), 2):
+        block = parts[k]
+        core = block.strip()
+        if core:
+            jobs.append((k, block[:len(block) - len(block.lstrip())], core, block[len(block.rstrip()):]))
+    with _NLP_LOCK:
+        docs = list(NLP.pipe([core for _, _, core, _ in jobs]))
+    for (k, lead, core, trail), doc in zip(jobs, docs):
+        parts[k] = lead + tidy(rewrite_block(doc, tone, deep_mode, is_prose(core))) + trail
+    return ''.join(parts)
 
 # A word with optional surrounding punctuation, e.g. '"Hello,' -> ('"', 'Hello', ',')
 WORD_PATTERN = re.compile(r'^(\W*)([A-Za-z]+)(\W*)$')
@@ -497,6 +1140,8 @@ def rewrite_basic(text, tone, deep_mode):
             continue
         ai_key = next((f'{lower}|{p}' for p in UPOS_TO_WORDNET if f'{lower}|{p}' in AI_WORDS), None)
         plain_key = next((f'{lower}|{p}' for p in UPOS_TO_WORDNET if f'{lower}|{p}' in PLAIN_WORDS), None)
+        if (ai_key or plain_key) in POSITION_DEPENDENT:
+            continue    # needs the parse to know it's in the right position
         if ai_key:
             replacement = pick(AI_WORDS[ai_key], tone)
         elif plain_key and random.random() < plain_chance:

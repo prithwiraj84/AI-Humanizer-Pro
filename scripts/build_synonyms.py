@@ -52,6 +52,11 @@ EXCLUDED_USAGE_DOMAINS = ('vulgarism.n.01', 'obscenity.n.01', 'disparagement.n.0
 EXTRA_BLOCKLIST = {'arse', 'bastard', 'bitch', 'bugger', 'crap', 'damn', 'piss', 'prick', 'screw', 'shit', 'whore'}
 # Real synonyms whose connotation changes the message ("strategy" -> "scheme" sounds shady)
 AWKWARD_SYNONYMS = {'scheme', 'grapevine', 'plot', 'racket', 'ploy', 'someone', 'somebody', 'soul', 'mortal'}
+# Pairs that share a WordNet sense but not everyday usage ("organize your work" is not "form your work")
+AWKWARD_PAIRS = {
+    'organize': {'form'}, 'organise': {'form'}, 'implement': {'enforce'}, 'provide': {'render', 'furnish'},
+    'demonstrate': {'present'}, 'render': {'provide', 'furnish'},
+}
 # Very common nouns and verbs have many meanings ("improve their results" is not "...their effects"),
 # so words used at least this often in Brown are never swapped through WordNet
 COMMON_WORD_CAP = {'n': 300, 'v': 600}
@@ -72,6 +77,20 @@ def flagged_words():
 def main():
     counts = Counter(w.lower() for w in brown.words() if w.isalpha())
     blocked = flagged_words() | GENERIC_WORDS | AWKWARD_SYNONYMS
+
+    @lru_cache(maxsize=None)
+    def main_senses(word, pos):
+        """The senses a word is mostly used in: its most-tagged sense in SemCor, plus its second
+        if that is tagged at least half as often."""
+        usage = sorted(((next(l.count() for l in s.lemmas() if l.name() == word), s)
+                        for s in wordnet.synsets(word, pos=pos) if word in s.lemma_names()),
+                       key=lambda item: -item[0])
+        if not usage or usage[0][0] == 0:
+            return frozenset()
+        keep = [usage[0][1]]
+        if len(usage) > 1 and usage[1][0] >= SECOND_SENSE_SHARE * usage[0][0]:
+            keep.append(usage[1][1])
+        return frozenset(keep)
 
     @lru_cache(maxsize=None)
     def frequency(word, pos):
@@ -99,6 +118,10 @@ def main():
                     name = entry.name()
                     if (name == lemma or name in ranked or not name.isalpha() or not name.islower()
                             or len(name) < MIN_WORD_LENGTH or name in blocked or entry.count() < MIN_SENSE_COUNT):
+                        continue
+                    # The shared meaning must be one the candidate is mainly used in, too: "organize"
+                    # and "form" share a sense, but "form" mostly means "make up", so it isn't offered
+                    if synset not in main_senses(name, pos) or name in AWKWARD_PAIRS.get(lemma, ()):
                         continue
                     freq = frequency(name, pos)
                     if freq >= MIN_FREQUENCY:
