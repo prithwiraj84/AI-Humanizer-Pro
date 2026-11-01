@@ -1,0 +1,7 @@
+{% extends 'emails/_layout.html' %}
+{% block content %}
+<h1 style="margin:0 0 12px;font-size:22px;color:#16171B;">Your password reset code</h1>
+<p>Use this code to reset your password. It expires in 10 minutes.</p>
+<p style="margin:22px 0;padding:16px;background:#F3F1EC;border-radius:10px;text-align:center;font-size:28px;font-weight:700;letter-spacing:8px;color:#16171B;">{{ otp }}</p>
+{% endblock %}
+{% block footer %}If you didn't ask to reset your password, you can ignore this email; your password won't change.{% endblock %}

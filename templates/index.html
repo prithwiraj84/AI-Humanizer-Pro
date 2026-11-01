@@ -1,0 +1,389 @@
+{% extends 'base.html' %}
+{% from '_macros.html' import icon %}
+{% set active_page = 'editor' %}
+
+{% block title %}Editor · AI Humanizer{% endblock %}
+{% block robots %}noindex, nofollow{% endblock %}
+{% block body_class %}app{% endblock %}
+
+{% block body %}
+{% include '_nav.html' %}
+
+<main class="container page">
+    <header class="page-head">
+        <div class="reveal">
+            <span class="eyebrow">Workspace</span>
+            <h1 class="display">Turn machine-written drafts into <em>natural prose</em>.</h1>
+            <p class="lede">Paste your text, choose a tone, and review every rewritten word before you copy it.</p>
+        </div>
+    </header>
+
+    <section class="card editor reveal" style="--d: 1">
+        <div class="editor-toolbar">
+            <div class="toolbar-group">
+                <span class="toolbar-label">Tone</span>
+                <div class="segmented" id="toneControl" role="radiogroup" aria-label="Tone">
+                    <input type="radio" name="tone" id="tone-standard" value="standard" checked><label for="tone-standard">Standard</label>
+                    <input type="radio" name="tone" id="tone-professional" value="professional"><label for="tone-professional">Professional</label>
+                    <input type="radio" name="tone" id="tone-casual" value="casual"><label for="tone-casual">Casual</label>
+                    <input type="radio" name="tone" id="tone-academic" value="academic"><label for="tone-academic">Academic</label>
+                    <span class="segmented-thumb" aria-hidden="true"></span>
+                </div>
+            </div>
+
+            <label class="switch-field">
+                <span class="switch">
+                    <input type="checkbox" id="deepMode">
+                    <span class="switch-track"></span>
+                    <span class="switch-thumb"></span>
+                </span>
+                <span class="switch-text">
+                    <strong>Chaos Mode</strong>
+                    <small>Deeper rewrite, splits long sentences</small>
+                </span>
+            </label>
+        </div>
+
+        <div class="editor-panes">
+            <div class="pane">
+                <div class="pane-head">
+                    <span class="pane-title"><span class="dot"></span>Original</span>
+                    <span class="pane-meta" id="inputWordCount">0 words</span>
+                </div>
+                <textarea id="inputText" placeholder="Paste or type the text you want to humanize…" aria-label="Original text"></textarea>
+                <div class="pane-foot">
+                    <div class="pane-actions">
+                        <button class="btn btn-ghost btn-sm" type="button" onclick="pasteText()">{{ icon('clipboard') }}<span>Paste</span></button>
+                        <button class="btn btn-ghost btn-sm" type="button" onclick="clearInput()">{{ icon('trash') }}<span>Clear</span></button>
+                    </div>
+                    <span class="char-count" id="charCount">0 / 20,000</span>
+                </div>
+            </div>
+
+            <div class="pane pane-output">
+                <div class="pane-head">
+                    <span class="pane-title"><span class="dot"></span>Humanized</span>
+                    <span class="status-chip" id="statusText" data-state="idle">Ready</span>
+                </div>
+                <div id="output-display" class="output" aria-live="polite">
+                    <div class="output-empty">
+                        <span class="empty-art">{{ icon('sparkle', 'icon-lg') }}</span>
+                        <div><strong>Your rewritten text appears here</strong>Changed words are highlighted so you can review them.</div>
+                    </div>
+                </div>
+                <div class="pane-foot">
+                    <span class="legend"><span class="legend-swatch"></span>Changed words</span>
+                    <div class="pane-actions">
+                        <button class="btn btn-ghost btn-sm" type="button" onclick="copyResult(this)">{{ icon('copy') }}<span>Copy</span></button>
+                        <button class="btn btn-ghost btn-sm" type="button" onclick="downloadText()">{{ icon('download') }}<span>Download</span></button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="editor-cta">
+            <span class="hint"><kbd>Ctrl</kbd>+<kbd>Enter</kbd> to humanize</span>
+            <button id="actionBtn" class="btn btn-primary btn-lg" type="button" onclick="processText()">
+                {{ icon('sparkle') }}<span>Humanize text</span>
+            </button>
+        </div>
+    </section>
+
+    <section class="stats" id="statsSection">
+        <div class="card stat reveal" style="--d: 2">
+            <div class="ring">
+                <svg viewBox="0 0 76 76"><circle class="ring-track" cx="38" cy="38" r="32"/><circle class="ring-value" id="changedRing" cx="38" cy="38" r="32"/></svg>
+                <span class="ring-label" id="changedPercent">0%</span>
+            </div>
+            <div>
+                <div class="stat-title">Words changed</div>
+                <div class="stat-desc" id="changedCount">Share of words rewritten</div>
+            </div>
+        </div>
+
+        <div class="card stat reveal" style="--d: 3">
+            <div class="ring">
+                <svg viewBox="0 0 76 76"><circle class="ring-track" cx="38" cy="38" r="32"/><circle class="ring-value ink" id="structRing" cx="38" cy="38" r="32"/></svg>
+                <span class="ring-label" id="structChange">0%</span>
+            </div>
+            <div>
+                <div class="stat-title">Structural shift</div>
+                <div class="stat-desc">How much the word sequence differs</div>
+            </div>
+        </div>
+
+        <div class="card stat stat-quote reveal" style="--d: 4">
+            <div class="stat-title">Longest unchanged run</div>
+            <blockquote id="longestUnchanged">Run the humanizer to see which passage stayed the same.</blockquote>
+        </div>
+    </section>
+
+    <section>
+        <div class="section-head">
+            <h2 class="section-title">{{ icon('clock') }}Recent</h2>
+            <button class="btn btn-ghost btn-sm" type="button" id="clearHistoryBtn" onclick="clearHistory()" hidden>Clear history</button>
+        </div>
+        <div id="historyList" class="history-list"></div>
+    </section>
+</main>
+
+{% include '_footer.html' %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const MAX_CHARS = 20000;
+    const HISTORY_KEY = 'ai_humanizer_history';
+    const RING_LENGTH = 2 * Math.PI * 32;
+
+    // Exact text returned by the server (the on-screen diff is only for display)
+    let lastResult = '';
+
+    const inputEl = document.getElementById('inputText');
+    const outputEl = document.getElementById('output-display');
+    const statusEl = document.getElementById('statusText');
+    const actionBtn = document.getElementById('actionBtn');
+    const actionLabel = actionBtn.innerHTML;
+    const emptyOutput = outputEl.innerHTML;
+
+    const countWords = (text) => text.trim() ? text.trim().split(/\s+/).length : 0;
+
+    // --- INPUT ---
+    function updateCounts() {
+        const text = inputEl.value;
+        const words = countWords(text);
+        document.getElementById('inputWordCount').textContent = `${words.toLocaleString()} ${words === 1 ? 'word' : 'words'}`;
+        const chars = document.getElementById('charCount');
+        chars.textContent = `${text.length.toLocaleString()} / ${MAX_CHARS.toLocaleString()}`;
+        chars.classList.toggle('is-over', text.length > MAX_CHARS);
+    }
+
+    inputEl.addEventListener('input', updateCounts);
+
+    function clearInput() {
+        inputEl.value = '';
+        updateCounts();
+        inputEl.focus();
+    }
+
+    async function pasteText() {
+        try {
+            inputEl.value = await navigator.clipboard.readText();
+            updateCounts();
+        } catch (e) {
+            toast('Clipboard access was blocked. Paste with Ctrl+V instead.', 'error');
+        }
+    }
+
+    // --- OUTPUT ---
+    function copyResult(button) {
+        if (!lastResult) {
+            toast('Nothing to copy yet.', 'error');
+            return;
+        }
+        copyText(lastResult, button);
+    }
+
+    function downloadText() {
+        if (!lastResult) {
+            toast('Nothing to download yet.', 'error');
+            return;
+        }
+        const blob = new Blob([lastResult], { type: 'text/plain' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'humanized_text.txt';
+        a.click();
+        URL.revokeObjectURL(a.href);
+    }
+
+    function setStatus(state, label) {
+        statusEl.dataset.state = state;
+        statusEl.textContent = label;
+    }
+
+    function showSkeleton() {
+        outputEl.innerHTML = [94, 100, 86, 97, 72, 90, 58]
+            .map((w, i) => `<div class="skeleton-line" style="width:${w}%; animation-delay:${i * 90}ms"></div>`)
+            .join('');
+    }
+
+    // --- TONE CONTROL ---
+    const toneControl = document.getElementById('toneControl');
+    const toneThumb = toneControl.querySelector('.segmented-thumb');
+
+    function moveThumb() {
+        const label = toneControl.querySelector('input:checked + label');
+        toneThumb.style.width = `${label.offsetWidth}px`;
+        toneThumb.style.transform = `translateX(${label.offsetLeft}px)`;
+    }
+
+    toneControl.addEventListener('change', moveThumb);
+    window.addEventListener('resize', moveThumb);
+    toneThumb.style.transition = 'none';
+    moveThumb();
+    requestAnimationFrame(() => { toneThumb.style.transition = ''; });
+    if (document.fonts) document.fonts.ready.then(moveThumb);
+
+    const getTone = () => toneControl.querySelector('input:checked').value;
+
+    // --- STATS ---
+    function setRing(id, percent) {
+        const clamped = Math.max(0, Math.min(100, percent));
+        document.getElementById(id).style.strokeDashoffset = RING_LENGTH * (1 - clamped / 100);
+    }
+
+    function renderResult(input, data) {
+        lastResult = data.humanized;
+
+        // The server escapes the text inside diff_html
+        outputEl.innerHTML = data.diff_html;
+        outputEl.classList.remove('is-revealed');
+        void outputEl.offsetWidth;
+        outputEl.classList.add('is-revealed');
+        outputEl.querySelectorAll('.added').forEach((el, i) => {
+            el.style.setProperty('--d', `${Math.min(i * 35, 1400)}ms`);
+        });
+        outputEl.scrollTop = 0;
+
+        const totalWords = countWords(input);
+        const changed = totalWords ? Math.min(100, data.changed_words / totalWords * 100) : 0;
+        const structural = parseFloat(data.structural_changes) || 0;
+
+        countUp(document.getElementById('changedPercent'), changed, { suffix: '%' });
+        countUp(document.getElementById('structChange'), structural, { suffix: '%' });
+        setRing('changedRing', changed);
+        setRing('structRing', structural);
+
+        document.getElementById('changedCount').textContent =
+            `${data.changed_words.toLocaleString()} of ${totalWords.toLocaleString()} words rewritten`;
+        document.getElementById('longestUnchanged').textContent =
+            data.longest_unchanged === 'None' ? 'Every passage was rewritten.' : `“${data.longest_unchanged}”`;
+        document.getElementById('statsSection').classList.add('has-data');
+    }
+
+    // --- MAIN LOGIC ---
+    async function processText() {
+        if (actionBtn.disabled) return;
+        const input = inputEl.value;
+
+        if (!input.trim()) {
+            toast('Add some text to humanize first.', 'error');
+            inputEl.focus();
+            return;
+        }
+        if (input.length > MAX_CHARS) {
+            toast(`Text is too long. The limit is ${MAX_CHARS.toLocaleString()} characters.`, 'error');
+            return;
+        }
+
+        const previousOutput = outputEl.innerHTML;
+        actionBtn.disabled = true;
+        actionBtn.innerHTML = '<span class="spinner"></span><span>Humanizing…</span>';
+        setStatus('working', 'Rewriting');
+        showSkeleton();
+
+        try {
+            const response = await fetch('/humanize', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ text: input, tone: getTone(), deep_mode: document.getElementById('deepMode').checked })
+            });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) throw new Error(data.error || 'Something went wrong. Please try again.');
+
+            renderResult(input, data);
+            saveToHistory(input, data.humanized);
+            setStatus('done', 'Done');
+        } catch (e) {
+            outputEl.innerHTML = previousOutput;
+            setStatus('error', 'Failed');
+            toast(e instanceof TypeError ? 'Connection error. Check that the server is running.' : e.message, 'error');
+        } finally {
+            actionBtn.disabled = false;
+            actionBtn.innerHTML = actionLabel;
+        }
+    }
+
+    document.addEventListener('keydown', (e) => {
+        if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+            e.preventDefault();
+            processText();
+        }
+    });
+
+    // --- HISTORY SYSTEM ---
+    function readHistory() {
+        try {
+            const items = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
+            return Array.isArray(items) ? items : [];
+        } catch {
+            return [];
+        }
+    }
+
+    function writeHistory(items) {
+        try {
+            localStorage.setItem(HISTORY_KEY, JSON.stringify(items));
+        } catch {
+            // Storage can be full or blocked; history is a convenience only
+        }
+    }
+
+    function formatTime(value) {
+        const date = new Date(value);
+        if (isNaN(date)) return String(value || '');
+        return date.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    }
+
+    function saveToHistory(input, result) {
+        const items = readHistory();
+        items.unshift({ time: new Date().toISOString(), input, result, preview: result.slice(0, 160) });
+        writeHistory(items.slice(0, 6));
+        renderHistory();
+    }
+
+    function renderHistory() {
+        const items = readHistory();
+        const list = document.getElementById('historyList');
+        document.getElementById('clearHistoryBtn').hidden = items.length === 0;
+
+        if (!items.length) {
+            list.innerHTML = '<div class="history-empty">Your last six results will appear here.</div>';
+            return;
+        }
+
+        list.innerHTML = items.map((item, i) => `
+            <button class="history-item" type="button" onclick="restoreHistory(${i})" style="--d: ${i}">
+                <span class="history-meta">
+                    <span>${escapeHtml(formatTime(item.time))}</span>
+                    <span>${item.result ? `${countWords(item.result)} words` : ''}</span>
+                </span>
+                <span class="history-preview">${escapeHtml(item.preview || '')}</span>
+            </button>
+        `).join('');
+    }
+
+    function restoreHistory(index) {
+        const item = readHistory()[index];
+        if (!item || !item.result) {
+            toast('This older entry only kept a preview.', 'error');
+            return;
+        }
+        inputEl.value = item.input || '';
+        updateCounts();
+        lastResult = item.result;
+        outputEl.textContent = item.result;
+        setStatus('done', 'Restored');
+        document.querySelector('.editor').scrollIntoView({ behavior: prefersReducedMotion() ? 'auto' : 'smooth', block: 'start' });
+    }
+
+    function clearHistory() {
+        writeHistory([]);
+        renderHistory();
+    }
+
+    updateCounts();
+    renderHistory();
+</script>
+{% endblock %}

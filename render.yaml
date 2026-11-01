@@ -1,25 +1,82 @@
-# Render blueprint — ONE web service serving the website + API together.
-# Build via the Dockerfile (Node builds the Next.js export, Python serves it
-# alongside the FastAPI API). Docs: https://render.com/docs/blueprint-spec
+# Render Blueprint: New > Blueprint in the Render dashboard, then pick this repo.
+# Secrets marked `sync: false` are asked for when the Blueprint is created.
 services:
   - type: web
     name: ai-humanizer
-    runtime: docker
+    runtime: python
     plan: free
-    dockerfilePath: ./Dockerfile
+    buildCommand: pip install -r requirements.txt && python scripts/fetch_geoip.py
+    startCommand: gunicorn app:app
     healthCheckPath: /healthz
     envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.11
       - key: SECRET_KEY
-        generateValue: true        # Render generates a stable random value
-      - key: ADMIN_EMAIL
-        sync: false                # set real values in the dashboard
-      - key: ADMIN_PASSWORD
+        generateValue: true
+      # PostgreSQL connection string (e.g. a free Neon database). Required in production:
+      # without it accounts live in SQLite, which Render's free tier wipes on every restart.
+      - key: DATABASE_URL
+        sync: false
+      # Public address for canonical links, the sitemap and social previews, e.g. https://your-domain.com
+      - key: SITE_URL
+        sync: false
+      # Shown on the privacy page for data-deletion requests (optional)
+      - key: CONTACT_EMAIL
+        sync: false
+      # Razorpay API keys (Dashboard > Account & Settings > API Keys) and webhook secret
+      # (Dashboard > Webhooks: URL https://<your-domain>/api/billing/webhook, events order.paid, and for
+      # auto-renewal subscription.activated, subscription.charged, subscription.pending, subscription.halted,
+      # subscription.cancelled, subscription.completed)
+      - key: RAZORPAY_KEY_ID
+        sync: false
+      - key: RAZORPAY_KEY_SECRET
+        sync: false
+      - key: RAZORPAY_WEBHOOK_SECRET
+        sync: false
+      # "1" offers auto-renewal (Razorpay Subscriptions must be enabled on the account; rupee prices only)
+      - key: RAZORPAY_AUTOPAY
+        value: "0"
+      # GSTIN printed on tax invoices (leave empty if not GST-registered: plain receipts are issued).
+      # Optional: GST_SAC_CODE (default 998314; confirm with your accountant), INVOICE_PREFIX (default INV),
+      # GST_LUT_ARN (Letter of Undertaking for zero-rated export invoices)
+      - key: BUSINESS_GSTIN
+        sync: false
+      # Cloudflare Turnstile bot check on sign-up (dash.cloudflare.com > Turnstile)
+      - key: TURNSTILE_SITE_KEY
+        sync: false
+      - key: TURNSTILE_SECRET_KEY
+        sync: false
+      # Comma-separated emails of verified accounts allowed into /admin
+      - key: ADMIN_EMAILS
+        sync: false
+      # Shared secret for POST /internal/tasks (daily reminders), called by .github/workflows/daily-tasks.yml
+      - key: CRON_SECRET
+        generateValue: true
+      # Free API requests per new account (0 disables the trial)
+      - key: API_TRIAL_REQUESTS
+        value: "50"
+      # Shown on the contact and legal pages, which Razorpay reviews before going live
+      - key: BUSINESS_NAME
+        sync: false
+      - key: BUSINESS_ADDRESS
+        sync: false
+      - key: CONTACT_PHONE
+        sync: false
+      # Named on the privacy policy, terms and contact page (required by Indian data protection rules)
+      - key: GRIEVANCE_OFFICER
+        sync: false
+      # City whose courts are named in the terms, e.g. Kolkata
+      - key: JURISDICTION_CITY
         sync: false
       - key: SENDER_EMAIL
         sync: false
       - key: SENDER_PASSWORD
         sync: false
-      - key: SMTP_SERVER
-        value: smtp.gmail.com
-      - key: SMTP_PORT
-        value: "587"
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: GITHUB_CLIENT_ID
+        sync: false
+      - key: GITHUB_CLIENT_SECRET
+        sync: false

@@ -1,0 +1,8 @@
+{% extends 'emails/_layout.html' %}
+{% block content %}
+<h1 style="margin:0 0 12px;font-size:22px;color:#16171B;">Confirm your email address</h1>
+<p>Hi {{ username }}, thanks for creating an account. Confirm this is your email address to unlock API keys, your free API requests and API plans.</p>
+{% with url = verify_url, label = 'Verify my email' %}{% include 'emails/_button.html' %}{% endwith %}
+<p style="font-size:13px;">This link expires in 3 days. If the button doesn't work, paste this address into your browser:<br><span style="color:#16171B;word-break:break-all;">{{ verify_url }}</span></p>
+{% endblock %}
+{% block footer %}If you didn't create this account, you can ignore this email.{% endblock %}

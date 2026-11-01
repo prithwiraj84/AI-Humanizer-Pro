@@ -1,0 +1,84 @@
+{% extends 'auth_base.html' %}
+{% from '_macros.html' import icon, alert_box %}
+
+{% block title %}Sign in · AI Humanizer{% endblock %}
+{% block description %}Sign in to AI Humanizer with email, Google or GitHub to rewrite AI drafts in a natural voice.{% endblock %}
+{% block robots %}noindex, follow{% endblock %}
+
+{% block form %}
+<h1>Welcome back</h1>
+<p class="sub">Sign in to continue to your workspace.</p>
+
+{{ alert_box() }}
+
+{% with divider_text = 'or sign in with email' %}{% include '_oauth_buttons.html' %}{% endwith %}
+
+<form id="loginForm" novalidate>
+    <div class="field">
+        <label class="label" for="email">Email</label>
+        <div class="input-wrap">
+            {{ icon('mail', 'input-icon') }}
+            <input class="input has-icon" type="email" id="email" placeholder="you@company.com" autocomplete="email" autofocus>
+        </div>
+    </div>
+
+    <div class="field">
+        <div class="label-row">
+            <label class="label" for="password">Password</label>
+            <a href="/forgot-password">Forgot password?</a>
+        </div>
+        <div class="input-wrap">
+            {{ icon('lock', 'input-icon') }}
+            <input class="input has-icon has-action" type="password" id="password" placeholder="Enter your password" autocomplete="current-password">
+            <button type="button" class="icon-btn input-action" id="togglePassword" aria-label="Show password">{{ icon('eye') }}</button>
+        </div>
+    </div>
+
+    <button type="submit" class="btn btn-primary btn-lg btn-block" id="submitBtn">Sign in {{ icon('arrow-right') }}</button>
+</form>
+
+<p class="auth-switch">New to AI Humanizer? <a href="/signup">Create an account</a></p>
+{% endblock %}
+
+{% block page_scripts %}
+<script>
+    bindPasswordToggle('togglePassword', 'password');
+
+    const submitBtn = document.getElementById('submitBtn');
+    const submitLabel = submitBtn.innerHTML;
+
+    document.getElementById('loginForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        hideAlert();
+
+        const email = document.getElementById('email').value.trim();
+        const password = document.getElementById('password').value;
+
+        if (!email || !password) {
+            showAlert('error', 'Enter your email and password.');
+            return;
+        }
+
+        setLoading(submitBtn, true, 'Signing in…');
+
+        try {
+            const response = await fetch('/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email, password })
+            });
+            const data = await response.json().catch(() => ({}));
+
+            if (data.success) {
+                showAlert('success', 'Signed in. Taking you to your workspace…');
+                setTimeout(() => { window.location.href = NEXT_PAGE || '/editor'; }, 700);
+                return;
+            }
+            showAlert('error', data.message || 'Sign in failed. Please try again.');
+        } catch (error) {
+            showAlert('error', 'Connection error. Please try again.');
+        }
+        setLoading(submitBtn, false, submitLabel);
+    });
+</script>
+{% endblock %}

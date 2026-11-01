@@ -1,0 +1,6 @@
+{# Contact and grievance details shared by the legal pages #}
+<div class="card legal-contact">
+    <div><span class="type">Business</span><strong>{{ business_name }}</strong>{% if business_address %}<span>{{ business_address }}</span>{% endif %}</div>
+    <div><span class="type">Email</span>{% if contact_email %}<a href="mailto:{{ contact_email }}">{{ contact_email }}</a>{% else %}<a href="/contact">Contact page</a>{% endif %}</div>
+    <div><span class="type">Grievance Officer</span><strong>{{ grievance_officer or business_name }}</strong>{% if contact_email %}<a href="mailto:{{ contact_email }}">{{ contact_email }}</a>{% endif %}</div>
+</div>

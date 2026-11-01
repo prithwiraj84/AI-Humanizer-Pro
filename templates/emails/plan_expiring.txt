@@ -1,0 +1,7 @@
+Your {{ plan_name }} plan ends on {{ end_date }}
+
+Hi {{ username }}, your API plan has {{ remaining }} requests left and ends on {{ end_date }}.
+After that, API calls will return "402 Payment Required" until you buy a plan or a top-up.
+Buying any plan before then adds to your plan's time and carries over your unused requests.
+
+Renew: {{ pricing_url }}

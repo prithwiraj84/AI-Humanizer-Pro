@@ -1,0 +1,8 @@
+Confirm your email address
+
+Hi {{ username }}, thanks for creating an account on {{ business_name }}.
+Confirm this is your email address to unlock API keys, your free API requests and API plans:
+
+{{ verify_url }}
+
+This link expires in 3 days. If you didn't create this account, you can ignore this email.

@@ -1,0 +1,39 @@
+{% extends 'base.html' %}
+{% set active_page = 'refunds' %}
+
+{% block title %}Refund, Cancellation &amp; Delivery Policy · AI Humanizer{% endblock %}
+{% block description %}How AI Humanizer API plans and top-ups are delivered, how to turn off auto-renewal, and how to get a refund within 7 days of purchase.{% endblock %}
+{% block body_class %}app{% endblock %}
+
+{% block body %}
+{% include '_nav.html' %}
+
+<main class="container page">
+    <article class="legal reveal">
+        <span class="eyebrow">Legal</span>
+        <h1 class="display">Refund, cancellation &amp; delivery</h1>
+        <p class="lede">Last updated 1 November 2026. This policy covers API plans and top-ups bought from {{ business_name }}.</p>
+
+        <h2>Delivery</h2>
+        <p>API plans and top-ups are a digital service. They activate as soon as the payment is confirmed, usually within a minute, and appear on your dashboard together with your invoice. A confirmation email with the receipt is sent to your account’s email address. Nothing is shipped.</p>
+
+        <h2>Cancellation</h2>
+        <p>Plans are prepaid for 30 days or a year. Unless you turned on auto-renewal at checkout, nothing renews and you are only charged again if you choose to buy.</p>
+        <p>If you turned on auto-renewal, you can turn it off at any time from your dashboard (API plan → Turn off), or by cancelling the AutoPay mandate in your UPI app or with your card issuer. No further payments are taken after that, and your plan stays active, with its remaining requests, until the end of the period you have already paid for. Turning off auto-renewal does not by itself refund the current period; see below.</p>
+
+        <h2>Refunds</h2>
+        <ul>
+            <li><strong>Within 7 days:</strong> you can ask for a full refund within 7 days of a purchase, including an automatic renewal, if you have used less than 10% of the requests it added. This applies to 30-day plans, yearly plans and top-ups.</li>
+            <li><strong>Payment problems:</strong> if you were charged twice, or charged without the purchase activating, we refund the extra or failed charge in full.</li>
+            <li><strong>Discounted purchases:</strong> refunds are for the amount you actually paid after any coupon. Free requests from referrals or promotions have no cash value and are not refundable.</li>
+            <li>After 7 days, or once 10% or more of the requests have been used, purchases are not refundable.</li>
+            <li>When a purchase is refunded, the requests and time it added are removed from your account.</li>
+        </ul>
+
+        <h2>How to request a refund</h2>
+        <p>{% if contact_email %}Email <a href="mailto:{{ contact_email }}">{{ contact_email }}</a>{% else %}Contact us through the <a href="/contact">contact page</a>{% endif %} from your account’s email address with the date and amount of the payment. Approved refunds are returned to the original payment method through Razorpay, and usually reach you within 5 to 7 business days, depending on your bank.</p>
+    </article>
+</main>
+
+{% include '_footer.html' %}
+{% endblock %}

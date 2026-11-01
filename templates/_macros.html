@@ -1,0 +1,19 @@
+{% macro icon(name, cls='') -%}
+<svg class="icon {{ cls }}" aria-hidden="true"><use href="#i-{{ name }}"/></svg>
+{%- endmacro %}
+
+{# Form alert that also shows any message flashed by the server (e.g. a failed social sign-in) #}
+{% macro alert_box() -%}
+{% with messages = get_flashed_messages(with_categories=true) %}
+{% if messages %}
+{% set category, message = messages[0] %}
+<div id="alertBox" class="callout callout-{{ 'error' if category == 'error' else 'success' }}" role="alert">{{ icon('alert' if category == 'error' else 'check-circle') }}<span>{{ message }}</span></div>
+{% else %}
+<div id="alertBox" class="callout" hidden></div>
+{% endif %}
+{% endwith %}
+{%- endmacro %}
+
+{% macro logo() -%}
+<svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="9" fill="#16171B"/><rect x="8" y="9.5" width="16" height="2.8" rx="1.4" fill="#FFFFFF"/><rect x="8" y="14.6" width="10.5" height="2.8" rx="1.4" fill="#F0542C"/><rect x="8" y="19.7" width="13" height="2.8" rx="1.4" fill="#FFFFFF" fill-opacity=".5"/></svg>
+{%- endmacro %}

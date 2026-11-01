@@ -1,0 +1,7 @@
+{% extends 'emails/_layout.html' %}
+{% block content %}
+<h1 style="margin:0 0 12px;font-size:22px;color:#16171B;">You earned {{ credits }} free API requests</h1>
+<p>Hi {{ username }}, someone you referred just made their first purchase, so we've added {{ credits }} requests to your account. Top-up requests never expire.</p>
+{% with url = dashboard_url, label = 'See my balance' %}{% include 'emails/_button.html' %}{% endwith %}
+{% endblock %}
+{% block footer %}Thanks for spreading the word.{% endblock %}

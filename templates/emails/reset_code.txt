@@ -1,0 +1,3 @@
+Your {{ business_name }} password reset code: {{ otp }}
+
+It expires in 10 minutes. If you didn't ask to reset your password, you can ignore this email.

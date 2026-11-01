@@ -1,0 +1,24 @@
+{% extends 'base.html' %}
+{% from '_macros.html' import logo %}
+{% set headings = {403: 'Request blocked', 404: 'Page not found', 405: 'Not allowed', 413: 'Too large',
+                   429: 'Slow down a little', 500: 'Something broke'} %}
+
+{% block title %}{{ headings.get(code, 'Something went wrong') }} · AI Humanizer{% endblock %}
+{% block description %}{{ message }}{% endblock %}
+{% block robots %}noindex, nofollow{% endblock %}
+{% block body_class %}app{% endblock %}
+
+{% block body %}
+<main class="container error-page">
+    <a href="/" class="brand">{{ logo() }}<span>AI Humanizer</span></a>
+    <div class="error-card reveal">
+        <span class="error-code">Error {{ code }}</span>
+        <h1 class="display">{{ headings.get(code, 'Something went wrong') }}</h1>
+        <p class="lede">{{ message }}</p>
+        <div class="error-actions">
+            <a href="/" class="btn btn-primary btn-lg">Back to home</a>
+            <a href="/docs" class="btn btn-secondary btn-lg">Read the docs</a>
+        </div>
+    </div>
+</main>
+{% endblock %}

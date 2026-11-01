@@ -1,0 +1,385 @@
+{% extends 'base.html' %}
+{% from '_macros.html' import icon %}
+{% set active_page = 'docs' %}
+{% set base_url = request.url_root %}
+
+{% block title %}Humanizer API Documentation: Endpoint, Examples &amp; Limits · AI Humanizer{% endblock %}
+{% block description %}Add AI text humanizing to your app with one REST endpoint: authentication, request and response fields, errors, limits and code examples in four languages.{% endblock %}
+{% block body_class %}app{% endblock %}
+
+{% block head %}
+<script type="application/ld+json">{{ {
+    '@context': 'https://schema.org',
+    '@graph': [
+        {
+            '@type': 'TechArticle',
+            'headline': 'Humanizer API Documentation',
+            'description': 'How to call the AI Humanizer REST API: authentication, request and response fields, errors, limits and code examples.',
+            'url': canonical_url,
+            'inLanguage': 'en',
+            'isPartOf': {'@id': site_url ~ '/#website'},
+            'author': {'@type': 'Person', 'name': 'Prithwiraj Das'}
+        },
+        {
+            '@type': 'BreadcrumbList',
+            'itemListElement': [
+                {'@type': 'ListItem', 'position': 1, 'name': 'Home', 'item': site_url ~ '/'},
+                {'@type': 'ListItem', 'position': 2, 'name': 'API Documentation', 'item': canonical_url}
+            ]
+        }
+    ]
+} | tojson }}</script>
+{% endblock %}
+
+{% block body %}
+{% include '_nav.html' %}
+
+<div class="container docs">
+    <aside class="docs-nav">
+        <div class="docs-nav-title">On this page</div>
+        <ul>
+            <li><a href="#introduction" class="active">Introduction</a></li>
+            <li><a href="#authentication">Authentication</a></li>
+            <li><a href="#plans">Plans &amp; quota</a></li>
+            <li><a href="#endpoint">Endpoint</a></li>
+            <li><a href="#request">Request</a></li>
+            <li><a href="#response">Response</a></li>
+            <li><a href="#batch">Batch requests</a></li>
+            <li><a href="#errors">Errors</a></li>
+            <li><a href="#limits">Limits</a></li>
+            <li><a href="#examples">Code examples</a></li>
+        </ul>
+    </aside>
+
+    <main class="docs-content">
+        <section id="introduction" class="doc-section docs-hero reveal">
+            <span class="eyebrow">API reference</span>
+            <h1 class="display" style="margin-top: 14px;">Humanizer <em>API</em></h1>
+            <p class="lede">Rewrite text programmatically with the same engine as the editor. One endpoint, JSON in and JSON out.</p>
+            <div class="base-url">
+                <span class="label-sm">Base URL</span>
+                <span id="baseUrl">{{ base_url }}</span>
+                <button class="icon-btn" type="button" title="Copy base URL" onclick="copyText(document.getElementById('baseUrl').textContent, this)">{{ icon('copy') }}</button>
+            </div>
+
+            <div class="overview-grid">
+                <div class="card overview-card">
+                    <span class="kpi-icon">{{ icon('shield') }}</span>
+                    <strong>API key auth</strong>
+                    <span>Send your key in the X-API-Key header.</span>
+                </div>
+                <div class="card overview-card">
+                    <span class="kpi-icon">{{ icon('zap') }}</span>
+                    <strong>One endpoint</strong>
+                    <span>POST /humanize returns the result instantly.</span>
+                </div>
+                <div class="card overview-card">
+                    <span class="kpi-icon">{{ icon('file') }}</span>
+                    <strong>20,000 characters</strong>
+                    <span>Maximum text length per request.</span>
+                </div>
+            </div>
+        </section>
+
+        <section id="authentication" class="doc-section">
+            <h2>Authentication</h2>
+            <p>Every request needs an API key. Create one on the <a href="/dashboard" style="color: var(--accent-ink); font-weight: 500;">Dashboard</a> and send it in the <code class="inline">X-API-Key</code> header.</p>
+            <div class="code">
+                <div class="code-head"><span class="code-lang">Header</span></div>
+                <pre>X-API-Key: hmnz_your_api_key_here</pre>
+            </div>
+            <div class="callout callout-warning">{{ icon('alert') }}<span>Treat your key like a password. Keep it out of client-side code and version control. Keys are shown only once, so store them in a secrets manager or environment variable.</span></div>
+        </section>
+
+        <section id="plans" class="doc-section">
+            <h2>Plans &amp; quota</h2>
+            <p>The REST API is a paid service.{% if api_trial_requests %} Every account with a confirmed email address starts with {{ api_trial_requests }} free requests to test your integration;{% endif %} after that you need an API plan or a top-up. Plans cover 30 days, or a year at the price of 10 months; buying again while a plan is active adds the new period and carries over unused requests. See <a href="/pricing" style="color: var(--accent-ink); font-weight: 500;">Pricing</a> for the price in your region.</p>
+            <div class="card">
+                <div class="table-wrap">
+                    <table class="table">
+                        <thead><tr><th>Plan</th><th class="num">Requests per 30 days</th><th class="num">Requests per year</th></tr></thead>
+                        <tbody>
+                            {% if api_trial_requests %}<tr><td>Free trial (once per account)</td><td class="num">{{ api_trial_requests }}</td><td class="num">—</td></tr>{% endif %}
+                            {% for plan in api_plans.values() %}<tr><td>{{ plan.name }}</td><td class="num">{{ '{:,}'.format(plan.requests) }}</td><td class="num">{{ '{:,}'.format(plan.requests * 12) }}</td></tr>{% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <p><strong>Top-ups</strong> add requests that never expire. Each request uses your plan's requests first and top-up requests only after those run out (or once the plan ends), so a top-up also works on its own, without a plan.</p>
+            <p>Every successful response includes what's left, so you can warn users before it runs out. Only valid requests count: requests rejected with a 4xx error or failing on our side are not charged. We also email you when 80% is used.</p>
+            <div class="code">
+                <div class="code-head"><span class="code-lang">Response headers</span></div>
+                <pre>X-Quota-Limit: 30000
+X-Quota-Remaining: 28451
+X-Credits-Remaining: 2000</pre>
+            </div>
+            <p>When the plan's requests and top-up requests are both used up, the API answers with <code class="inline">402 Payment Required</code> and a link to the pricing page. The web editor is free and never uses API quota.</p>
+        </section>
+
+        <section id="endpoint" class="doc-section">
+            <h2>Endpoint</h2>
+            <p>Rewrites the submitted text and returns the result with change statistics.</p>
+            <div class="endpoint-line"><span class="method">POST</span><span>{{ base_url }}humanize</span></div>
+        </section>
+
+        <section id="request" class="doc-section">
+            <h2>Request</h2>
+            <h3>Headers</h3>
+            <div class="card">
+                <div class="table-wrap">
+                    <table class="table">
+                        <thead><tr><th>Header</th><th>Value</th><th></th></tr></thead>
+                        <tbody>
+                            <tr><td><span class="param">Content-Type</span></td><td>application/json</td><td><span class="req req-required">Required</span></td></tr>
+                            <tr><td><span class="param">X-API-Key</span></td><td>Your API key</td><td><span class="req req-required">Required</span></td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <h3>Body parameters</h3>
+            <div class="card">
+                <div class="table-wrap">
+                    <table class="table">
+                        <thead><tr><th>Parameter</th><th>Description</th><th></th></tr></thead>
+                        <tbody>
+                            <tr>
+                                <td><span class="param">text</span><br><span class="type">string</span></td>
+                                <td>The text to humanize. Up to 20,000 characters.</td>
+                                <td><span class="req req-required">Required</span></td>
+                            </tr>
+                            <tr>
+                                <td><span class="param">tone</span><br><span class="type">string</span></td>
+                                <td>"standard", "professional", "casual" or "academic". Casual uses contractions, shorter words and splits long sentences; professional and academic expand contractions, and academic keeps a formal vocabulary. Default: "standard".</td>
+                                <td><span class="req req-optional">Optional</span></td>
+                            </tr>
+                            <tr>
+                                <td><span class="param">deep_mode</span><br><span class="type">boolean</span></td>
+                                <td>Chaos Mode: a deeper rewrite that swaps far more words and splits long compound sentences. Default: false.</td>
+                                <td><span class="req req-optional">Optional</span></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <h3>Example body</h3>
+            <div class="code">
+                <div class="code-head">
+                    <span class="code-lang">JSON</span>
+                    <button class="code-copy" type="button" onclick="copyCode(this)">{{ icon('copy') }}<span>Copy</span></button>
+                </div>
+                <pre data-lang="json">{
+  "text": "The quick brown fox jumps over the lazy dog.",
+  "tone": "professional",
+  "deep_mode": true
+}</pre>
+            </div>
+        </section>
+
+        <section id="response" class="doc-section">
+            <h2>Response</h2>
+            <p>A successful request returns <code class="inline">200 OK</code> with this JSON body.</p>
+            <div class="code">
+                <div class="code-head">
+                    <span class="code-lang">200 OK</span>
+                    <button class="code-copy" type="button" onclick="copyCode(this)">{{ icon('copy') }}<span>Copy</span></button>
+                </div>
+                <pre data-lang="json">{
+  "original": "The quick brown fox jumps over the lazy dog.",
+  "humanized": "The speedy brown fox jumps over the lazy dog.",
+  "diff_html": "&lt;span class=\"unchanged\"&gt;The&lt;/span&gt; &lt;span class=\"added\"&gt;speedy&lt;/span&gt; ...",
+  "longest_unchanged": "brown fox jumps over the lazy dog.",
+  "structural_changes": "11.1%",
+  "changed_words": 1
+}</pre>
+            </div>
+
+            <h3>Fields</h3>
+            <div class="card">
+                <div class="table-wrap">
+                    <table class="table">
+                        <thead><tr><th>Field</th><th>Description</th></tr></thead>
+                        <tbody>
+                            <tr><td><span class="param">original</span><br><span class="type">string</span></td><td>The text you sent.</td></tr>
+                            <tr><td><span class="param">humanized</span><br><span class="type">string</span></td><td>The rewritten text, with line breaks preserved.</td></tr>
+                            <tr><td><span class="param">diff_html</span><br><span class="type">string</span></td><td>HTML-escaped output with each word wrapped in a <code class="inline">span</code> of class <code class="inline">added</code> (changed) or <code class="inline">unchanged</code>.</td></tr>
+                            <tr><td><span class="param">longest_unchanged</span><br><span class="type">string</span></td><td>The longest run of words left exactly as in the input, or "None".</td></tr>
+                            <tr><td><span class="param">structural_changes</span><br><span class="type">string</span></td><td>How different the word sequence is, as a percentage.</td></tr>
+                            <tr><td><span class="param">changed_words</span><br><span class="type">integer</span></td><td>Number of words that were rewritten.</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <section id="batch" class="doc-section">
+            <h2>Batch requests</h2>
+            <p>Rewrite up to 25 texts in one call. Each item uses one request from your quota, so a batch costs the same as sending the items one by one, with a single round trip. Items that fail on our side are not charged.</p>
+            <div class="endpoint-line"><span class="method">POST</span><span>{{ base_url }}humanize/batch</span></div>
+            <p>Send <code class="inline">items</code>: a list of strings, or of objects with <code class="inline">text</code> and optional <code class="inline">tone</code>, <code class="inline">deep_mode</code> and <code class="inline">id</code> (echoed back, up to 100 characters). Top-level <code class="inline">tone</code> and <code class="inline">deep_mode</code> set the defaults. Batch requests need an API key.</p>
+            <div class="code">
+                <div class="code-head"><span class="code-lang">Request body</span></div>
+                <pre data-lang="json">{
+  "tone": "professional",
+  "items": [
+    "First paragraph to rewrite.",
+    {"id": "faq-2", "text": "Second paragraph.", "tone": "casual"}
+  ]
+}</pre>
+            </div>
+            <p>Results come back in the same order. Each has the item's <code class="inline">index</code> (and <code class="inline">id</code> if you sent one), plus either the rewrite (<code class="inline">humanized</code>, <code class="inline">longest_unchanged</code>, <code class="inline">structural_changes</code>, <code class="inline">changed_words</code>) or an <code class="inline">error</code>. The diff HTML is left out to keep responses small.</p>
+            <div class="code">
+                <div class="code-head"><span class="code-lang">200 OK</span></div>
+                <pre data-lang="json">{
+  "count": 2,
+  "succeeded": 2,
+  "processing_ms": 412.5,
+  "results": [
+    {"index": 0, "humanized": "…", "longest_unchanged": "…", "structural_changes": "71%", "changed_words": 3},
+    {"index": 1, "id": "faq-2", "humanized": "…", "longest_unchanged": "None", "structural_changes": "100%", "changed_words": 2}
+  ]
+}</pre>
+            </div>
+            <p>A batch is checked as a whole before anything is charged: if any item is invalid, the response is a <code class="inline">400</code> naming the item (for example <span class="type">Item 3: text too long</span>) and nothing is used. Limits: 25 items and 50,000 characters per batch, each item up to 20,000 characters. Each item counts toward the per-key rate limit.</p>
+        </section>
+
+        <section id="errors" class="doc-section">
+            <h2>Errors</h2>
+            <p>Errors return a JSON body with a single <code class="inline">error</code> message.</p>
+            <div class="card">
+                <div class="table-wrap">
+                    <table class="table">
+                        <thead><tr><th>Status</th><th>Meaning</th><th>Example message</th></tr></thead>
+                        <tbody>
+                            <tr><td><span class="pill pill-danger">400</span></td><td>Missing or invalid parameters</td><td><span class="type">No text provided · Text too long (max 20000 characters) · Invalid tone</span></td></tr>
+                            <tr><td><span class="pill pill-danger">401</span></td><td>Missing, wrong or revoked API key</td><td><span class="type">Invalid or inactive API key</span></td></tr>
+                            <tr><td><span class="pill pill-danger">402</span></td><td>No API plan or top-up requests left: none bought, the plan expired, or everything is used</td><td><span class="type">Your API plan has used all its requests. Buy a top-up or upgrade at …/pricing</span></td></tr>
+                            <tr><td><span class="pill pill-danger">403</span></td><td>The account's email address hasn't been confirmed yet</td><td><span class="type">Verify your email address first. …</span></td></tr>
+                            <tr><td><span class="pill pill-danger">413</span></td><td>Request body over 1 MB</td><td><span class="type">Request too large (max 1 MB).</span></td></tr>
+                            <tr><td><span class="pill pill-danger">429</span></td><td>Rate limit reached; wait for the number of seconds in the <code class="inline">Retry-After</code> header</td><td><span class="type">Too many requests. Please try again in 20 seconds.</span></td></tr>
+                            <tr><td><span class="pill pill-danger">500</span></td><td>Unexpected server error</td><td><span class="type">Processing failed.</span></td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="code">
+                <div class="code-head"><span class="code-lang">400 Bad Request</span></div>
+                <pre data-lang="json">{
+  "error": "Text too long (max 20000 characters)"
+}</pre>
+            </div>
+        </section>
+
+        <section id="limits" class="doc-section">
+            <h2>Limits</h2>
+            <div class="card">
+                <div class="table-wrap">
+                    <table class="table">
+                        <tbody>
+                            <tr><td>Maximum text length</td><td class="num">20,000 characters</td></tr>
+                            <tr><td>Maximum request size</td><td class="num">1 MB</td></tr>
+                            <tr><td>Monthly requests</td><td class="num">Set by your plan</td></tr>
+                            <tr><td>Rate limit</td><td class="num">30 requests per minute per API key</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <p style="margin-top: 14px;">Every request is logged against its key and shows up in your dashboard.</p>
+        </section>
+
+        <section id="examples" class="doc-section">
+            <h2>Code examples</h2>
+            <p>Replace <code class="inline">hmnz_your_api_key_here</code> with a key from your dashboard.</p>
+            <div class="code" data-tabs>
+                <div class="code-head">
+                    <div class="code-tabs" role="tablist">
+                        <button class="code-tab active" type="button" data-tab="curl" role="tab">cURL</button>
+                        <button class="code-tab" type="button" data-tab="python" role="tab">Python</button>
+                        <button class="code-tab" type="button" data-tab="node" role="tab">Node.js</button>
+                        <button class="code-tab" type="button" data-tab="php" role="tab">PHP</button>
+                    </div>
+                    <button class="code-copy" type="button" onclick="copyCode(this)">{{ icon('copy') }}<span>Copy</span></button>
+                </div>
+<pre data-panel="curl" data-lang="code">curl -X POST {{ base_url }}humanize \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: hmnz_your_api_key_here" \
+  -d '{
+    "text": "Your AI-generated text here",
+    "tone": "professional",
+    "deep_mode": true
+  }'</pre>
+<pre data-panel="python" data-lang="code" hidden>import requests
+
+url = "{{ base_url }}humanize"
+headers = {
+    "Content-Type": "application/json",
+    "X-API-Key": "hmnz_your_api_key_here"
+}
+payload = {
+    "text": "Your AI-generated text here",
+    "tone": "professional",
+    "deep_mode": True
+}
+
+response = requests.post(url, json=payload, headers=headers)
+data = response.json()
+
+print(f"Humanized: {data['humanized']}")
+print(f"Changed words: {data['changed_words']}")</pre>
+<pre data-panel="node" data-lang="code" hidden>const response = await fetch('{{ base_url }}humanize', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'X-API-Key': 'hmnz_your_api_key_here'
+  },
+  body: JSON.stringify({
+    text: 'Your AI-generated text here',
+    tone: 'professional',
+    deep_mode: true
+  })
+});
+
+const data = await response.json();
+console.log('Humanized:', data.humanized);
+console.log('Changed words:', data.changed_words);</pre>
+<pre data-panel="php" data-lang="code" hidden>&lt;?php
+$url = '{{ base_url }}humanize';
+$data = array(
+    'text' => 'Your AI-generated text here',
+    'tone' => 'professional',
+    'deep_mode' => true
+);
+
+$options = array(
+    'http' => array(
+        'header'  => "Content-type: application/json\r\n" .
+                     "X-API-Key: hmnz_your_api_key_here\r\n",
+        'method'  => 'POST',
+        'content' => json_encode($data)
+    )
+);
+
+$context  = stream_context_create($options);
+$result = file_get_contents($url, false, $context);
+$response = json_decode($result);
+
+echo "Humanized: " . $response->humanized . "\n";
+echo "Changed words: " . $response->changed_words . "\n";
+?&gt;</pre>
+            </div>
+        </section>
+    </main>
+</div>
+
+{% include '_footer.html' %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.querySelectorAll('pre[data-lang]').forEach(highlightCode);
+    initCodeTabs();
+
+    initScrollspy();
+</script>
+{% endblock %}

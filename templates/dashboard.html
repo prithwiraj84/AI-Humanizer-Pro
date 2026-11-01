@@ -1,0 +1,965 @@
+{% extends 'base.html' %}
+{% from '_macros.html' import icon %}
+{% set active_page = 'dashboard' %}
+
+{% block title %}Dashboard · AI Humanizer{% endblock %}
+{% block robots %}noindex, nofollow{% endblock %}
+{% block body_class %}app{% endblock %}
+
+{% block body %}
+{% include '_nav.html' %}
+
+<main class="container page">
+    <header class="page-head">
+        <div class="reveal">
+            <span class="eyebrow">Developer</span>
+            <h1 class="display">Dashboard</h1>
+            <p class="lede">Manage your API keys and keep an eye on how they're being used.</p>
+        </div>
+        <button class="btn btn-primary reveal" style="--d: 1" type="button" onclick="openCreateKeyModal()">
+            {{ icon('plus') }}<span>Create API key</span>
+        </button>
+    </header>
+
+    <div class="callout callout-warning verify-banner" id="verifyBanner" hidden>
+        {{ icon('mail') }}
+        <span>Confirm your email address to create API keys and buy plans. We sent a link to <strong id="verifyEmail"></strong>.</span>
+        <button class="btn btn-secondary btn-sm" type="button" id="resendBtn" onclick="resendVerification(this)">Resend link</button>
+    </div>
+
+    <section class="kpi-grid">
+        <div class="card kpi reveal" style="--d: 1">
+            <div class="kpi-head">Total requests<span class="kpi-icon">{{ icon('activity') }}</span></div>
+            <div class="kpi-value" id="totalRequests">0</div>
+            <div class="kpi-foot">All time, across your keys</div>
+        </div>
+        <div class="card kpi reveal" style="--d: 2">
+            <div class="kpi-head">Success rate<span class="kpi-icon">{{ icon('check-circle') }}</span></div>
+            <div class="kpi-value" id="successRate">—</div>
+            <div class="kpi-foot" id="successFoot">No requests yet</div>
+        </div>
+        <div class="card kpi reveal" style="--d: 3">
+            <div class="kpi-head">Avg latency<span class="kpi-icon">{{ icon('gauge') }}</span></div>
+            <div class="kpi-value"><span id="avgLatency">0</span><small>ms</small></div>
+            <div class="kpi-foot">Server processing time</div>
+        </div>
+        <div class="card kpi reveal" style="--d: 4">
+            <div class="kpi-head">Active keys<span class="kpi-icon">{{ icon('key') }}</span></div>
+            <div class="kpi-value" id="keyCount">0</div>
+            <div class="kpi-foot">Revoked keys aren't counted</div>
+        </div>
+    </section>
+
+    <div class="dash-grid">
+        <div class="dash-main">
+            <section class="card reveal" style="--d: 5">
+                <div class="card-head">
+                    <div class="card-title">{{ icon('card') }}API plan</div>
+                    <a class="btn btn-secondary btn-sm" href="/pricing">{{ icon('tag') }}<span id="planCta">See plans</span></a>
+                </div>
+                <div class="card-body" id="planContainer">
+                    <div class="usage">
+                        <div class="skeleton-line" style="width: 40%"></div>
+                        <div class="skeleton-line" style="width: 100%"></div>
+                    </div>
+                </div>
+            </section>
+
+            <section class="card reveal" style="--d: 5">
+                <div class="card-head card-head-wrap">
+                    <div class="card-title">{{ icon('trending') }}API usage</div>
+                    <div class="chart-filters">
+                        <div class="segmented segmented-sm" id="rangeControl" role="radiogroup" aria-label="Date range">
+                            <input type="radio" name="range" id="range-7" value="7"><label for="range-7">7 days</label>
+                            <input type="radio" name="range" id="range-30" value="30" checked><label for="range-30">30 days</label>
+                            <input type="radio" name="range" id="range-90" value="90"><label for="range-90">90 days</label>
+                            <span class="segmented-thumb" aria-hidden="true"></span>
+                        </div>
+                        <select class="input input-sm" id="keyFilter" aria-label="API key">
+                            <option value="all">All keys</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="card-body usage-body" id="usageBody">
+                    <div class="chart-summary">
+                        <div><span class="chart-stat" id="usageTotal">0</span><span class="chart-stat-label">requests</span></div>
+                        <div><span class="chart-stat" id="usageAvg">0</span><span class="chart-stat-label">per day on average</span></div>
+                        <div><span class="chart-stat" id="usagePeak">—</span><span class="chart-stat-label" id="usagePeakLabel">busiest day</span></div>
+                    </div>
+                    <div class="chart" id="usageChart" tabindex="0" aria-describedby="usageChartHelp">
+                        <div class="chart-tip" id="usageTip" role="status" hidden></div>
+                    </div>
+                    <p class="sr-only" id="usageChartHelp">Daily API requests. Use the left and right arrow keys to read each day, or open the table view.</p>
+                    <div class="empty chart-empty" id="usageEmpty" hidden>
+                        <span class="empty-art">{{ icon('trending', 'icon-lg') }}</span>
+                        <div class="empty-title">No API requests in this period</div>
+                        <div class="empty-desc">Requests made with your keys will be charted here by day.</div>
+                    </div>
+                    <div class="key-bars" id="keyBars" hidden></div>
+                    <div class="chart-foot">
+                        <span class="hint">Days are in UTC</span>
+                        <button class="btn btn-ghost btn-sm" type="button" id="tableToggle" aria-expanded="false" onclick="toggleUsageTable()">Show as table</button>
+                    </div>
+                    <div class="table-wrap" id="usageTable" hidden></div>
+                </div>
+            </section>
+
+            <section class="card reveal" style="--d: 6">
+                <div class="card-head">
+                    <div class="card-title">{{ icon('key') }}API keys <span class="count-badge" id="keyBadge">0</span></div>
+                    <button class="btn btn-secondary btn-sm" type="button" onclick="openCreateKeyModal()">{{ icon('plus') }}<span>New key</span></button>
+                </div>
+                <div id="keysContainer"></div>
+            </section>
+
+            <section class="card reveal" style="--d: 6">
+                <div class="card-head">
+                    <div class="card-title">{{ icon('activity') }}Recent activity</div>
+                    <span class="hint">Refreshes every 30 seconds</span>
+                </div>
+                <div id="logsContainer"></div>
+            </section>
+        </div>
+
+        <aside class="dash-side">
+            <section class="card reveal" style="--d: 7">
+                <div class="card-head">
+                    <div class="card-title">{{ icon('terminal') }}Quick start</div>
+                </div>
+                <div class="card-body">
+                    <ol class="steps-list">
+                        <li><strong>Create a key</strong>Name it after the app that will use it.</li>
+                        <li><strong>Send a request</strong>Pass the key in the <code class="inline">X-API-Key</code> header.</li>
+                        <li><strong>Use the result</strong>The response has the rewritten text and change stats.</li>
+                    </ol>
+                    <div class="code code-sm">
+                        <div class="code-head">
+                            <span class="code-lang">curl</span>
+                            <button class="code-copy" type="button" onclick="copyText(document.getElementById('quickstartCode').textContent, this)">{{ icon('copy') }}<span>Copy</span></button>
+                        </div>
+                        <pre id="quickstartCode">curl -X POST {{ site_url }}/humanize \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: YOUR_API_KEY" \
+  -d '{"text": "Your text here"}'</pre>
+                    </div>
+                    <a href="/docs" class="btn btn-secondary btn-block">Read the API docs {{ icon('arrow-right') }}</a>
+                </div>
+            </section>
+
+            <section class="card reveal" style="--d: 8" id="referralCard" hidden>
+                <div class="card-head">
+                    <div class="card-title">{{ icon('sparkle') }}Refer a friend</div>
+                </div>
+                <div class="card-body">
+                    <p class="side-desc">When someone you invite makes their first purchase, they get <strong><span id="refFriend">500</span> free requests</strong> and you get <strong><span id="refYou">1,000</span></strong>.</p>
+                    <div class="input-wrap">
+                        <input class="input mono has-action input-sm-text" type="text" id="referralLink" readonly aria-label="Your referral link">
+                        <button class="icon-btn input-action" type="button" title="Copy link" onclick="copyText(document.getElementById('referralLink').value, this)">{{ icon('copy') }}</button>
+                    </div>
+                    <dl class="ref-stats">
+                        <div><dt>Signed up</dt><dd id="refJoined">0</dd></div>
+                        <div><dt>Purchased</dt><dd id="refRewarded">0</dd></div>
+                        <div><dt>Requests earned</dt><dd id="refEarned">0</dd></div>
+                    </dl>
+                </div>
+            </section>
+
+            <section class="card reveal" style="--d: 9">
+                <div class="card-head">
+                    <div class="card-title">{{ icon('file') }}Billing details</div>
+                </div>
+                <form class="card-body" id="profileForm" novalidate>
+                    <p class="side-desc" id="profileDesc">Printed on your receipts and invoices.</p>
+                    <div class="field">
+                        <label class="label" for="pfBusiness">Business name <span class="muted">(optional)</span></label>
+                        <input class="input" type="text" id="pfBusiness" maxlength="120" autocomplete="organization">
+                    </div>
+                    <div class="field">
+                        <label class="label" for="pfGstin">GSTIN <span class="muted">(optional)</span></label>
+                        <input class="input mono" type="text" id="pfGstin" maxlength="15" placeholder="22AAAAA0000A1Z5" autocomplete="off" spellcheck="false">
+                    </div>
+                    <div class="field">
+                        <label class="label" for="pfState">State</label>
+                        <select class="input" id="pfState">
+                            <option value="">Outside India / not listed</option>
+                        </select>
+                        <span class="hint-text">Sets the place of supply. Filled in from your GSTIN if you add one.</span>
+                    </div>
+                    <div class="field">
+                        <label class="label" for="pfAddress">Billing address <span class="muted">(optional)</span></label>
+                        <textarea class="input" id="pfAddress" rows="3" maxlength="300" autocomplete="street-address"></textarea>
+                    </div>
+                    <button class="btn btn-secondary btn-block" type="submit" id="profileBtn">Save details</button>
+                </form>
+            </section>
+        </aside>
+    </div>
+</main>
+
+{% include '_footer.html' %}
+
+<!-- Create Key Modal -->
+<div id="createKeyModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="createKeyTitle">
+    <div class="modal-dialog">
+        <div class="modal-head">
+            <div class="modal-icon">{{ icon('key', 'icon-lg') }}</div>
+            <div class="modal-title" id="createKeyTitle">Create API key</div>
+            <p class="modal-desc">Give the key a name so you can recognise it later.</p>
+        </div>
+        <div class="modal-body">
+            <div class="field">
+                <label class="label" for="keyName">Key name</label>
+                <input class="input" type="text" id="keyName" placeholder="e.g. Production website" maxlength="50" autocomplete="off">
+            </div>
+        </div>
+        <div class="modal-foot">
+            <button class="btn btn-secondary" type="button" onclick="closeModal('createKeyModal')">Cancel</button>
+            <button class="btn btn-primary" type="button" id="createKeyBtn" onclick="createApiKey()">Create key</button>
+        </div>
+    </div>
+</div>
+
+<!-- Key Created Modal -->
+<div id="keyCreatedModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="keyCreatedTitle">
+    <div class="modal-dialog">
+        <div class="modal-head">
+            <div class="modal-icon success">{{ icon('check', 'icon-lg') }}</div>
+            <div class="modal-title" id="keyCreatedTitle">Your new API key</div>
+            <p class="modal-desc">Use it in the <code class="inline">X-API-Key</code> header of your requests.</p>
+        </div>
+        <div class="modal-body">
+            <div class="callout callout-warning">{{ icon('alert') }}<span>Copy this key now. For security, it won't be shown again.</span></div>
+            <div class="field">
+                <label class="label" for="displayApiKey">API key</label>
+                <div class="input-wrap">
+                    <input class="input mono has-action" type="text" id="displayApiKey" readonly>
+                    <button class="icon-btn input-action" type="button" title="Copy key" onclick="copyText(document.getElementById('displayApiKey').value, this)">{{ icon('copy') }}</button>
+                </div>
+            </div>
+        </div>
+        <div class="modal-foot">
+            <button class="btn btn-primary" type="button" onclick="closeModal('keyCreatedModal')">I've saved it</button>
+        </div>
+    </div>
+</div>
+
+<!-- Revoke Confirm Modal -->
+<div id="confirmModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="confirmTitle">
+    <div class="modal-dialog">
+        <div class="modal-head">
+            <div class="modal-icon danger">{{ icon('trash', 'icon-lg') }}</div>
+            <div class="modal-title" id="confirmTitle">Revoke API key?</div>
+            <p class="modal-desc" id="confirmDesc"></p>
+        </div>
+        <div class="modal-foot">
+            <button class="btn btn-secondary" type="button" onclick="closeModal('confirmModal')">Cancel</button>
+            <button class="btn btn-danger-solid" type="button" id="confirmRevokeBtn">Revoke key</button>
+        </div>
+    </div>
+</div>
+
+<!-- Turn Off Auto-renewal Modal -->
+<div id="autopayModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="autopayTitle">
+    <div class="modal-dialog">
+        <div class="modal-head">
+            <div class="modal-icon">{{ icon('rotate', 'icon-lg') }}</div>
+            <div class="modal-title" id="autopayTitle">Turn off auto-renewal?</div>
+            <p class="modal-desc">You won't be charged again. Your plan and its remaining requests stay active until the current period ends.</p>
+        </div>
+        <div class="modal-foot">
+            <button class="btn btn-secondary" type="button" onclick="closeModal('autopayModal')">Keep it on</button>
+            <button class="btn btn-danger-solid" type="button" id="autopayCancelBtn" onclick="cancelAutopay(this)">Turn off</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    let keysById = {};
+    const DATE = { year: 'numeric', month: 'short', day: 'numeric' };
+
+    document.addEventListener('DOMContentLoaded', () => {
+        loadStats();
+        loadApiKeys();
+        loadPlan();
+        loadAccount();
+        loadProfile();
+        loadUsage();
+        initSegmented(document.getElementById('rangeControl'), (value) => { usageDays = Number(value); loadUsage(); });
+        document.getElementById('keyFilter').addEventListener('change', (e) => { usageKey = e.target.value; renderUsage(); });
+        const params = new URLSearchParams(window.location.search);
+        if (params.get('paid')) {
+            toast('Payment received. Your purchase is active.');
+            history.replaceState(null, '', '/dashboard');
+        }
+    });
+
+    async function getJson(url, options) {
+        const response = await fetch(url, options);
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.error || data.message || 'Something went wrong. Please try again.');
+        return data;
+    }
+
+    function postJson(url, body = {}) {
+        return getJson(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    }
+
+    // --- ACCOUNT: VERIFICATION & REFERRALS ---
+    async function loadAccount() {
+        try {
+            const account = await getJson('/api/account');
+            if (account.verification_required && !account.email_verified) {
+                document.getElementById('verifyEmail').textContent = account.email;
+                document.getElementById('verifyBanner').hidden = false;
+            }
+            const referral = account.referral;
+            if (referral && referral.url) {
+                document.getElementById('referralLink').value = referral.url;
+                document.getElementById('refFriend').textContent = referral.referred_credits.toLocaleString();
+                document.getElementById('refYou').textContent = referral.referrer_credits.toLocaleString();
+                document.getElementById('refJoined').textContent = referral.joined.toLocaleString();
+                document.getElementById('refRewarded').textContent = referral.rewarded.toLocaleString();
+                document.getElementById('refEarned').textContent = referral.credits_earned.toLocaleString();
+                document.getElementById('referralCard').hidden = false;
+            }
+        } catch (error) {
+            console.error('Error loading account:', error);
+        }
+    }
+
+    async function resendVerification(button) {
+        button.disabled = true;
+        try {
+            toast((await postJson('/api/account/resend-verification')).message);
+        } catch (error) {
+            toast(error.message, 'error');
+        } finally {
+            button.disabled = false;
+        }
+    }
+
+    // --- API PLAN ---
+    async function loadPlan() {
+        try {
+            renderPlan(await getJson('/api/billing/status'));
+        } catch (error) {
+            console.error('Error loading plan:', error);
+        }
+    }
+
+    function renderPlan({ plan, credits, autopay, payments }) {
+        const container = document.getElementById('planContainer');
+        const cta = document.getElementById('planCta');
+        const parts = [];
+
+        if (plan) {
+            const used = Math.min(100, plan.requests_limit ? plan.requests_used / plan.requests_limit * 100 : 100);
+            const isTrial = plan.id === 'trial';
+            const status = plan.active ? ['pill-success', isTrial ? 'Trial' : 'Active'] : ['pill-danger', plan.requests_remaining ? 'Expired' : 'Used up'];
+            const period = plan.period_end
+                ? `${plan.active ? (autopay ? 'Renews' : 'Active until') : 'Ended'} ${parseUtc(plan.period_end).toLocaleDateString([], DATE)}`
+                : 'One-time free requests to test the API';
+            cta.textContent = isTrial || !plan.active ? 'Choose a plan' : 'Buy more';
+            parts.push(`
+                <div class="usage-top">
+                    <span class="usage-name">${escapeHtml(plan.name)}${plan.cycle === 'yearly' ? ' <span class="pill pill-neutral">Yearly</span>' : ''} <span class="pill ${status[0]}">${status[1]}</span></span>
+                    <span class="hint">${escapeHtml(period)}</span>
+                </div>
+                <div class="usage-bar" role="progressbar" aria-label="Plan requests used" aria-valuenow="${Math.round(used)}" aria-valuemin="0" aria-valuemax="100"><i data-width="${used}"></i></div>
+                <div class="usage-meta">
+                    <span><strong style="color: var(--ink)">${plan.requests_remaining.toLocaleString()}</strong> of ${plan.requests_limit.toLocaleString()} plan requests left</span>
+                    <span>${plan.requests_used.toLocaleString()} used</span>
+                </div>`);
+        } else if (!credits) {
+            cta.textContent = 'Choose a plan';
+            container.innerHTML = `
+                <div class="empty" style="padding: 20px 0;">
+                    <div class="empty-title">No API plan yet</div>
+                    <div class="empty-desc">The REST API needs a plan or a top-up. The web editor stays free.</div>
+                    <a class="btn btn-primary btn-sm" href="/pricing">See plans</a>
+                </div>`;
+            return;
+        } else {
+            cta.textContent = 'Buy more';
+        }
+
+        if (credits) {
+            parts.push(`
+                <div class="plan-line">
+                    <span class="plan-line-icon">${icon('zap')}</span>
+                    <span><strong>${credits.toLocaleString()}</strong> top-up requests <span class="muted">· never expire, used after the plan's requests</span></span>
+                </div>`);
+        }
+        if (autopay) {
+            const halted = autopay.status === 'halted';
+            parts.push(`
+                <div class="plan-line">
+                    <span class="plan-line-icon">${icon('rotate')}</span>
+                    <span>Auto-renews: <strong>${escapeHtml(autopay.name)}</strong> · ${escapeHtml(autopay.price)}
+                        ${halted ? '<span class="pill pill-danger">Payment failed</span>' : autopay.status === 'pending' ? '<span class="pill pill-neutral">Retrying payment</span>' : ''}</span>
+                    ${halted ? '' : `<button class="btn btn-ghost btn-sm" type="button" onclick="openModal('autopayModal')">Turn off</button>`}
+                </div>
+                ${halted ? `<div class="callout callout-warning">${icon('alert')}<span>Auto-renewal stopped after repeated failed payments. Buy a plan to keep using the API.</span></div>` : ''}`);
+        }
+        if (payments.length) {
+            parts.push(`
+                <ul class="payments-list">
+                    ${payments.map(p => `
+                        <li>
+                            <span class="pay-what">${escapeHtml(p.plan)} · ${escapeHtml(p.amount)}${p.refunded ? ' <span class="pill pill-neutral">Refunded</span>' : ''}${p.auto_renewal ? ' <span class="muted">(auto-renewal)</span>' : ''}</span>
+                            <span class="pay-meta">
+                                <span>${escapeHtml(parseUtc(p.paid_at).toLocaleDateString([], DATE))}</span>
+                                ${p.invoice_id ? `<a href="/api/billing/invoices/${Number(p.invoice_id)}.pdf" target="_blank" rel="noopener" title="Invoice ${escapeHtml(p.invoice_number)}">${icon('download')}<span>Invoice</span></a>` : ''}
+                            </span>
+                        </li>`).join('')}
+                </ul>`);
+        }
+        container.innerHTML = `<div class="usage">${parts.join('')}</div>`;
+        const bar = container.querySelector('.usage-bar i');
+        if (bar) requestAnimationFrame(() => { bar.style.width = `${bar.dataset.width}%`; });
+    }
+
+    async function cancelAutopay(button) {
+        button.disabled = true;
+        try {
+            renderPlan(await postJson('/api/billing/autopay/cancel'));
+            closeModal('autopayModal');
+            toast('Auto-renewal is off. Your plan stays active until the period ends.');
+        } catch (error) {
+            toast(error.message, 'error');
+        } finally {
+            button.disabled = false;
+        }
+    }
+
+    // --- BILLING DETAILS ---
+    async function loadProfile() {
+        try {
+            const { profile, states, gst_invoices } = await getJson('/api/billing/profile');
+            const select = document.getElementById('pfState');
+            Object.entries(states).sort((a, b) => a[1].localeCompare(b[1])).forEach(([code, name]) => {
+                select.add(new Option(name, code));
+            });
+            fillProfile(profile);
+            if (gst_invoices) {
+                document.getElementById('profileDesc').textContent =
+                    'Printed on your GST invoices. Add your GSTIN before you pay to claim input tax credit.';
+            }
+        } catch (error) {
+            console.error('Error loading billing details:', error);
+        }
+    }
+
+    function fillProfile(profile) {
+        document.getElementById('pfBusiness').value = profile.business_name;
+        document.getElementById('pfGstin').value = profile.gstin;
+        document.getElementById('pfState').value = profile.state_code;
+        document.getElementById('pfAddress').value = profile.address;
+    }
+
+    document.getElementById('pfGstin').addEventListener('input', (e) => {
+        e.target.value = e.target.value.toUpperCase().replace(/\s+/g, '');
+        const state = document.getElementById('pfState');
+        if (/^\d{2}/.test(e.target.value) && [...state.options].some(o => o.value === e.target.value.slice(0, 2))) {
+            state.value = e.target.value.slice(0, 2);
+        }
+    });
+
+    document.getElementById('profileForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const button = document.getElementById('profileBtn');
+        button.disabled = true;
+        try {
+            const data = await postJson('/api/billing/profile', {
+                business_name: document.getElementById('pfBusiness').value.trim(),
+                gstin: document.getElementById('pfGstin').value.trim(),
+                state_code: document.getElementById('pfState').value,
+                address: document.getElementById('pfAddress').value.trim(),
+            });
+            fillProfile(data.profile);
+            toast('Billing details saved. They will appear on future invoices.');
+        } catch (error) {
+            toast(error.message, 'error');
+        } finally {
+            button.disabled = false;
+        }
+    });
+
+    // --- USAGE CHART ---
+    // Daily requests as columns (one series, so no legend: the card title names it), a per-key
+    // breakdown below, a hover/keyboard tooltip, and a table view so nothing depends on hovering.
+    const SVG_NS = 'http://www.w3.org/2000/svg';
+    let usage = null, usageDays = 30, usageKey = 'all', activeDay = null;
+
+    function svg(tag, attrs = {}) {
+        const el = document.createElementNS(SVG_NS, tag);
+        Object.entries(attrs).forEach(([k, v]) => el.setAttribute(k, v));
+        return el;
+    }
+
+    const shortDate = (iso) => new Date(iso + 'T00:00:00Z').toLocaleDateString([], { month: 'short', day: 'numeric', timeZone: 'UTC' });
+    const longDate = (iso) => new Date(iso + 'T00:00:00Z').toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
+    const tickLabel = (n) => n >= 10000 ? `${+(n / 1000).toFixed(1)}K` : n.toLocaleString();
+
+    async function loadUsage() {
+        const body = document.getElementById('usageBody');
+        body.classList.add('is-loading');   // keep the previous render, dimmed, while refetching
+        try {
+            usage = await getJson(`/api/usage/daily?days=${usageDays}`);
+            renderKeyFilter();
+            renderUsage();
+        } catch (error) {
+            console.error('Error loading usage:', error);
+        } finally {
+            body.classList.remove('is-loading');
+        }
+    }
+
+    function renderKeyFilter() {
+        const select = document.getElementById('keyFilter');
+        const keys = [...usage.keys].sort((a, b) => a.name.localeCompare(b.name));
+        select.replaceChildren(new Option('All keys', 'all'),
+            ...keys.map(k => new Option(k.active ? k.name : `${k.name} (revoked)`, String(k.id))));
+        if (!keys.some(k => String(k.id) === usageKey)) usageKey = 'all';
+        select.value = usageKey;
+    }
+
+    function selectedSeries() {
+        if (usageKey === 'all') return usage.totals;
+        const key = usage.keys.find(k => String(k.id) === usageKey);
+        return key ? key.counts : usage.days.map(() => 0);
+    }
+
+    function renderUsage() {
+        if (!usage) return;
+        const values = selectedSeries();
+        const total = values.reduce((a, b) => a + b, 0);
+        const peak = values.reduce((best, v, i) => v > values[best] ? i : best, 0);
+        document.getElementById('usageTotal').textContent = total.toLocaleString();
+        document.getElementById('usageAvg').textContent = (total / values.length).toLocaleString([], { maximumFractionDigits: 1 });
+        document.getElementById('usagePeak').textContent = total ? values[peak].toLocaleString() : '—';
+        document.getElementById('usagePeakLabel').textContent = total ? `busiest day, ${shortDate(usage.days[peak])}` : 'busiest day';
+
+        const chart = document.getElementById('usageChart');
+        document.getElementById('usageEmpty').hidden = total > 0;
+        chart.hidden = total === 0;
+        activeDay = null;
+        if (total) drawChart(values);
+        renderKeyBars();
+        renderUsageTable(values);
+    }
+
+    function niceStep(raw) {
+        const pow = Math.pow(10, Math.floor(Math.log10(raw)));
+        return [1, 2, 2.5, 5, 10].map(m => m * pow).find(s => s >= raw);
+    }
+
+    function drawChart(values) {
+        const chart = document.getElementById('usageChart');
+        chart.querySelector('svg')?.remove();
+        const width = Math.max(260, chart.clientWidth), height = 220;
+        const m = { top: 10, right: 2, bottom: 26, left: 44 };
+        const plotW = width - m.left - m.right, plotH = height - m.top - m.bottom;
+        const n = values.length, band = plotW / n;
+        const barW = Math.max(2, Math.min(24, band - 2, band * 0.72));
+        const step = Math.max(1, niceStep(Math.max(...values) / 4));
+        const top = step * 4;
+        const y = (v) => m.top + plotH - v / top * plotH;
+
+        const root = svg('svg', { width, height, viewBox: `0 0 ${width} ${height}`, role: 'img',
+            'aria-label': `Column chart of daily API requests over the last ${n} days` });
+
+        // Recessive grid: hairlines at clean values, the baseline one step darker
+        for (let i = 0; i <= 4; i++) {
+            const gy = Math.round(y(i * step)) + 0.5;
+            root.append(svg('line', { x1: m.left, x2: width - m.right, y1: gy, y2: gy, class: i ? 'chart-grid' : 'chart-axis' }));
+            const label = svg('text', { x: m.left - 8, y: gy, class: 'chart-tick', 'text-anchor': 'end', 'dominant-baseline': 'middle' });
+            label.textContent = tickLabel(i * step);
+            root.append(label);
+        }
+
+        // Date labels, counted back from today so the latest day is always labelled
+        const every = Math.max(1, Math.ceil(n / Math.max(2, Math.floor(plotW / 64))));
+        for (let i = n - 1; i >= 0; i -= every) {
+            const cx = m.left + (i + 0.5) * band;
+            const anchor = cx < m.left + 24 ? 'start' : cx > width - 24 ? 'end' : 'middle';
+            const label = svg('text', { x: cx, y: height - 8, class: 'chart-tick', 'text-anchor': anchor });
+            label.textContent = shortDate(usage.days[i]);
+            root.append(label);
+        }
+
+        // Columns: square at the baseline, 4px rounded data end
+        const bars = svg('g');
+        values.forEach((v, i) => {
+            if (!v) return;
+            const h = Math.max(2, v / top * plotH);
+            const x = m.left + i * band + (band - barW) / 2, yTop = m.top + plotH - h;
+            const r = Math.min(4, barW / 2, h);
+            bars.append(svg('path', { 'data-i': i, class: 'chart-bar',
+                d: `M${x},${yTop + h}V${yTop + r}Q${x},${yTop} ${x + r},${yTop}H${x + barW - r}Q${x + barW},${yTop} ${x + barW},${yTop + r}V${yTop + h}Z` }));
+        });
+        root.append(bars);
+
+        // Hit targets: the whole day band, not just the painted column
+        const hits = svg('g');
+        values.forEach((v, i) => {
+            const hit = svg('rect', { x: m.left + i * band, y: m.top, width: band, height: plotH, fill: 'transparent' });
+            hit.addEventListener('pointerenter', () => showDay(i));
+            hits.append(hit);
+        });
+        root.append(hits);
+        root.addEventListener('pointerleave', hideDay);
+        chart.prepend(root);
+        chart.dataset.band = band;
+        chart.dataset.left = m.left;
+    }
+
+    function showDay(i) {
+        const chart = document.getElementById('usageChart');
+        const tip = document.getElementById('usageTip');
+        const values = selectedSeries();
+        activeDay = i;
+        chart.querySelectorAll('.chart-bar').forEach(bar => bar.classList.toggle('is-active', Number(bar.dataset.i) === i));
+
+        // Value leads, labels follow; names are user data, so textContent only
+        const rows = [];
+        const head = document.createElement('div');
+        head.className = 'chart-tip-date';
+        head.textContent = longDate(usage.days[i]);
+        const value = document.createElement('div');
+        value.className = 'chart-tip-value';
+        value.textContent = `${values[i].toLocaleString()} ${values[i] === 1 ? 'request' : 'requests'}`;
+        rows.push(head, value);
+        if (usageKey === 'all') {
+            usage.keys.filter(k => k.counts[i]).slice(0, 6).forEach(k => {
+                const row = document.createElement('div');
+                row.className = 'chart-tip-row';
+                const name = document.createElement('span');
+                name.textContent = k.name;
+                const count = document.createElement('strong');
+                count.textContent = k.counts[i].toLocaleString();
+                row.append(name, count);
+                rows.push(row);
+            });
+        }
+        if (usageKey === 'all' && usage.errors[i]) {
+            const errors = document.createElement('div');
+            errors.className = 'chart-tip-row muted';
+            errors.textContent = `${usage.errors[i].toLocaleString()} failed (not charged)`;
+            rows.push(errors);
+        }
+        tip.replaceChildren(...rows);
+        tip.hidden = false;
+
+        // Beside the hovered column, never on top of it: right of it in the left half, left of it in the right half
+        const band = Number(chart.dataset.band), left = Number(chart.dataset.left);
+        const cx = left + (i + 0.5) * band, gap = band / 2 + 8;
+        const x = cx < chart.clientWidth / 2 ? cx + gap : cx - gap - tip.offsetWidth;
+        tip.style.transform = `translateX(${Math.min(Math.max(x, 0), chart.clientWidth - tip.offsetWidth)}px)`;
+    }
+
+    function hideDay() {
+        activeDay = null;
+        document.getElementById('usageTip').hidden = true;
+        document.querySelectorAll('#usageChart .chart-bar.is-active').forEach(bar => bar.classList.remove('is-active'));
+    }
+
+    // Keyboard: same readout as hover
+    document.getElementById('usageChart').addEventListener('keydown', (e) => {
+        if (!usage || !['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) return;
+        e.preventDefault();
+        const last = usage.days.length - 1;
+        const current = activeDay ?? last;
+        const next = { ArrowLeft: current - 1, ArrowRight: current + 1, Home: 0, End: last }[e.key];
+        showDay(Math.max(0, Math.min(last, activeDay === null ? last : next)));
+    });
+    document.getElementById('usageChart').addEventListener('focus', () => usage && showDay(usage.days.length - 1));
+    document.getElementById('usageChart').addEventListener('blur', hideDay);
+
+    function renderKeyBars() {
+        const container = document.getElementById('keyBars');
+        const keys = usage.keys.filter(k => k.total);
+        container.hidden = keys.length < 1;
+        if (!keys.length) return;
+        const max = Math.max(...keys.map(k => k.total));
+        const title = document.createElement('div');
+        title.className = 'key-bars-title';
+        title.textContent = 'By key';
+        const rows = keys.slice(0, 8).map(k => {
+            const row = document.createElement('div');
+            row.className = 'key-bar' + (usageKey !== 'all' && String(k.id) !== usageKey ? ' is-dim' : '');
+            const name = document.createElement('span');
+            name.className = 'key-bar-name';
+            name.textContent = k.active ? k.name : `${k.name} (revoked)`;
+            const track = document.createElement('span');
+            track.className = 'key-bar-track';
+            const fill = document.createElement('i');
+            fill.style.width = `${Math.max(1, k.total / max * 100)}%`;
+            track.append(fill);
+            const value = document.createElement('strong');
+            value.textContent = k.total.toLocaleString();
+            row.append(name, track, value);
+            return row;
+        });
+        if (keys.length > 8) {
+            const rest = keys.slice(8).reduce((sum, k) => sum + k.total, 0);
+            const other = document.createElement('div');
+            other.className = 'hint';
+            other.textContent = `${keys.length - 8} more keys: ${rest.toLocaleString()} requests`;
+            rows.push(other);
+        }
+        container.replaceChildren(title, ...rows);
+    }
+
+    function renderUsageTable(values) {
+        const days = usage.days.map((day, i) => ({ day, requests: values[i], errors: usageKey === 'all' ? usage.errors[i] : null }))
+            .filter(d => d.requests).reverse();
+        const table = document.createElement('table');
+        table.className = 'table';
+        table.innerHTML = `<thead><tr><th>Day (UTC)</th><th class="num">Requests</th>${usageKey === 'all' ? '<th class="num">Failed</th>' : ''}</tr></thead>`;
+        const body = document.createElement('tbody');
+        days.forEach(d => {
+            const tr = body.insertRow();
+            tr.insertCell().textContent = longDate(d.day);
+            const req = tr.insertCell();
+            req.className = 'num';
+            req.textContent = d.requests.toLocaleString();
+            if (d.errors !== null) {
+                const err = tr.insertCell();
+                err.className = 'num';
+                err.textContent = d.errors.toLocaleString();
+            }
+        });
+        if (!days.length) {
+            const cell = body.insertRow().insertCell();
+            cell.colSpan = 3;
+            cell.className = 'muted';
+            cell.textContent = 'No requests in this period.';
+        }
+        table.append(body);
+        document.getElementById('usageTable').replaceChildren(table);
+    }
+
+    function toggleUsageTable() {
+        const table = document.getElementById('usageTable');
+        const button = document.getElementById('tableToggle');
+        table.hidden = !table.hidden;
+        button.setAttribute('aria-expanded', String(!table.hidden));
+        button.textContent = table.hidden ? 'Show as table' : 'Hide table';
+    }
+
+    let resizeTimer;
+    window.addEventListener('resize', () => {
+        clearTimeout(resizeTimer);
+        resizeTimer = setTimeout(() => { if (usage && !document.getElementById('usageChart').hidden) drawChart(selectedSeries()); }, 120);
+    });
+
+    // --- DATA ---
+    async function loadStats() {
+        try {
+            const response = await fetch('/api/usage');
+            if (!response.ok) return;
+            const data = await response.json();
+            const stats = data.stats;
+
+            countUp(document.getElementById('totalRequests'), stats.total_requests);
+            countUp(document.getElementById('avgLatency'), stats.avg_latency_ms, { decimals: 1 });
+
+            const rateEl = document.getElementById('successRate');
+            const rate = parseFloat(stats.success_rate);
+            if (isNaN(rate)) {
+                rateEl.textContent = '—';
+                document.getElementById('successFoot').textContent = 'No requests yet';
+            } else {
+                countUp(rateEl, rate, { decimals: Number.isInteger(rate) ? 0 : 1, suffix: '%' });
+                document.getElementById('successFoot').textContent = 'Of all API requests';
+            }
+
+            renderLogs(data.logs);
+        } catch (error) {
+            console.error('Error loading stats:', error);
+        }
+    }
+
+    async function loadApiKeys() {
+        try {
+            const response = await fetch('/api/keys');
+            if (!response.ok) return;
+            const keys = (await response.json()).keys;
+            keysById = Object.fromEntries(keys.map(key => [key.id, key]));
+            countUp(document.getElementById('keyCount'), keys.length, { duration: 500 });
+            document.getElementById('keyBadge').textContent = keys.length;
+            renderKeys(keys);
+        } catch (error) {
+            console.error('Error loading keys:', error);
+        }
+    }
+
+    // --- RENDERING ---
+    function renderKeys(keys) {
+        const container = document.getElementById('keysContainer');
+
+        if (keys.length === 0) {
+            container.innerHTML = `
+                <div class="empty">
+                    <span class="empty-art">${icon('key', 'icon-lg')}</span>
+                    <div class="empty-title">No API keys yet</div>
+                    <div class="empty-desc">Create a key to call the Humanizer API from your own apps and scripts.</div>
+                    <button class="btn btn-secondary btn-sm" type="button" onclick="openCreateKeyModal()">${icon('plus')}<span>Create API key</span></button>
+                </div>`;
+            return;
+        }
+
+        container.innerHTML = `
+            <div class="table-wrap">
+                <table class="table">
+                    <thead><tr><th>Name</th><th>Key</th><th>Created</th><th></th></tr></thead>
+                    <tbody>
+                        ${keys.map((key, i) => `
+                            <tr style="animation-delay: ${i * 40}ms">
+                                <td><span class="cell-strong">${icon('key')}${escapeHtml(key.name)}</span></td>
+                                <td><span class="key-chip">${escapeHtml(key.key_preview)}</span></td>
+                                <td class="muted">${escapeHtml(parseUtc(key.created_at).toLocaleDateString([], DATE))}</td>
+                                <td class="cell-actions"><button class="btn btn-danger btn-sm" type="button" onclick="confirmRevoke(${Number(key.id)})">Revoke</button></td>
+                            </tr>`).join('')}
+                    </tbody>
+                </table>
+            </div>`;
+    }
+
+    function renderLogs(logs) {
+        const container = document.getElementById('logsContainer');
+
+        if (logs.length === 0) {
+            container.innerHTML = `
+                <div class="empty">
+                    <span class="empty-art">${icon('activity', 'icon-lg')}</span>
+                    <div class="empty-title">No requests yet</div>
+                    <div class="empty-desc">Calls made with your API keys will show up here.</div>
+                </div>`;
+            return;
+        }
+
+        // Server sends newest first
+        container.innerHTML = `
+            <div class="table-wrap">
+                <table class="table">
+                    <thead><tr><th>Time</th><th>Endpoint</th><th>Status</th><th class="num">Latency</th></tr></thead>
+                    <tbody>
+                        ${logs.map((log, i) => {
+                            const ok = log.status_code < 400;
+                            return `
+                            <tr style="animation-delay: ${i * 30}ms">
+                                <td class="muted">${escapeHtml(parseUtc(log.timestamp).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' }))}</td>
+                                <td><span class="endpoint-cell"><span class="method">POST</span>${escapeHtml(log.endpoint)}</span></td>
+                                <td><span class="pill ${ok ? 'pill-success' : 'pill-danger'}">${escapeHtml(log.status_code)}</span></td>
+                                <td class="num">${escapeHtml(log.latency_ms)} ms</td>
+                            </tr>`;
+                        }).join('')}
+                    </tbody>
+                </table>
+            </div>`;
+    }
+
+    // --- MODALS ---
+    function openModal(id) {
+        document.getElementById(id).classList.add('active');
+    }
+
+    function closeModal(id) {
+        document.getElementById(id).classList.remove('active');
+    }
+
+    document.querySelectorAll('.modal').forEach(modal => {
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) closeModal(modal.id);
+        });
+    });
+
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') document.querySelectorAll('.modal.active').forEach(m => closeModal(m.id));
+    });
+
+    function openCreateKeyModal() {
+        const input = document.getElementById('keyName');
+        input.value = '';
+        openModal('createKeyModal');
+        setTimeout(() => input.focus(), 50);
+    }
+
+    document.getElementById('keyName').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') createApiKey();
+    });
+
+    // --- ACTIONS ---
+    async function createApiKey() {
+        const name = document.getElementById('keyName').value.trim();
+        const button = document.getElementById('createKeyBtn');
+
+        if (!name) {
+            toast('Please enter a key name.', 'error');
+            document.getElementById('keyName').focus();
+            return;
+        }
+
+        button.disabled = true;
+        button.innerHTML = '<span class="spinner"></span><span>Creating…</span>';
+
+        try {
+            const response = await fetch('/api/keys', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name })
+            });
+            const data = await response.json().catch(() => ({}));
+
+            if (response.ok) {
+                closeModal('createKeyModal');
+                document.getElementById('displayApiKey').value = data.key.api_key;
+                openModal('keyCreatedModal');
+                loadApiKeys();
+            } else {
+                toast(data.error || 'Could not create the key.', 'error');
+            }
+        } catch (error) {
+            toast('Connection error. Please try again.', 'error');
+        } finally {
+            button.disabled = false;
+            button.textContent = 'Create key';
+        }
+    }
+
+    function confirmRevoke(keyId) {
+        const key = keysById[keyId];
+        document.getElementById('confirmDesc').textContent =
+            `“${key ? key.name : 'This key'}” will stop working immediately. Its usage history is kept.`;
+        document.getElementById('confirmRevokeBtn').onclick = () => revokeKey(keyId);
+        openModal('confirmModal');
+    }
+
+    async function revokeKey(keyId) {
+        const button = document.getElementById('confirmRevokeBtn');
+        button.disabled = true;
+
+        try {
+            const response = await fetch(`/api/keys/${keyId}`, { method: 'DELETE' });
+            if (response.ok) {
+                closeModal('confirmModal');
+                toast('API key revoked.');
+                loadApiKeys();
+                loadUsage();
+            } else {
+                toast('Could not revoke the key.', 'error');
+            }
+        } catch (error) {
+            toast('Connection error. Please try again.', 'error');
+        } finally {
+            button.disabled = false;
+        }
+    }
+
+    setInterval(loadStats, 30000);
+</script>
+{% endblock %}

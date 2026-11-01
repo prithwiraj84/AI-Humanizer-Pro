@@ -1,0 +1,443 @@
+{% extends 'base.html' %}
+{% from '_macros.html' import icon %}
+{% set active_page = 'admin' %}
+
+{% block title %}Admin · AI Humanizer{% endblock %}
+{% block robots %}noindex, nofollow{% endblock %}
+{% block body_class %}app{% endblock %}
+
+{% block body %}
+{% include '_nav.html' %}
+
+<main class="container page">
+    <header class="page-head">
+        <div class="reveal">
+            <span class="eyebrow">Admin</span>
+            <h1 class="display">Admin panel</h1>
+            <p class="lede">Look up accounts, check payments, issue refunds, grant plans and manage coupons. Every change is logged.</p>
+        </div>
+    </header>
+
+    <section class="kpi-grid">
+        <div class="card kpi reveal" style="--d: 1">
+            <div class="kpi-head">Users<span class="kpi-icon">{{ icon('user') }}</span></div>
+            <div class="kpi-value" id="kUsers">—</div>
+            <div class="kpi-foot" id="kUsersFoot">&nbsp;</div>
+        </div>
+        <div class="card kpi reveal" style="--d: 2">
+            <div class="kpi-head">Active paid plans<span class="kpi-icon">{{ icon('card') }}</span></div>
+            <div class="kpi-value" id="kPaying">—</div>
+            <div class="kpi-foot" id="kPayingFoot">&nbsp;</div>
+        </div>
+        <div class="card kpi reveal" style="--d: 3">
+            <div class="kpi-head">Revenue, last 30 days<span class="kpi-icon">{{ icon('trending') }}</span></div>
+            <div class="kpi-value kpi-value-sm" id="kRevenue">—</div>
+            <div class="kpi-foot" id="kRevenueFoot">After refunds</div>
+        </div>
+        <div class="card kpi reveal" style="--d: 4">
+            <div class="kpi-head">API requests, 24 h<span class="kpi-icon">{{ icon('activity') }}</span></div>
+            <div class="kpi-value" id="kRequests">—</div>
+            <div class="kpi-foot">All accounts</div>
+        </div>
+    </section>
+
+    <div class="admin-tabs reveal" style="--d: 5">
+        <div class="segmented" id="adminTabs" role="tablist" aria-label="Admin sections">
+            <input type="radio" name="tab" id="tab-users" value="users" checked><label for="tab-users">Users</label>
+            <input type="radio" name="tab" id="tab-payments" value="payments"><label for="tab-payments">Payments</label>
+            <input type="radio" name="tab" id="tab-coupons" value="coupons"><label for="tab-coupons">Coupons</label>
+            <input type="radio" name="tab" id="tab-activity" value="activity"><label for="tab-activity">Activity log</label>
+            <span class="segmented-thumb" aria-hidden="true"></span>
+        </div>
+    </div>
+
+    <!-- USERS -->
+    <section class="admin-panel" id="panel-users">
+        <div class="card" id="userDetail" hidden></div>
+
+        <div class="card">
+            <div class="card-head card-head-wrap">
+                <div class="card-title">{{ icon('user') }}Accounts</div>
+                <form class="admin-search" id="userSearch">
+                    <input class="input input-sm" type="search" id="userQuery" placeholder="Email, username or ID" aria-label="Search accounts">
+                    <button class="btn btn-secondary btn-sm" type="submit">Search</button>
+                </form>
+            </div>
+            <div id="userList"></div>
+        </div>
+    </section>
+
+    <!-- PAYMENTS -->
+    <section class="admin-panel" id="panel-payments" hidden>
+        <div class="card">
+            <div class="card-head card-head-wrap">
+                <div class="card-title">{{ icon('card') }}Payments</div>
+                <form class="admin-search" id="paymentSearch">
+                    <select class="input input-sm" id="paymentStatus" aria-label="Status">
+                        <option value="paid,refunded">Paid and refunded</option>
+                        <option value="paid">Paid</option>
+                        <option value="refunded">Refunded</option>
+                        <option value="created">Unpaid checkouts</option>
+                    </select>
+                    <input class="input input-sm" type="search" id="paymentQuery" placeholder="Email, payment ID or invoice no." aria-label="Search payments">
+                    <button class="btn btn-secondary btn-sm" type="submit">Search</button>
+                </form>
+            </div>
+            <div id="paymentList"></div>
+        </div>
+    </section>
+
+    <!-- COUPONS -->
+    <section class="admin-panel" id="panel-coupons" hidden>
+        <div class="card">
+            <div class="card-head"><div class="card-title">{{ icon('tag') }}New coupon</div></div>
+            <form class="card-body coupon-form" id="couponCreate" novalidate>
+                <div class="field">
+                    <label class="label" for="cCode">Code</label>
+                    <input class="input mono" id="cCode" maxlength="32" placeholder="LAUNCH20" required>
+                </div>
+                <div class="field">
+                    <label class="label" for="cPercent">Discount (%)</label>
+                    <input class="input" id="cPercent" type="number" min="1" max="100" placeholder="20" required>
+                </div>
+                <div class="field">
+                    <label class="label" for="cMax">Max uses <span class="muted">(optional)</span></label>
+                    <input class="input" id="cMax" type="number" min="1" placeholder="Unlimited">
+                </div>
+                <div class="field">
+                    <label class="label" for="cExpires">Last valid day <span class="muted">(optional)</span></label>
+                    <input class="input" id="cExpires" type="date">
+                </div>
+                <div class="field field-wide">
+                    <label class="label" for="cApplies">Applies to <span class="muted">(optional, comma-separated)</span></label>
+                    <input class="input mono" id="cApplies" placeholder="Everything · or e.g. plans, yearly, topup, pro, pro_yearly">
+                </div>
+                <div class="field field-actions">
+                    <button class="btn btn-primary" type="submit">Create coupon</button>
+                </div>
+            </form>
+        </div>
+        <div class="card">
+            <div class="card-head"><div class="card-title">{{ icon('tag') }}Coupons</div></div>
+            <div id="couponList"></div>
+        </div>
+    </section>
+
+    <!-- ACTIVITY -->
+    <section class="admin-panel" id="panel-activity" hidden>
+        <div class="card">
+            <div class="card-head"><div class="card-title">{{ icon('clock') }}Activity log</div><span class="hint">Last 100 admin actions</span></div>
+            <div id="actionList"></div>
+        </div>
+    </section>
+</main>
+
+{% include '_footer.html' %}
+
+<!-- Refund Modal -->
+<div id="refundModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="refundTitle">
+    <div class="modal-dialog">
+        <div class="modal-head">
+            <div class="modal-icon danger">{{ icon('rotate', 'icon-lg') }}</div>
+            <div class="modal-title" id="refundTitle">Refund payment</div>
+            <p class="modal-desc" id="refundDesc"></p>
+        </div>
+        <div class="modal-body">
+            <div class="field">
+                <label class="label" for="refundAmount">Amount <span class="muted" id="refundCurrency"></span></label>
+                <input class="input" type="number" id="refundAmount" min="0.01" step="0.01" placeholder="Full refund">
+                <span class="hint-text">Leave empty to refund everything that hasn't been refunded yet.</span>
+            </div>
+            <label class="switch-field">
+                <span class="switch">
+                    <input type="checkbox" id="refundRevoke" checked>
+                    <span class="switch-track"></span>
+                    <span class="switch-thumb"></span>
+                </span>
+                <span class="switch-text">
+                    <strong>Take back what was bought</strong>
+                    <small>On a full refund, remove the requests and days it added</small>
+                </span>
+            </label>
+        </div>
+        <div class="modal-foot">
+            <button class="btn btn-secondary" type="button" onclick="closeModal('refundModal')">Cancel</button>
+            <button class="btn btn-danger-solid" type="button" id="refundBtn">Refund through Razorpay</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const PRODUCTS = {{ products | tojson }};
+    const DATE = { year: 'numeric', month: 'short', day: 'numeric' };
+    const fmtDate = (ts) => ts ? parseUtc(ts).toLocaleDateString([], DATE) : '—';
+    const fmtTime = (ts) => ts ? parseUtc(ts).toLocaleString([], { ...DATE, hour: '2-digit', minute: '2-digit' }) : '—';
+
+    async function api(url, body) {
+        const response = await fetch(url, body === undefined ? {} : {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.error || 'Request failed.');
+        return data;
+    }
+
+    function table(headers, rows, empty) {
+        if (!rows.length) return `<div class="empty"><div class="empty-desc">${escapeHtml(empty)}</div></div>`;
+        return `<div class="table-wrap"><table class="table"><thead><tr>${headers.map(h => `<th${h.startsWith('#') ? ' class="num"' : ''}>${escapeHtml(h.replace(/^#/, ''))}</th>`).join('')}</tr></thead>
+                <tbody>${rows.join('')}</tbody></table></div>`;
+    }
+
+    // --- TABS ---
+    initSegmented(document.getElementById('adminTabs'), (tab) => {
+        document.querySelectorAll('.admin-panel').forEach(p => { p.hidden = p.id !== `panel-${tab}`; });
+        ({ users: loadUsers, payments: loadPayments, coupons: loadCoupons, activity: loadActions })[tab]();
+    });
+
+    // --- OVERVIEW ---
+    async function loadOverview() {
+        const o = await api('/admin/api/overview');
+        document.getElementById('kUsers').textContent = o.users.toLocaleString();
+        document.getElementById('kUsersFoot').textContent = `${o.verified.toLocaleString()} verified · ${o.signups_week.toLocaleString()} new this week`;
+        document.getElementById('kPaying').textContent = o.paying.toLocaleString();
+        document.getElementById('kPayingFoot').textContent = `${o.autopay.toLocaleString()} on auto-renewal`;
+        document.getElementById('kRevenue').textContent = o.revenue_30d.length ? o.revenue_30d.map(r => r.total).join(' + ') : '—';
+        document.getElementById('kRevenueFoot').textContent = o.revenue_30d.length
+            ? `${o.revenue_30d.reduce((n, r) => n + r.payments, 0)} payments, after refunds` : 'No payments yet';
+        document.getElementById('kRequests').textContent = o.requests_day.toLocaleString();
+    }
+
+    // --- USERS ---
+    async function loadUsers() {
+        const q = document.getElementById('userQuery').value.trim();
+        try {
+            const { users } = await api(`/admin/api/users?q=${encodeURIComponent(q)}`);
+            document.getElementById('userList').innerHTML = table(['User', 'Plan', '#Top-up', 'Joined', ''], users.map(u => `
+                <tr>
+                    <td><span class="cell-strong">${escapeHtml(u.username)}</span><div class="muted cell-sub">${escapeHtml(u.email)} ${u.verified ? '' : '<span class="pill pill-neutral">Unverified</span>'}</div></td>
+                    <td>${u.plan ? escapeHtml(u.plan) : '<span class="muted">—</span>'}</td>
+                    <td class="num">${u.credits.toLocaleString()}</td>
+                    <td class="muted">${escapeHtml(fmtDate(u.created_at))}</td>
+                    <td class="cell-actions"><button class="btn btn-secondary btn-sm" type="button" onclick="openUser(${Number(u.id)})">Open</button></td>
+                </tr>`), q ? 'No accounts match.' : 'No accounts yet.');
+        } catch (e) { toast(e.message, 'error'); }
+    }
+
+    document.getElementById('userSearch').addEventListener('submit', (e) => { e.preventDefault(); loadUsers(); });
+
+    async function openUser(id) {
+        try {
+            renderUser(await api(`/admin/api/users/${id}`));
+            document.getElementById('userDetail').scrollIntoView({ behavior: prefersReducedMotion() ? 'auto' : 'smooth', block: 'start' });
+        } catch (e) { toast(e.message, 'error'); }
+    }
+
+    function renderUser(d) {
+        const u = d.user, s = d.subscription;
+        const box = document.getElementById('userDetail');
+        box.hidden = false;
+        box.innerHTML = `
+            <div class="card-head">
+                <div class="card-title">${icon('user')}${escapeHtml(u.username)} <span class="muted">#${u.id}</span></div>
+                <button class="icon-btn" type="button" title="Close" onclick="document.getElementById('userDetail').hidden = true">${icon('x')}</button>
+            </div>
+            <div class="card-body detail-grid">
+                <dl class="dl">
+                    <dt>Email</dt><dd>${escapeHtml(u.email)} ${u.verified ? '<span class="pill pill-success">Verified</span>'
+                        : `<span class="pill pill-neutral">Unverified</span> <button class="btn btn-ghost btn-sm" type="button" onclick="verifyUser(${u.id})">Mark verified</button>`}</dd>
+                    <dt>Joined</dt><dd>${escapeHtml(fmtTime(u.created_at))}</dd>
+                    <dt>Sign-in</dt><dd>${escapeHtml([u.password_login ? 'Password' : null, ...u.providers.map(p => p[0].toUpperCase() + p.slice(1))].filter(Boolean).join(', ') || '—')}</dd>
+                    <dt>API keys</dt><dd>${d.keys} active · ${d.requests_total.toLocaleString()} requests (${d.requests_30d.toLocaleString()} in 30 days)</dd>
+                    <dt>Referral code</dt><dd class="mono">${escapeHtml(u.referral_code || '—')}</dd>
+                    <dt>Referred by</dt><dd>${u.referred_by ? `<a href="#" onclick="openUser(${u.referred_by.id}); return false;">${escapeHtml(u.referred_by.email)}</a>` : '—'}</dd>
+                    <dt>Billing details</dt><dd>${d.billing_profile ? escapeHtml([d.billing_profile.business_name, d.billing_profile.gstin, d.billing_profile.state_code].filter(Boolean).join(' · ') || '—') : '—'}</dd>
+                </dl>
+                <div class="detail-side">
+                    <div class="plan-box">
+                        <div class="plan-box-title">${s ? escapeHtml(s.plan) + (s.cycle === 'yearly' ? ' · yearly' : '') : 'No plan'}
+                            ${s ? `<span class="pill ${s.active ? 'pill-success' : 'pill-neutral'}">${s.active ? 'Active' : 'Inactive'}</span>` : ''}</div>
+                        ${s ? `<div class="muted">${(s.requests_limit - s.requests_used).toLocaleString()} of ${s.requests_limit.toLocaleString()} plan requests left · ends ${escapeHtml(fmtDate(s.period_end))}</div>
+                               <div class="muted">${s.credits.toLocaleString()} top-up requests</div>` : ''}
+                        ${d.autopay.map(a => `<div class="muted">Auto-renewal: ${escapeHtml(a.product)} · ${escapeHtml(a.status)}</div>`).join('')}
+                    </div>
+                    <div class="admin-action">
+                        <label class="label" for="grantProduct">Grant without payment</label>
+                        <div class="admin-action-row">
+                            <select class="input input-sm" id="grantProduct">${PRODUCTS.map(p => `<option value="${escapeHtml(p.id)}">${escapeHtml(p.name)}</option>`).join('')}</select>
+                            <button class="btn btn-secondary btn-sm" type="button" onclick="grantProduct(${u.id}, this)">Grant</button>
+                        </div>
+                    </div>
+                    <div class="admin-action">
+                        <label class="label" for="grantCredits">Add top-up requests</label>
+                        <div class="admin-action-row">
+                            <input class="input input-sm" type="number" id="grantCredits" min="1" placeholder="e.g. 1000">
+                            <button class="btn btn-secondary btn-sm" type="button" onclick="grantCredits(${u.id}, this)">Add</button>
+                        </div>
+                    </div>
+                    <input class="input input-sm" type="text" id="grantNote" maxlength="200" placeholder="Note for the log (optional)" aria-label="Note for the activity log">
+                </div>
+            </div>
+            <div class="detail-section">
+                <div class="detail-title">Payments</div>
+                ${paymentsTable(d.payments, false)}
+            </div>
+            ${d.referrals.length ? `<div class="detail-section"><div class="detail-title">Referred accounts</div>
+                ${table(['Account', 'Status', 'Joined'], d.referrals.map(r => `<tr><td>${escapeHtml(r.email)}</td><td>${escapeHtml(r.status)}</td><td class="muted">${escapeHtml(fmtDate(r.created_at))}</td></tr>`), '')}</div>` : ''}`;
+        box.dataset.userId = u.id;
+    }
+
+    async function grantProduct(userId, button) {
+        button.disabled = true;
+        try {
+            toast((await api(`/admin/api/users/${userId}/grant`, { product: document.getElementById('grantProduct').value,
+                                                                  note: document.getElementById('grantNote').value })).message);
+            openUser(userId);
+        } catch (e) { toast(e.message, 'error'); } finally { button.disabled = false; }
+    }
+
+    async function grantCredits(userId, button) {
+        button.disabled = true;
+        try {
+            toast((await api(`/admin/api/users/${userId}/credits`, { credits: document.getElementById('grantCredits').value,
+                                                                    note: document.getElementById('grantNote').value })).message);
+            openUser(userId);
+        } catch (e) { toast(e.message, 'error'); } finally { button.disabled = false; }
+    }
+
+    async function verifyUser(userId) {
+        try {
+            toast((await api(`/admin/api/users/${userId}/verify`, {})).message);
+            openUser(userId);
+        } catch (e) { toast(e.message, 'error'); }
+    }
+
+    // --- PAYMENTS ---
+    let paymentsById = {};
+
+    function paymentsTable(payments, withEmail = true) {
+        payments.forEach(p => { paymentsById[p.id] = p; });
+        const statusPill = (p) => ({ paid: 'pill-success', refunded: 'pill-neutral', created: 'pill-neutral' })[p.status] || 'pill-neutral';
+        return table(withEmail ? ['Date', 'Account', 'Purchase', '#Amount', 'Status', ''] : ['Date', 'Purchase', '#Amount', 'Status', ''], payments.map(p => `
+            <tr>
+                <td class="muted">${escapeHtml(fmtTime(p.paid_at || p.created_at))}</td>
+                ${withEmail ? `<td><a href="#" onclick="showUser(${Number(p.user_id)}); return false;">${escapeHtml(p.email)}</a></td>` : ''}
+                <td>${escapeHtml(p.product)}${p.coupon ? ` <span class="pill pill-neutral">${escapeHtml(p.coupon)}</span>` : ''}${p.auto_renewal ? ' <span class="muted">(auto)</span>' : ''}
+                    <div class="muted cell-sub mono">${escapeHtml(p.razorpay_payment_id || (p.status === 'created' ? 'not paid' : 'free (coupon)'))}</div></td>
+                <td class="num">${escapeHtml(p.amount)}${p.refunded ? `<div class="muted cell-sub">−${escapeHtml(p.refunded)}</div>` : ''}</td>
+                <td><span class="pill ${statusPill(p)}">${escapeHtml(p.status === 'created' ? 'unpaid' : p.status)}</span></td>
+                <td class="cell-actions">
+                    ${p.invoice_id ? `<a class="btn btn-ghost btn-sm" href="/api/billing/invoices/${Number(p.invoice_id)}.pdf" target="_blank" rel="noopener">${icon('download')}<span>${escapeHtml(p.invoice_number)}</span></a>` : ''}
+                    ${p.refundable > 0 ? `<button class="btn btn-danger btn-sm" type="button" onclick="openRefund(${Number(p.id)})">Refund</button>` : ''}
+                </td>
+            </tr>`), 'No payments found.');
+    }
+
+    async function loadPayments() {
+        const status = document.getElementById('paymentStatus').value;
+        const q = document.getElementById('paymentQuery').value.trim();
+        try {
+            const { payments } = await api(`/admin/api/payments?status=${encodeURIComponent(status)}&q=${encodeURIComponent(q)}`);
+            document.getElementById('paymentList').innerHTML = paymentsTable(payments);
+        } catch (e) { toast(e.message, 'error'); }
+    }
+
+    document.getElementById('paymentSearch').addEventListener('submit', (e) => { e.preventDefault(); loadPayments(); });
+    document.getElementById('paymentStatus').addEventListener('change', loadPayments);
+
+    function showUser(id) {
+        document.getElementById('tab-users').click();
+        openUser(id);
+    }
+
+    function openRefund(paymentId) {
+        const p = paymentsById[paymentId];
+        document.getElementById('refundDesc').textContent =
+            `${p.product} for ${p.email}, paid ${fmtDate(p.paid_at)}: ${p.amount}${p.refunded ? ` (${p.refunded} already refunded)` : ''}. The money goes back to the original payment method.`;
+        document.getElementById('refundCurrency').textContent = `(${p.currency}, up to ${p.refundable.toFixed(2)})`;
+        document.getElementById('refundAmount').value = '';
+        document.getElementById('refundRevoke').checked = true;
+        document.getElementById('refundBtn').onclick = () => refund(paymentId);
+        openModal('refundModal');
+    }
+
+    async function refund(paymentId) {
+        const button = document.getElementById('refundBtn');
+        button.disabled = true;
+        try {
+            const result = await api(`/admin/api/payments/${paymentId}/refund`, {
+                amount: document.getElementById('refundAmount').value, revoke: document.getElementById('refundRevoke').checked });
+            closeModal('refundModal');
+            toast(result.message);
+            loadPayments();
+            loadOverview();
+            const detail = document.getElementById('userDetail');
+            if (!detail.hidden) openUser(detail.dataset.userId);
+        } catch (e) { toast(e.message, 'error'); } finally { button.disabled = false; }
+    }
+
+    // --- COUPONS ---
+    async function loadCoupons() {
+        try {
+            const { coupons } = await api('/admin/api/coupons');
+            document.getElementById('couponList').innerHTML = table(['Code', '#Off', 'Applies to', '#Used', 'Expires', 'Status', ''], coupons.map(c => `
+                <tr>
+                    <td class="mono cell-strong">${escapeHtml(c.code)}</td>
+                    <td class="num">${c.percent_off}%</td>
+                    <td>${escapeHtml(c.applies_to || 'Everything')}</td>
+                    <td class="num">${c.redeemed}${c.max_redemptions ? ` / ${c.max_redemptions}` : ''}</td>
+                    <td class="muted">${c.expires_at ? escapeHtml(fmtDate(c.expires_at)) : 'Never'}</td>
+                    <td><span class="pill ${c.active ? 'pill-success' : 'pill-neutral'}">${c.active ? 'Active' : 'Off'}</span></td>
+                    <td class="cell-actions"><button class="btn btn-ghost btn-sm" type="button" onclick="toggleCoupon('${escapeHtml(c.code)}')">${c.active ? 'Turn off' : 'Turn on'}</button></td>
+                </tr>`), 'No coupons yet.');
+        } catch (e) { toast(e.message, 'error'); }
+    }
+
+    document.getElementById('couponCreate').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const expires = document.getElementById('cExpires').value;
+        try {
+            const result = await api('/admin/api/coupons', {
+                code: document.getElementById('cCode').value, percent_off: document.getElementById('cPercent').value,
+                max_redemptions: document.getElementById('cMax').value, applies_to: document.getElementById('cApplies').value,
+                expires_at: expires,
+            });
+            toast(result.message);
+            e.target.reset();
+            loadCoupons();
+        } catch (error) { toast(error.message, 'error'); }
+    });
+
+    async function toggleCoupon(code) {
+        try {
+            await api(`/admin/api/coupons/${encodeURIComponent(code)}/toggle`, {});
+            loadCoupons();
+        } catch (e) { toast(e.message, 'error'); }
+    }
+
+    // --- ACTIVITY ---
+    async function loadActions() {
+        try {
+            const { actions } = await api('/admin/api/actions');
+            document.getElementById('actionList').innerHTML = table(['When', 'Admin', 'Action', 'Account', 'Details'], actions.map(a => `
+                <tr>
+                    <td class="muted">${escapeHtml(fmtTime(a.created_at))}</td>
+                    <td>${escapeHtml(a.admin || '—')}</td>
+                    <td><span class="pill pill-neutral">${escapeHtml(a.action)}</span></td>
+                    <td>${a.target_user_id ? `<a href="#" onclick="showUser(${Number(a.target_user_id)}); return false;">${escapeHtml(a.target || '#' + a.target_user_id)}</a>` : '—'}</td>
+                    <td class="mono cell-sub">${escapeHtml(Object.entries(a.details).map(([k, v]) => `${k}: ${v}`).join(' · '))}</td>
+                </tr>`), 'Nothing logged yet.');
+        } catch (e) { toast(e.message, 'error'); }
+    }
+
+    // --- MODALS ---
+    function openModal(id) { document.getElementById(id).classList.add('active'); }
+    function closeModal(id) { document.getElementById(id).classList.remove('active'); }
+    document.querySelectorAll('.modal').forEach(modal => modal.addEventListener('click', (e) => { if (e.target === modal) closeModal(modal.id); }));
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') document.querySelectorAll('.modal.active').forEach(m => closeModal(m.id)); });
+
+    loadOverview().catch(e => toast(e.message, 'error'));
+    loadUsers();
+</script>
+{% endblock %}

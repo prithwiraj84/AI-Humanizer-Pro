@@ -1,0 +1,5 @@
+You've used 80% of your API requests
+
+Hi {{ username }}, your {{ plan_name }} plan has used {{ used }} of {{ limit }} requests.
+When they run out, API calls will return "402 Payment Required".
+Buy a top-up or another plan to keep going: {{ pricing_url }}

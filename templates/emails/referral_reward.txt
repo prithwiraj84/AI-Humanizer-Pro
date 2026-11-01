@@ -1,0 +1,4 @@
+You earned {{ credits }} free API requests
+
+Hi {{ username }}, someone you referred just made their first purchase, so we've added {{ credits }} requests to your account.
+Top-up requests never expire. Dashboard: {{ dashboard_url }}

@@ -1,0 +1,10 @@
+Payment received, thank you
+
+Hi {{ username }}, your payment went through and your purchase is active.
+
+Purchase: {{ product_name }}
+Amount paid: {{ amount }}
+Date: {{ paid_date }}
+{% if invoice_number %}Invoice: {{ invoice_number }} (attached)
+{% endif %}
+Dashboard: {{ dashboard_url }}

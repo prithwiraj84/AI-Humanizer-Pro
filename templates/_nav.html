@@ -1,0 +1,26 @@
+{% from '_macros.html' import icon, logo %}
+<header class="nav">
+    <div class="container nav-inner">
+        <a href="/" class="brand">{{ logo() }}<span>AI Humanizer</span><span class="brand-tag">PRO</span></a>
+        <nav class="nav-links" aria-label="Main">
+            <a href="/editor" class="nav-link {{ 'active' if active_page == 'editor' }}">{{ icon('pen') }}<span>Editor</span></a>
+            <a href="/dashboard" class="nav-link {{ 'active' if active_page == 'dashboard' }}">{{ icon('dashboard') }}<span>Dashboard</span></a>
+            <a href="/docs" class="nav-link {{ 'active' if active_page == 'docs' }}">{{ icon('book') }}<span>API Docs</span></a>
+            <a href="/pricing" class="nav-link {{ 'active' if active_page == 'pricing' }}">{{ icon('tag') }}<span>Pricing</span></a>
+            {% if session.get('user_id') and is_admin() %}
+            <a href="/admin" class="nav-link {{ 'active' if active_page == 'admin' }}">{{ icon('shield') }}<span>Admin</span></a>
+            {% endif %}
+        </nav>
+        <div class="nav-right">
+            {% if session.get('user_id') %}
+            <div class="user-chip">
+                <span class="avatar">{{ (session.get('username') or '?')[:1] | upper }}</span>
+                <span class="user-name">{{ session.get('username') }}</span>
+            </div>
+            <a href="/logout" class="btn btn-ghost btn-sm" title="Log out">{{ icon('logout') }}<span>Log out</span></a>
+            {% else %}
+            <a href="/login" class="btn btn-secondary btn-sm">Sign in</a>
+            {% endif %}
+        </div>
+    </div>
+</header>

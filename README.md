@@ -1,256 +1,172 @@
-<!-- ====================== HEADER ====================== -->
-<div align="center">
+# AI Humanizer Pro
 
-<img src="https://capsule-render.vercel.app/api?type=waving&color=gradient&customColorList=6366f1,a855f7,22d3ee&height=220&section=header&text=AI%20Humanizer%20Pro&fontSize=52&fontColor=ffffff&fontAlignY=38&animation=fadeIn&desc=Make%20AI%20text%20sound%20authentically%20human&descSize=18&descAlignY=60" width="100%" alt="AI Humanizer Pro" />
+Rewrite AI-generated drafts in a natural, human voice. Pick a tone, review every highlighted change,
+and use the same engine from your own apps through a paid REST API.
 
-<a href="https://git.io/typing-svg">
-  <img src="https://readme-typing-svg.demolab.com?font=Space+Grotesk&weight=600&size=26&duration=3000&pause=800&color=A855F7&center=true&vCenter=true&width=720&lines=Turn+AI+drafts+into+natural%2C+human+writing;FastAPI+%2B+Next.js+%2B+Three.js;Detector-resistant+%C2%B7+Tone+control+%C2%B7+Deep+mode;Built+for+students+%26+working+professionals" alt="Typing SVG" />
-</a>
+The web editor is free with an account. The REST API is sold as prepaid plans and top-ups through
+Razorpay, priced by region so it stays affordable everywhere.
 
-<br/>
+## Features
 
-<!-- ====================== BADGES ====================== -->
-<p>
-  <img src="https://img.shields.io/badge/Python-3.11+-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python" />
-  <img src="https://img.shields.io/badge/FastAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white" alt="FastAPI" />
-  <img src="https://img.shields.io/badge/Next.js-14-000000?style=for-the-badge&logo=nextdotjs&logoColor=white" alt="Next.js" />
-  <img src="https://img.shields.io/badge/Three.js-r169-000000?style=for-the-badge&logo=threedotjs&logoColor=white" alt="Three.js" />
-  <img src="https://img.shields.io/badge/Tailwind-3.4-06B6D4?style=for-the-badge&logo=tailwindcss&logoColor=white" alt="Tailwind" />
-</p>
+**Editor**
+- Four tones: standard, professional, casual and academic, plus Chaos Mode for a deeper rewrite.
+- Word-level diff highlighting, change statistics and the longest unchanged phrase.
+- The six most recent results are kept in the browser's local storage (never on the server).
 
-<p>
-  <img src="https://img.shields.io/badge/status-active-success?style=flat-square" alt="status" />
-  <img src="https://img.shields.io/badge/PRs-welcome-6366f1?style=flat-square" alt="prs" />
-  <img src="https://img.shields.io/badge/license-MIT-a855f7?style=flat-square" alt="license" />
-  <img src="https://img.shields.io/badge/made%20with-%E2%9D%A4-ec4899?style=flat-square" alt="made with love" />
-</p>
+**Rewriting engine**
+- spaCy (`en_core_web_sm`) for parsing, lemminflect for correct word forms.
+- A synonym table built offline from WordNet, the Brown corpus and SemCor (`scripts/build_synonyms.py`),
+  so the server only loads a few MB of data and fits Render's 512 MB free tier.
+- Text is processed in memory and never stored or logged.
 
-<!-- ====================== PREVIEW ====================== -->
-<br/>
-<img src="frontend/public/og.png" width="760" alt="AI Humanizer Pro preview" />
+**Developer API**
+- `POST /humanize` for one text and `POST /humanize/batch` for up to 25 texts per call.
+- API keys stored as hashes, rate limits per key, quota headers on every response.
+- Dashboard with usage charts (requests per day and per key), recent activity and key management.
 
-</div>
+**Billing**
+- Regional prices by World Bank income group: rupees in India, US dollars elsewhere.
+- 30-day and yearly plans (12 months for the price of 10), and top-ups that never expire.
+- Optional auto-renewal with Razorpay Subscriptions (UPI AutoPay or card, rupee prices).
+- Coupon codes and a referral program (free requests for both sides on a friend's first purchase).
+- GST invoices as PDF: CGST + SGST or IGST, zero-rated exports, gapless numbering per financial year.
+- Emails for receipts, an 80% quota warning and a reminder before a plan ends.
 
-<img src="https://raw.githubusercontent.com/andreasbm/readme/master/assets/lines/rainbow.png" width="100%" alt="divider" />
+**Accounts and security**
+- Email and password sign-up with email verification and Cloudflare Turnstile bot protection,
+  or Google and GitHub sign-in.
+- Passwords hashed with scrypt, account lockout after repeated failures, password reset by emailed code.
+- Content Security Policy and other security headers, cross-site request checks, rate limits.
+- Admin panel for looking up users and payments, issuing refunds, granting plans and managing coupons,
+  with an audit log.
 
-## ✨ Overview
+**Site**
+- Landing, pricing, docs, terms, privacy, refund and contact pages.
+- SEO: canonical links, sitemap, robots.txt, structured data and social preview images.
 
-**AI Humanizer Pro** rewrites robotic, AI-generated text into natural writing that reads like a real person — and slips past AI detectors. It ships as a **decoupled full-stack app**:
+## Tech stack
 
-- ⚡ **FastAPI** ASGI backend (API-only) — auth, API keys, usage analytics, OTP reset, admin console API, and the NLTK-powered humanizer.
-- 🎨 **Next.js 14 + Three.js** frontend — an SEO-optimized, scroll-driven 3D landing page plus the humanizer tool, dashboard, docs, and a full admin console.
+| Area | Used |
+|---|---|
+| Web | Python 3.11, Flask 3, Jinja templates, plain CSS and JavaScript, gunicorn |
+| NLP | spaCy 3.8, lemminflect; NLTK only for building the synonym table |
+| Data | SQLite locally, PostgreSQL in production (psycopg 3 with a connection pool) |
+| Payments | Razorpay Orders, Subscriptions and Refunds over its REST API |
+| Other | Authlib (OAuth), fpdf2 (invoice PDFs), DB-IP country database (regional pricing), Cloudflare Turnstile |
 
-<div align="center">
-<img src="https://skillicons.dev/icons?i=python,fastapi,nextjs,react,threejs,tailwind,sqlite,vercel&theme=dark" alt="tech stack" />
-</div>
+## Project structure
 
-<img src="https://raw.githubusercontent.com/andreasbm/readme/master/assets/lines/rainbow.png" width="100%" alt="divider" />
-
-## 🚀 Features
-
-| | Feature | Description |
-|:--:|:--|:--|
-| 🪄 | **Deep humanization** | Restructures phrasing, perplexity & rhythm so output reads human, not machine |
-| 🛡️ | **Detector-resistant** | Lowers AI-probability scores while preserving your meaning |
-| 🎚️ | **Tone control** | Standard · Professional · Casual · Academic voices |
-| ⚡ | **Instant results** | Async, non-blocking backend with a live before/after diff |
-| 🔑 | **Developer API** | Generate keys and humanize via a single REST endpoint |
-| 📊 | **Usage analytics** | Per-user request, latency & success-rate dashboard |
-| 🧑‍💼 | **Admin console** | Users, API keys & a full activity log |
-| 🌌 | **3D landing page** | Scroll-driven Three.js scene + Framer Motion reveals |
-| 🔍 | **SEO-first** | Metadata, OpenGraph, JSON-LD, sitemap & robots |
-
-<img src="https://raw.githubusercontent.com/andreasbm/readme/master/assets/lines/rainbow.png" width="100%" alt="divider" />
-
-## 🏗️ Architecture
-
-```mermaid
-flowchart LR
-    U([🧑 Browser]) -->|pages| N["▲ Next.js 14<br/>App Router"]
-    N -->|backend proxy| F["⚡ FastAPI<br/>ASGI · Uvicorn"]
-    N -.->|WebGL| T["🌌 Three.js<br/>scroll scene"]
-    F --> DB[("🗄️ SQLite<br/>WAL")]
-    F --> M["📧 SMTP<br/>OTP email"]
-    F --> NL["📚 NLTK<br/>WordNet"]
-
-    classDef front fill:#6366f1,stroke:#fff,color:#fff;
-    classDef back fill:#009688,stroke:#fff,color:#fff;
-    classDef store fill:#a855f7,stroke:#fff,color:#fff;
-    class N,T front;
-    class F,M,NL back;
-    class DB store;
+```
+app.py               Routes, auth, API endpoints, security headers, database schema
+humanizer.py         Rewriting engine and diff metrics
+billing.py           Plans, prices, credits, coupons, referrals, Razorpay orders and subscriptions
+invoices.py          GST calculation, invoice numbering and PDF rendering
+admin.py             Admin panel (Flask blueprint)
+mailer.py            Transactional email over SMTP
+db.py                SQLite / PostgreSQL access layer
+templates/           Pages, partials and email templates
+static/              CSS, JavaScript and images
+data/                Synonym table and WordNet licence (the GeoIP database is downloaded at build time)
+scripts/             build_synonyms.py, fetch_geoip.py
+.github/workflows/   Daily job that sends plan-expiry reminders
+render.yaml          Render Blueprint
+gunicorn.conf.py     Server settings tuned for small instances
 ```
 
-> The Next.js dev server proxies every `/backend/*` request to FastAPI, keeping the session cookie **same-origin** (no CORS, no `SameSite` gymnastics).
+## Run it locally
 
-<img src="https://raw.githubusercontent.com/andreasbm/readme/master/assets/lines/rainbow.png" width="100%" alt="divider" />
-
-## 📂 Project structure
-
-```text
-ai-humanizer-pro/
-├── app.py                 # FastAPI API (auth, keys, usage, admin, humanizer)
-├── gunicorn.conf.py       # Uvicorn worker config for production
-├── requirements.txt       # Python deps
-├── humanizer.db           # SQLite (gitignored)
-└── frontend/              # Next.js 14 + Three.js
-    ├── next.config.js     # /backend/* → FastAPI proxy
-    ├── tailwind.config.js
-    └── src/
-        ├── app/           # routes: /, /humanizer, /dashboard, /docs, /admin …
-        ├── components/    # three/, landing/, admin/, auth/, ui/, layout/
-        ├── context/       # AuthContext
-        └── lib/           # api client, site config
-```
-
-<img src="https://raw.githubusercontent.com/andreasbm/readme/master/assets/lines/rainbow.png" width="100%" alt="divider" />
-
-## ⚙️ Quick start
-
-> **Prerequisites:** Python 3.11+ and Node.js 18+ (tested on 22).
-
-### 1️⃣ Backend (FastAPI)
+Requires Python 3.11.
 
 ```bash
-python -m venv .venv
-# Windows: .venv\Scripts\activate   |   macOS/Linux: source .venv/bin/activate
+python -m venv venv
+venv\Scripts\activate          # Windows
+# source venv/bin/activate     # macOS / Linux
 pip install -r requirements.txt
-python app.py                       # → http://127.0.0.1:5001
+python scripts/fetch_geoip.py  # country database for regional pricing
 ```
 
-### 2️⃣ Frontend (Next.js)
+Create a `.env` file in the project folder (it is git-ignored). The minimum is:
+
+```
+SECRET_KEY=any-long-random-string
+```
+
+Then start the app and open http://localhost:5001:
 
 ```bash
-cd frontend
-npm install
-npm run dev                         # → http://localhost:3000
+python app.py
 ```
 
-Open **http://localhost:3000** 🎉
+Without `DATABASE_URL` the app uses a local SQLite file (`humanizer.db`). To test regional pricing
+locally, set `GEO_DEFAULT_COUNTRY=IN` (or another country code).
 
-<img src="https://raw.githubusercontent.com/andreasbm/readme/master/assets/lines/rainbow.png" width="100%" alt="divider" />
+## Configuration
 
-## 🔐 Environment variables
+All settings are environment variables, read from `.env` locally or from the host's settings in
+production. Leaving an optional value empty turns that feature off.
 
-**Backend**
+| Variable | Purpose |
+|---|---|
+| `SECRET_KEY` | Signs sessions and email links. Required in production. |
+| `DATABASE_URL` | PostgreSQL connection string (e.g. a free Neon database). Required in production. |
+| `SITE_URL` | Public address, e.g. `https://your-domain.com`, for links, the sitemap and emails. |
+| `SENDER_EMAIL`, `SENDER_PASSWORD` | SMTP account for emails (for Gmail, an app password). |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Google sign-in. |
+| `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` | GitHub sign-in. |
+| `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET` | Razorpay API keys. Payments stay off without them. |
+| `RAZORPAY_WEBHOOK_SECRET` | Secret for the webhook at `/api/billing/webhook`. |
+| `RAZORPAY_AUTOPAY` | `1` to offer auto-renewal (Subscriptions must be enabled on the Razorpay account). |
+| `API_TRIAL_REQUESTS` | Free API requests per new account (default 50, `0` to disable). |
+| `TURNSTILE_SITE_KEY`, `TURNSTILE_SECRET_KEY` | Cloudflare Turnstile on the sign-up form. |
+| `REQUIRE_EMAIL_VERIFICATION` | `1` or `0`. Empty: on whenever email sending is configured. |
+| `ADMIN_EMAILS` | Comma-separated emails of verified accounts that can open `/admin`. |
+| `CRON_SECRET` | Shared secret for `POST /internal/tasks`, called by the daily GitHub Action. |
+| `BUSINESS_NAME`, `BUSINESS_ADDRESS`, `CONTACT_EMAIL`, `CONTACT_PHONE` | Shown on legal pages, emails and invoices. |
+| `GRIEVANCE_OFFICER`, `JURISDICTION_CITY` | Named in the privacy policy and terms. |
+| `BUSINESS_GSTIN` | Your GSTIN for tax invoices. Empty: plain receipts. |
+| `GST_SAC_CODE`, `INVOICE_PREFIX`, `GST_LUT_ARN` | Optional invoice details (SAC code, number prefix, LUT for exports). |
+| `GEO_DEFAULT_COUNTRY` | Country used for pricing when the visitor's location is unknown. |
 
-| Variable | Default | Purpose |
-|:--|:--|:--|
-| `SECRET_KEY` | random per start | Signs the session cookie — **set in prod** |
-| `ADMIN_EMAIL` | `admin@aih.local` | Admin console login |
-| `ADMIN_PASSWORD` | `ChangeAdminPassword123!` | **Change in prod** |
-| `SENDER_EMAIL` | — | SMTP sender for OTP email |
-| `SENDER_PASSWORD` | — | SMTP app password |
-| `SMTP_SERVER` / `SMTP_PORT` | `smtp.gmail.com` / `587` | Mail server |
-| `PORT` / `WEB_CONCURRENCY` | `10000` / `1` | Set by host (Render) |
+## Deploy on Render
 
-**Frontend**
+1. Push this repository to GitHub, then in Render choose **New → Blueprint** and select it.
+   `render.yaml` creates a free Python web service and asks for the secrets.
+2. Set `DATABASE_URL` to a PostgreSQL database. The free tier's disk is wiped on every restart, so
+   SQLite is only for local use.
+3. In Razorpay, add a webhook to `https://your-domain/api/billing/webhook` with the events
+   `order.paid` and, for auto-renewal, the `subscription.*` events listed in `render.yaml`.
+4. For plan-expiry reminders, add `SITE_URL` and `CRON_SECRET` as GitHub Actions secrets
+   (Settings → Secrets and variables → Actions). The workflow runs daily at 09:00 IST.
 
-| Variable | Default | Purpose |
-|:--|:--|:--|
-| `BACKEND_URL` | `http://127.0.0.1:5001` | Proxy target for `/backend/*` |
-| `NEXT_PUBLIC_SITE_URL` | `http://localhost:3000` | Canonical URL for SEO |
+The build downloads the spaCy model and the DB-IP country database. Memory use stays around 200 MB,
+within the free tier's 512 MB.
 
-<img src="https://raw.githubusercontent.com/andreasbm/readme/master/assets/lines/rainbow.png" width="100%" alt="divider" />
+## API quick start
 
-## 🧩 API reference
-
-**`POST /humanize`** — authenticate with a session cookie or an `X-API-Key` header.
-
-<details>
-<summary>📦 Request</summary>
-
-```json
-{
-  "text": "Your AI generated text here",
-  "tone": "professional",
-  "deep_mode": true
-}
-```
-</details>
-
-<details open>
-<summary>🧪 Examples</summary>
+Create a key on the dashboard, then:
 
 ```bash
-curl -X POST https://noai.devprithwiraj.in/humanize \
+curl -X POST https://your-domain.com/humanize \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: hmnz_your_api_key_here" \
-  -d '{"text":"...","tone":"professional","deep_mode":true}'
+  -H "X-API-Key: YOUR_API_KEY" \
+  -d '{"text": "Your text here", "tone": "professional"}'
 ```
 
-```js
-const res = await fetch("https://noai.devprithwiraj.in/humanize", {
-  method: "POST",
-  headers: { "Content-Type": "application/json", "X-API-Key": "hmnz_..." },
-  body: JSON.stringify({ text: "...", tone: "professional", deep_mode: true }),
-});
-const data = await res.json();
-console.log(data.humanized);
-```
-</details>
+Batch requests send `items`, a list of strings or objects with `text`, `tone`, `deep_mode` and `id`:
 
-```mermaid
-sequenceDiagram
-    participant C as Client
-    participant F as FastAPI
-    participant N as NLTK
-    C->>F: POST /humanize (X-API-Key)
-    F->>F: verify key / session
-    F->>N: rephrase + perplexity spike
-    N-->>F: humanized text
-    F->>F: diff metrics + log usage
-    F-->>C: { humanized, ai_probability, diff_html, ... }
+```bash
+curl -X POST https://your-domain.com/humanize/batch \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: YOUR_API_KEY" \
+  -d '{"items": ["First text", {"id": "faq-2", "text": "Second text", "tone": "casual"}]}'
 ```
 
-<img src="https://raw.githubusercontent.com/andreasbm/readme/master/assets/lines/rainbow.png" width="100%" alt="divider" />
+Responses include `X-Quota-Limit`, `X-Quota-Remaining` and `X-Credits-Remaining`. The full reference,
+with error codes and examples in several languages, is at `/docs` on the running site.
 
-## 🗺️ Pages
+## Credits
 
-| Route | Description | SEO |
-|:--|:--|:--:|
-| `/` | 3D scroll landing page | ✅ |
-| `/humanizer` | The humanizer tool | 🔒 |
-| `/dashboard` | Usage + API keys | 🔒 |
-| `/docs` | API documentation | ✅ |
-| `/login` · `/signup` · `/forgot-password` | Auth + OTP reset | 🔒 |
-| `/admin` · `/admin/login` | Admin console | 🔒 |
+- Synonym data derived from [WordNet](https://wordnet.princeton.edu/) (licence in `data/WORDNET_LICENSE.txt`).
+- IP to country data by [DB-IP](https://db-ip.com), licensed under CC BY 4.0.
 
-<img src="https://raw.githubusercontent.com/andreasbm/readme/master/assets/lines/rainbow.png" width="100%" alt="divider" />
-
-## ☁️ Deployment
-
-**One service — website + API on a single URL (Docker):**
-
-- Render → **New + → Blueprint** (uses `render.yaml` + `Dockerfile`), or set the service's **Runtime = Docker** (`./Dockerfile`).
-- The image builds the Next.js **static export** and serves it with FastAPI — no separate frontend host.
-- Set `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `SENDER_EMAIL`, `SENDER_PASSWORD` in the dashboard (`SECRET_KEY` is auto-generated). Health check: `/healthz`.
-
-> 🔴 **Note:** SQLite on ephemeral hosts resets on redeploy — use managed Postgres or a persistent disk for durable data.
-
-<img src="https://raw.githubusercontent.com/andreasbm/readme/master/assets/lines/rainbow.png" width="100%" alt="divider" />
-
-## 🧭 Roadmap
-
-- [x] FastAPI API-only backend
-- [x] Next.js + Three.js frontend
-- [x] Admin console in Next.js
-- [x] SEO (metadata, JSON-LD, sitemap)
-- [ ] Migrate SQLite → Postgres
-- [ ] Rate limiting & quotas
-- [ ] Stripe billing tiers
-
-<img src="https://raw.githubusercontent.com/andreasbm/readme/master/assets/lines/rainbow.png" width="100%" alt="divider" />
-
-## 👤 Author
-
-**Prithwiraj** 
-🌐 [noai.devprithwiraj.in](https://noai.devprithwiraj.in)
-
-<div align="center">
-
-⭐ **If this project helped you, give it a star!** ⭐
-
-<img src="https://capsule-render.vercel.app/api?type=waving&color=gradient&customColorList=22d3ee,a855f7,6366f1&height=120&section=footer" width="100%" alt="footer" />
-
-</div>
+Developed by Prithwiraj Das.

@@ -1,0 +1,13 @@
+{% extends 'emails/_layout.html' %}
+{% block content %}
+<h1 style="margin:0 0 12px;font-size:22px;color:#16171B;">Payment received, thank you</h1>
+<p>Hi {{ username }}, your payment went through and your purchase is active.</p>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:18px 0;border-top:1px solid #E8E5DE;font-size:14px;">
+  <tr><td style="padding:10px 0;border-bottom:1px solid #E8E5DE;">Purchase</td><td align="right" style="padding:10px 0;border-bottom:1px solid #E8E5DE;color:#16171B;font-weight:600;">{{ product_name }}</td></tr>
+  <tr><td style="padding:10px 0;border-bottom:1px solid #E8E5DE;">Amount paid</td><td align="right" style="padding:10px 0;border-bottom:1px solid #E8E5DE;color:#16171B;font-weight:600;">{{ amount }}</td></tr>
+  <tr><td style="padding:10px 0;border-bottom:1px solid #E8E5DE;">Date</td><td align="right" style="padding:10px 0;border-bottom:1px solid #E8E5DE;">{{ paid_date }}</td></tr>
+  {% if invoice_number %}<tr><td style="padding:10px 0;border-bottom:1px solid #E8E5DE;">Invoice</td><td align="right" style="padding:10px 0;border-bottom:1px solid #E8E5DE;">{{ invoice_number }} (attached)</td></tr>{% endif %}
+</table>
+{% with url = dashboard_url, label = 'Go to your dashboard' %}{% include 'emails/_button.html' %}{% endwith %}
+{% endblock %}
+{% block footer %}Questions about this payment? Reply to this email or see our refund policy.{% endblock %}

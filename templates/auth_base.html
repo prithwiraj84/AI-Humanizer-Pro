@@ -1,0 +1,134 @@
+{% extends 'base.html' %}
+{% from '_macros.html' import icon, logo %}
+
+{% block body %}
+<div class="auth">
+    <main class="auth-main">
+        <a href="/" class="brand">{{ logo() }}<span>AI Humanizer</span></a>
+        <div class="auth-form-wrap">
+            <div class="auth-card reveal" id="authCard">
+                {% block form %}{% endblock %}
+            </div>
+        </div>
+        <p class="auth-foot">Developed by Prithwiraj Das · <a href="/privacy">Privacy</a></p>
+    </main>
+
+    <aside class="auth-aside" aria-hidden="true">
+        <div class="aside-inner">
+            <span class="eyebrow">AI Humanizer</span>
+            <h2 class="display">Writing that sounds like <em>a person</em> wrote it.</h2>
+
+            <div class="card demo-card">
+                <div class="demo-top">
+                    <span class="demo-chip" id="demoChip">AI draft</span>
+                    <span class="demo-dots"><i></i><i></i><i></i></span>
+                </div>
+                <p class="demo-text">
+                    We <span class="demo-word" data-alt="use">utilize</span> plain language to
+                    <span class="demo-word" data-alt="help">facilitate</span> understanding, so every reader can
+                    <span class="demo-word" data-alt="follow">comprehend</span> the
+                    <span class="demo-word" data-alt="main">fundamental</span> idea.
+                </p>
+            </div>
+
+            <ul class="aside-points">
+                <li><span class="point-icon">{{ icon('sliders') }}</span><div><strong>Four writing tones</strong>Standard, professional, casual or academic.</div></li>
+                <li><span class="point-icon">{{ icon('eye') }}</span><div><strong>Review every change</strong>Rewritten words are highlighted before you copy.</div></li>
+                <li><span class="point-icon">{{ icon('code') }}</span><div><strong>Developer API</strong>Create keys and call it from your own apps.</div></li>
+            </ul>
+        </div>
+    </aside>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // Where to go after signing in (only paths on this site, e.g. ?next=/pricing)
+    const NEXT_PAGE = (() => {
+        const next = new URLSearchParams(window.location.search).get('next');
+        return next && next.startsWith('/') && !next.startsWith('//') ? next : null;
+    })();
+    if (NEXT_PAGE) {
+        document.querySelectorAll('[data-oauth], .auth-switch a[href="/login"], .auth-switch a[href="/signup"]').forEach(link => {
+            link.href = `${link.getAttribute('href')}?next=${encodeURIComponent(NEXT_PAGE)}`;
+        });
+    }
+
+    // Shared auth helpers
+    function showAlert(type, message) {
+        const box = document.getElementById('alertBox');
+        box.className = `callout callout-${type}`;
+        box.innerHTML = `${icon(type === 'error' ? 'alert' : 'check-circle')}<span>${escapeHtml(message)}</span>`;
+        box.hidden = false;
+        if (type === 'error') {
+            const card = document.getElementById('authCard');
+            card.classList.remove('shake', 'reveal');
+            void card.offsetWidth;
+            card.classList.add('shake');
+        }
+    }
+
+    function hideAlert() {
+        document.getElementById('alertBox').hidden = true;
+    }
+
+    function setLoading(button, loading, label) {
+        button.disabled = loading;
+        button.innerHTML = loading ? `<span class="spinner"></span><span>${escapeHtml(label)}</span>` : label;
+    }
+
+    function bindPasswordToggle(buttonId, inputId) {
+        const button = document.getElementById(buttonId);
+        const input = document.getElementById(inputId);
+        button.addEventListener('click', () => {
+            const show = input.type === 'password';
+            input.type = show ? 'text' : 'password';
+            button.innerHTML = icon(show ? 'eye-off' : 'eye');
+            button.setAttribute('aria-label', show ? 'Hide password' : 'Show password');
+        });
+    }
+
+    // Social sign-in buttons show progress while the provider page loads
+    document.querySelectorAll('[data-oauth]').forEach(button => {
+        const original = button.innerHTML;
+        button.addEventListener('click', () => {
+            button.classList.add('is-loading');
+            button.setAttribute('aria-busy', 'true');
+            button.innerHTML = `<span class="spinner"></span><span>Redirecting to ${escapeHtml(button.dataset.oauth)}…</span>`;
+        });
+        // Restore the button if the user comes back with the Back button (page restored from cache)
+        window.addEventListener('pageshow', (e) => {
+            if (!e.persisted) return;
+            button.classList.remove('is-loading');
+            button.removeAttribute('aria-busy');
+            button.innerHTML = original;
+        });
+    });
+
+    // Before/after demo on the brand panel
+    (() => {
+        const words = document.querySelectorAll('.demo-word');
+        const chip = document.getElementById('demoChip');
+        if (!words.length || prefersReducedMotion()) return;
+        let humanized = false;
+        setInterval(() => {
+            humanized = !humanized;
+            chip.textContent = humanized ? 'Humanized' : 'AI draft';
+            chip.classList.toggle('is-human', humanized);
+            words.forEach((word, i) => {
+                setTimeout(() => {
+                    word.classList.add('is-out');
+                    setTimeout(() => {
+                        const next = word.dataset.alt;
+                        word.dataset.alt = word.textContent;
+                        word.textContent = next;
+                        word.classList.remove('is-out');
+                        word.classList.toggle('is-marked', humanized);
+                    }, 220);
+                }, i * 140);
+            });
+        }, 3200);
+    })();
+</script>
+{% block page_scripts %}{% endblock %}
+{% endblock %}

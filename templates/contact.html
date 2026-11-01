@@ -1,0 +1,55 @@
+{% extends 'base.html' %}
+{% from '_macros.html' import icon %}
+{% set active_page = 'contact' %}
+
+{% block title %}Contact Us · AI Humanizer{% endblock %}
+{% block description %}How to reach {{ business_name }} about your account, API plans, payments and refunds.{% endblock %}
+{% block body_class %}app{% endblock %}
+
+{% block body %}
+{% include '_nav.html' %}
+
+<main class="container page">
+    <article class="legal reveal">
+        <span class="eyebrow">Support</span>
+        <h1 class="display">Contact us</h1>
+        <p class="lede">Questions about your account, an API plan, a payment or a refund? Get in touch, and include your account’s email address so we can find it.</p>
+
+        <div class="contact-grid">
+            {% if contact_email %}
+            <div class="card overview-card">
+                <span class="kpi-icon">{{ icon('mail') }}</span>
+                <strong>Email</strong>
+                <span><a href="mailto:{{ contact_email }}">{{ contact_email }}</a></span>
+            </div>
+            {% endif %}
+            {% if contact_phone %}
+            <div class="card overview-card">
+                <span class="kpi-icon">{{ icon('user') }}</span>
+                <strong>Phone</strong>
+                <span><a href="tel:{{ contact_phone | replace(' ', '') }}">{{ contact_phone }}</a></span>
+            </div>
+            {% endif %}
+            <div class="card overview-card">
+                <span class="kpi-icon">{{ icon('globe') }}</span>
+                <strong>{{ business_name }}</strong>
+                <span>{{ business_address or 'Operating online' }}</span>
+            </div>
+            <div class="card overview-card">
+                <span class="kpi-icon">{{ icon('shield') }}</span>
+                <strong>Grievance Officer</strong>
+                <span>{{ grievance_officer or business_name }}{% if contact_email %} · <a href="mailto:{{ contact_email }}">{{ contact_email }}</a>{% endif %}</span>
+            </div>
+        </div>
+
+        <h2>Before you write</h2>
+        <ul>
+            <li>Payment and refund questions: see the <a href="/refunds">refund policy</a> first; it covers most cases.</li>
+            <li>Privacy requests (access, correction or deletion of your data): see your rights in the <a href="/privacy#your-rights">privacy policy</a>, and write from your account’s email address.</li>
+            <li>Using the API: the <a href="/docs">API docs</a> explain requests, errors and quotas.</li>
+        </ul>
+    </article>
+</main>
+
+{% include '_footer.html' %}
+{% endblock %}

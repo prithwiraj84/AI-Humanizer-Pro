@@ -1,0 +1,98 @@
+{% from '_macros.html' import icon %}
+{% set signed_in = session.get('user_id') %}
+<div id="pricingCards" data-currency="{{ pricing.currency }}">
+<p class="pricing-region">
+    {{ icon('globe') }}
+    {% if pricing.country_name %}Prices for {{ pricing.country_name }}, adjusted for your region.{% elif pricing.country %}Prices adjusted for your region.{% else %}Prices in US dollars.{% endif %}
+    {% if pricing.autopay %}Pay once, or turn on auto-renewal.{% else %}Pay once; nothing renews automatically.{% endif %}
+</p>
+
+<div class="pricing-controls">
+    <div class="segmented" id="cycleControl" role="radiogroup" aria-label="Billing period">
+        <input type="radio" name="cycle" id="cycle-monthly" value="monthly" checked><label for="cycle-monthly">30 days</label>
+        <input type="radio" name="cycle" id="cycle-yearly" value="yearly"><label for="cycle-yearly">Yearly <span class="save-chip">2 months free</span></label>
+        <span class="segmented-thumb" aria-hidden="true"></span>
+    </div>
+    {% if signed_in and pricing.enabled and pricing.autopay %}
+    <label class="switch-field">
+        <span class="switch">
+            <input type="checkbox" id="autopayToggle">
+            <span class="switch-track"></span>
+            <span class="switch-thumb"></span>
+        </span>
+        <span class="switch-text">
+            <strong>Renew automatically</strong>
+            <small>UPI AutoPay or card · cancel anytime</small>
+        </span>
+    </label>
+    {% endif %}
+</div>
+
+<div class="pricing-grid">
+    {% for plan in pricing.plans %}
+    <article class="card plan{{ ' plan-best' if plan.best }}" data-plan="{{ plan.id }}"
+             data-amount-monthly="{{ plan.amount }}" data-amount-yearly="{{ plan.yearly.amount }}">
+        {% if plan.best %}<span class="plan-badge">Recommended</span>{% endif %}
+        <h3 class="plan-name">{{ plan.name }}</h3>
+        <p class="plan-blurb">{{ plan.blurb }}</p>
+        <div class="plan-price">
+            <span class="price-was" hidden></span>
+            <span class="amount" data-monthly="{{ plan.price }}" data-yearly="{{ plan.yearly.price }}">{{ plan.price }}</span>
+            <span class="period" data-monthly="/ 30 days" data-yearly="/ year">/ 30 days</span>
+        </div>
+        <p class="plan-unit" data-monthly="{% if plan.per_1k %}About {{ plan.per_1k }} per 1,000 requests{% endif %}"
+           data-yearly="{{ plan.yearly.per_month }} a month, billed yearly · save {{ plan.yearly.savings }}">{% if plan.per_1k %}About {{ plan.per_1k }} per 1,000 requests{% else %}&nbsp;{% endif %}</p>
+
+        {% set button_class = 'btn-primary' if plan.best else 'btn-secondary' %}
+        {% if not pricing.enabled %}
+        <button class="btn {{ button_class }} btn-lg btn-block" type="button" disabled>Coming soon</button>
+        {% elif signed_in %}
+        <button class="btn {{ button_class }} btn-lg btn-block" type="button" onclick="buyFromCard(this)">Buy {{ plan.name }}</button>
+        {% else %}
+        <a class="btn {{ button_class }} btn-lg btn-block" href="/signup?next=/pricing">Get {{ plan.name }}</a>
+        {% endif %}
+
+        <ul class="plan-features">
+            <li>{{ icon('check') }}<span><strong data-monthly="{{ '{:,}'.format(plan.requests) }}" data-yearly="{{ '{:,}'.format(plan.yearly.requests) }}">{{ '{:,}'.format(plan.requests) }}</strong> API requests</span></li>
+            <li>{{ icon('check') }}<span>All four tones and Chaos Mode</span></li>
+            <li>{{ icon('check') }}<span>Single and batch requests, up to 20,000 characters each</span></li>
+            <li>{{ icon('check') }}<span>Unused requests carry over</span></li>
+        </ul>
+    </article>
+    {% endfor %}
+</div>
+
+<div class="card topup" id="topup" data-plan="{{ pricing.topup.id }}" data-amount-monthly="{{ pricing.topup.amount }}" data-amount-yearly="{{ pricing.topup.amount }}">
+    <span class="topup-icon">{{ icon('zap', 'icon-lg') }}</span>
+    <div class="topup-text">
+        <h3 class="plan-name">Top-up <span class="muted">· {{ '{:,}'.format(pricing.topup.requests) }} requests</span></h3>
+        <p class="plan-blurb">Pay as you go. Top-up requests never expire and are used once your plan's requests run out, so you can also use them without a plan.</p>
+    </div>
+    <div class="topup-buy">
+        <div class="plan-price"><span class="price-was" hidden></span><span class="amount" data-monthly="{{ pricing.topup.price }}" data-yearly="{{ pricing.topup.price }}">{{ pricing.topup.price }}</span></div>
+        {% if not pricing.enabled %}
+        <button class="btn btn-secondary" type="button" disabled>Coming soon</button>
+        {% elif signed_in %}
+        <button class="btn btn-secondary" type="button" onclick="buyFromCard(this)">Buy top-up</button>
+        {% else %}
+        <a class="btn btn-secondary" href="/signup?next=/pricing">Get started</a>
+        {% endif %}
+    </div>
+</div>
+
+{% if signed_in and pricing.enabled %}
+<form class="coupon" id="couponForm" novalidate>
+    <label class="label" for="couponCode">Have a coupon?</label>
+    <div class="coupon-row">
+        <input class="input mono" type="text" id="couponCode" maxlength="32" placeholder="CODE" autocomplete="off" spellcheck="false">
+        <button class="btn btn-secondary" type="submit" id="couponBtn">Apply</button>
+    </div>
+    <p class="hint-text" id="couponStatus" role="status"></p>
+</form>
+{% endif %}
+</div>
+
+<p class="pricing-note">
+    The web editor is free.{% if pricing.trial_requests %} New accounts also get {{ pricing.trial_requests }} free API requests to test their integration.{% endif %}
+    Payments are handled securely by Razorpay{% if pricing.currency == 'INR' %}, and every purchase comes with an invoice{% endif %}.
+</p>

@@ -1,0 +1,224 @@
+{% extends 'base.html' %}
+{% from '_macros.html' import icon %}
+{% set active_page = 'terms' %}
+{% set sections = [
+    ('agreement', 'Agreement'),
+    ('eligibility', 'Eligibility'),
+    ('account', 'Your account'),
+    ('service', 'The service'),
+    ('your-content', 'Your content'),
+    ('output', 'Output and AI detection'),
+    ('acceptable-use', 'Acceptable use'),
+    ('api', 'API access'),
+    ('payments', 'Plans, pricing and payment'),
+    ('refunds', 'Refunds and cancellation'),
+    ('free-features', 'Free features and trials'),
+    ('our-ip', 'Our intellectual property'),
+    ('third-parties', 'Third-party services'),
+    ('termination', 'Suspension and termination'),
+    ('disclaimers', 'Disclaimers'),
+    ('liability', 'Limitation of liability'),
+    ('indemnity', 'Indemnity'),
+    ('changes', 'Changes'),
+    ('law', 'Governing law and disputes'),
+    ('general', 'General'),
+    ('contact', 'Contact us'),
+] %}
+
+{% block title %}Terms and Conditions · AI Humanizer{% endblock %}
+{% block description %}The terms for using AI Humanizer: eligibility, accounts, your content, acceptable use, paid API plans and Razorpay payments, liability and governing law.{% endblock %}
+{% block body_class %}app{% endblock %}
+
+{% block body %}
+{% include '_nav.html' %}
+
+<div class="container docs">
+    <aside class="docs-nav">
+        <div class="docs-nav-title">On this page</div>
+        <ul>
+            {% for id, title in sections %}<li><a href="#{{ id }}">{{ title }}</a></li>{% endfor %}
+        </ul>
+    </aside>
+
+    <main class="docs-content legal">
+        <header class="docs-hero reveal">
+            <span class="eyebrow">Legal</span>
+            <h1 class="display">Terms and conditions</h1>
+            <p class="lede">Last updated 1 November 2026. Please read these terms carefully. They form a binding agreement between you and {{ business_name }} about your use of {{ site_url.split('://')[-1] }}, the editor and the API.</p>
+
+            <div class="card legal-summary">
+                <strong>The short version</strong>
+                <ul>
+                    <li>{{ icon('check') }}You must be 18 or older, and you are responsible for your account and API keys.</li>
+                    <li>{{ icon('check') }}Your text stays yours. We only process it to give you the result.</li>
+                    <li>{{ icon('check') }}Review the output before you use it; we can’t promise how any AI detector will classify it.</li>
+                    <li>{{ icon('check') }}API plans are prepaid for 30 days or a year. Auto-renewal is optional, and you can turn it off at any time.</li>
+                    <li>{{ icon('check') }}Don’t misuse the service, share your keys or get around limits.</li>
+                </ul>
+            </div>
+        </header>
+
+        <section id="agreement" class="doc-section">
+            <h2>1. Agreement</h2>
+            <p>{{ business_name }} (“we”, “us”, “our”) provides a text-rewriting service through this website (the “Site”), a web editor (the “Editor”) and a REST API (the “API”), together the “Service”. By creating an account, buying a plan or otherwise using the Service, you agree to these terms, our <a href="/privacy">Privacy Policy</a> and our <a href="/refunds">Refund and Cancellation Policy</a>. If you do not agree, do not use the Service.</p>
+            <p>If you use the Service for a company or other organisation, you confirm that you are authorised to accept these terms for it, and “you” includes that organisation.</p>
+        </section>
+
+        <section id="eligibility" class="doc-section">
+            <h2>2. Eligibility</h2>
+            <p>You must be at least 18 years old, or the age of majority where you live if that is higher, and able to form a binding contract. You may not use the Service if the law prohibits you from doing so.</p>
+        </section>
+
+        <section id="account" class="doc-section">
+            <h2>3. Your account</h2>
+            <ul>
+                <li>Give accurate information and keep it up to date.</li>
+                <li>Keep your password and API keys confidential. You are responsible for all activity under your account and keys, including API requests made with a leaked key, until you revoke it.</li>
+                <li>Tell us promptly if you believe your account or a key has been compromised.</li>
+                <li>You must confirm your email address before you can create API keys, use free API requests or buy anything. Sign-up may include an automated check that you are a person, not a bot.</li>
+                <li>Each account is for one person or organisation. Do not share, sell or transfer accounts or API keys.</li>
+            </ul>
+        </section>
+
+        <section id="service" class="doc-section">
+            <h2>4. The service</h2>
+            <p>The Service rewrites text you provide in a tone you choose and shows what changed. The Editor is free with an account. The API, for use from your own software, needs a paid plan after any free trial requests. We may improve, change or remove features over time; if a change materially reduces a paid plan you have already bought, you may ask for a refund of the unused part.</p>
+        </section>
+
+        <section id="your-content" class="doc-section">
+            <h2>5. Your content</h2>
+            <p>You keep all rights to the text you submit (“Input”) and to the rewritten text you receive (“Output”). You give us a limited, non-exclusive licence to process your Input only to provide the Output to you. As our Privacy Policy explains, we do not store your Input or Output on our servers and do not use them to train any model.</p>
+            <p>You are responsible for your Input, and you confirm that you have the rights needed to submit it and that it does not break any law or anyone else’s rights.</p>
+        </section>
+
+        <section id="output" class="doc-section">
+            <h2>6. Output and AI detection</h2>
+            <ul>
+                <li>Output is produced automatically. It can contain mistakes or change the meaning of your text, so review it before you rely on it or publish it.</li>
+                <li>We do not guarantee how any AI-detection tool, plagiarism checker or reviewer will assess the Output. Detection tools vary and change often.</li>
+                <li>You are responsible for how you use the Output, including following the rules of any school, employer, publisher or platform that applies to you.</li>
+            </ul>
+        </section>
+
+        <section id="acceptable-use" class="doc-section">
+            <h2>7. Acceptable use</h2>
+            <p>You must not use the Service to:</p>
+            <ul>
+                <li>break any law, or create, process or share unlawful, defamatory, hateful, harassing or sexually exploitative content;</li>
+                <li>infringe anyone’s intellectual property, privacy or other rights;</li>
+                <li>commit fraud, impersonate others, or create spam, phishing or misleading content designed to deceive people in ways that are unlawful;</li>
+                <li>break academic, professional or platform rules that you are bound by;</li>
+                <li>interfere with or disrupt the Service, attempt to gain unauthorised access, probe for vulnerabilities, or overload our systems;</li>
+                <li>get around rate limits, quotas, regional pricing or security measures, including by creating multiple accounts;</li>
+                <li>copy, reverse-engineer or resell the Service, or use it to build a competing product, except as the law expressly allows.</li>
+            </ul>
+        </section>
+
+        <section id="api" class="doc-section">
+            <h2>8. API access</h2>
+            <ul>
+                <li>API keys are confidential and tied to your account. Keep them out of public code and client-side apps.</li>
+                <li>Each plan includes a set number of requests for its period (30 days or a year). Requests are also rate limited (currently 30 per minute per key; each item in a batch request counts as one request). The <a href="/docs">API documentation</a> describes the current limits, which we may change with reasonable notice.</li>
+                <li>Only valid requests that we process count towards your quota.</li>
+                <li>We do not offer a service level agreement (SLA) unless agreed separately in writing.</li>
+            </ul>
+        </section>
+
+        <section id="payments" class="doc-section">
+            <h2>9. Plans, pricing and payment</h2>
+            <ul>
+                <li><strong>Prepaid plans:</strong> each purchase gives API access for 30 days, or for a year (365 days) with a yearly plan, with the plan’s number of requests. A yearly plan includes 12 months of requests up front. Unless you turn on auto-renewal, you are only charged when you choose to buy.</li>
+                <li><strong>Auto-renewal (optional):</strong> if you turn it on at checkout, you authorise us, through Razorpay, to charge your card or UPI AutoPay mandate the plan’s price at the start of every period until you turn it off. You can turn it off at any time from your dashboard, or by cancelling the mandate in your UPI app or with your bank; no further charges are made and the plan stays active until the end of the period already paid for. If a renewal payment fails, auto-renewal may stop and the plan ends at the end of its period. We will tell you before we change the price of a plan that renews automatically, and the new price applies only from the next renewal after that notice.</li>
+                <li><strong>Top-ups:</strong> top-ups add a number of requests that do not expire while your account is open. They are used only after your plan’s requests run out or your plan ends.</li>
+                <li><strong>Buying again:</strong> buying while a plan is active adds the new period and carries over your unused requests. Plan requests left when a plan ends expire; top-up requests do not.</li>
+                <li><strong>Coupons:</strong> coupon codes give the discount stated when they are issued, may be limited in time, number of uses and the products they apply to, can be used once per account, cannot be combined with auto-renewal, have no cash value and cannot be exchanged or transferred. We may refuse or reverse a discount obtained by misuse.</li>
+                <li><strong>Referrals:</strong> when an account that signed up through your referral link makes its first paid purchase, both accounts receive the free requests stated on the dashboard, as top-up requests. Referral rewards are limited per account, cannot be exchanged for money, and are not available for referring yourself or for accounts created to collect rewards; we may withhold or remove rewards obtained that way.</li>
+                <li><strong>Regional prices:</strong> prices depend on the country we detect for you and are shown in your currency before you pay. Regional prices are for customers located in that region. If you misrepresent your location, for example with a VPN, we may cancel the purchase or ask you to pay the price for your actual region.</li>
+                <li><strong>Payment processing:</strong> payments are processed by Razorpay under its own terms. We never receive your full card, UPI or bank details. Your bank may charge currency conversion or other fees.</li>
+                <li><strong>Taxes and invoices:</strong> applicable taxes, such as GST, are included in or added to the price as the law requires and shown at checkout. An invoice is issued for every purchase and can be downloaded from your dashboard. To have your business name and GSTIN on it, add them under Billing details before you pay; invoices reflect the details on your account at the time of payment.</li>
+                <li><strong>Price changes:</strong> we may change prices for future purchases. Changes never affect a plan you have already paid for.</li>
+                <li><strong>Failed or disputed payments:</strong> a plan is activated only after the payment is confirmed. If a payment is reversed or charged back, we may suspend the plan it paid for.</li>
+            </ul>
+        </section>
+
+        <section id="refunds" class="doc-section">
+            <h2>10. Refunds and cancellation</h2>
+            <p>Our <a href="/refunds">Refund and Cancellation Policy</a> explains when refunds are available and how to request one. Nothing in these terms limits any refund rights you have under consumer protection law.</p>
+        </section>
+
+        <section id="free-features" class="doc-section">
+            <h2>11. Free features and trials</h2>
+            <p>The Editor and any free API requests{% if api_trial_requests %} (currently {{ api_trial_requests }} per account){% endif %} are offered free of charge, one trial per person or organisation, to accounts with a confirmed email address. We may change or end free features or trials at any time.</p>
+        </section>
+
+        <section id="our-ip" class="doc-section">
+            <h2>12. Our intellectual property</h2>
+            <p>The Service, including its software, design, text, logos and the {{ business_name }} name, belongs to us or our licensors and is protected by law. These terms give you a limited, personal, non-transferable right to use the Service as described here and nothing more. If you send us feedback or suggestions, we may use them without any obligation to you.</p>
+        </section>
+
+        <section id="third-parties" class="doc-section">
+            <h2>13. Third-party services</h2>
+            <p>Some features rely on other companies’ services, such as Google or GitHub sign-in, Cloudflare Turnstile bot checks and Razorpay payments. Their own terms and privacy policies apply to your use of them, and we are not responsible for those services.</p>
+        </section>
+
+        <section id="termination" class="doc-section">
+            <h2>14. Suspension and termination</h2>
+            <ul>
+                <li>You can stop using the Service at any time and ask us to delete your account.</li>
+                <li>We may suspend or close your account, or revoke API keys, if you seriously or repeatedly break these terms, if the law requires it, or to protect the Service or other users. Where reasonable, we will tell you first and give you a chance to fix the problem.</li>
+                <li>If we close your account because you broke these terms, unused plan time, requests and top-up requests are not refunded. If we close it or stop the Service for any other reason, we will refund the unused part of any paid plan or top-up. Closing your account also turns off auto-renewal.</li>
+                <li>Sections that by their nature should continue, such as those on liability, indemnity and governing law, continue after termination.</li>
+            </ul>
+        </section>
+
+        <section id="disclaimers" class="doc-section">
+            <h2>15. Disclaimers</h2>
+            <p>To the extent the law allows, the Service is provided “as is” and “as available”, without warranties of any kind, whether express or implied, including warranties of merchantability, fitness for a particular purpose, accuracy and non-infringement. We do not promise that the Service will be uninterrupted, error-free or secure, or that the Output will meet your needs.</p>
+        </section>
+
+        <section id="liability" class="doc-section">
+            <h2>16. Limitation of liability</h2>
+            <p>To the extent the law allows, we are not liable for any indirect, incidental, special, consequential or punitive damages, or for lost profits, revenue, data or goodwill. Our total liability for all claims relating to the Service is limited to the greater of the amount you paid us in the three months before the claim arose and ₹1,000 (or US$15). These limits do not apply where the law does not allow them, such as for fraud or for liability that cannot be excluded.</p>
+        </section>
+
+        <section id="indemnity" class="doc-section">
+            <h2>17. Indemnity</h2>
+            <p>You agree to compensate us for reasonable losses, costs and legal fees arising from your Input, your use of the Output, or your breach of these terms or the law, to the extent they are caused by you.</p>
+        </section>
+
+        <section id="changes" class="doc-section">
+            <h2>18. Changes to these terms</h2>
+            <p>We may update these terms to reflect changes to the Service or the law. We will post the new version here with a new date and, for changes that materially affect your rights, notify account holders by email or on the Site at least 7 days before they take effect. If you continue to use the Service after that, the new terms apply; if you do not agree, you can stop using it and ask for your account to be deleted.</p>
+        </section>
+
+        <section id="law" class="doc-section">
+            <h2>19. Governing law and disputes</h2>
+            <p>These terms are governed by the laws of India. Before starting any formal proceedings, please contact us so we can try to resolve the issue informally. Subject to that, the courts {% if jurisdiction_city %}at {{ jurisdiction_city }}, India,{% else %}of India{% endif %} have exclusive jurisdiction. If you are a consumer living elsewhere, this does not take away protections or the right to bring proceedings that the law where you live gives you, including under India’s Consumer Protection Act, 2019.</p>
+        </section>
+
+        <section id="general" class="doc-section">
+            <h2>20. General</h2>
+            <ul>
+                <li><strong>Entire agreement:</strong> these terms, with the policies they refer to, are the whole agreement between you and us about the Service.</li>
+                <li><strong>Severability:</strong> if any part is found unenforceable, the rest stays in force.</li>
+                <li><strong>No waiver:</strong> not enforcing a term straight away does not mean we give up the right to enforce it later.</li>
+                <li><strong>Assignment:</strong> you may not transfer these terms without our consent; we may transfer them as part of a merger, acquisition or sale of the Service, with notice to you.</li>
+                <li><strong>Events beyond our control:</strong> we are not responsible for delays or failures caused by events outside our reasonable control.</li>
+                <li><strong>Notices:</strong> we may contact you at the email address on your account.</li>
+            </ul>
+        </section>
+
+        <section id="contact" class="doc-section">
+            <h2>21. Contact us</h2>
+            <p>Questions about these terms, or complaints about the Service, go to us or our Grievance Officer:</p>
+            {% include '_legal_contact.html' %}
+        </section>
+    </main>
+</div>
+
+{% include '_footer.html' %}
+{% endblock %}
+
+{% block scripts %}
+<script>initScrollspy();</script>
+{% endblock %}

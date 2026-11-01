@@ -1,0 +1,69 @@
+{% extends 'base.html' %}
+{% from '_macros.html' import icon %}
+{% set active_page = 'pricing' %}
+{% set billing_faqs = [
+    {'q': 'How is my price decided?',
+     'a': 'Prices follow the country you are visiting from, grouped by income level, so the API stays affordable everywhere. India is billed in rupees and other countries in US dollars.'},
+    {'q': 'Does my plan renew automatically?',
+     'a': 'Only if you turn on auto-renewal (available for payments in rupees, by UPI AutoPay or card). Otherwise each purchase covers 30 days or a year and nothing is charged again. Buying while a plan is active adds the new period and carries over your unused requests. You can turn auto-renewal off any time from your dashboard.'},
+    {'q': 'How do yearly plans work?',
+     'a': 'A yearly plan costs the same as 10 months and gives you 12 months of requests up front, valid for 365 days.'},
+    {'q': 'What are top-ups?',
+     'a': 'Extra requests you can buy at any time, with or without a plan. They never expire and are used only after your plan\'s requests run out.'},
+    {'q': 'What happens when I run out of requests?',
+     'a': 'The API answers with status 402 and a link to this page. Buy a plan or a top-up to continue; the web editor keeps working for free either way.'},
+    {'q': 'Do you provide GST invoices?',
+     'a': 'Every purchase comes with an invoice you can download from your dashboard. To have your business name and GSTIN on it, add them under Billing details on the dashboard before you pay.'},
+    {'q': 'How do coupons and referrals work?',
+     'a': 'Enter a coupon code above the plans before you buy; one coupon per account, not combined with auto-renewal. Share the referral link from your dashboard: when someone you invited makes their first purchase, you both get free requests.'},
+    {'q': 'How can I pay?',
+     'a': 'Payments go through Razorpay. In India you can use UPI, cards, netbanking or wallets; elsewhere you can pay with an international card.'},
+    {'q': 'Can I get a refund?',
+     'a': 'Yes, within 7 days of purchase if you have used less than 10% of what you bought. See the refund policy for details.'},
+] %}
+
+{% block title %}Pricing: Affordable AI Humanizer API Plans · AI Humanizer{% endblock %}
+{% block description %}AI Humanizer API plans priced for your region: from {{ pricing.plans[0].price }} for 30 days, yearly plans with 2 months free, and top-ups. The editor is free.{% endblock %}
+{% block body_class %}app{% endblock %}
+
+{% block head %}
+<link rel="stylesheet" href="{{ asset('css/landing.css') }}">
+<script type="application/ld+json">{{ {
+    '@context': 'https://schema.org',
+    '@type': 'BreadcrumbList',
+    'itemListElement': [
+        {'@type': 'ListItem', 'position': 1, 'name': 'Home', 'item': site_url ~ '/'},
+        {'@type': 'ListItem', 'position': 2, 'name': 'Pricing', 'item': canonical_url}
+    ]
+} | tojson }}</script>
+{% endblock %}
+
+{% block body %}
+{% include '_nav.html' %}
+
+<main class="container page">
+    <header class="pricing-head reveal">
+        <span class="eyebrow">Pricing</span>
+        <h1 class="display">Affordable API plans, <em>priced for your region</em>.</h1>
+        <p class="lede">Pay for 30 days or a year of REST API access, or top up as you go. Auto-renewal is optional, and unused requests roll over when you buy again.</p>
+    </header>
+
+    <section class="reveal" style="--d: 1">
+        {% include '_pricing_cards.html' %}
+    </section>
+
+    <section class="pricing-faq">
+        <h2 class="section-title">Billing questions</h2>
+        <div class="faq">
+            {% for item in billing_faqs %}
+            <details>
+                <summary>{{ item.q }}<span class="faq-icon" aria-hidden="true"></span></summary>
+                <div class="faq-body">{{ item.a }}{% if item.q == 'Can I get a refund?' %} <a href="/refunds">Read the refund policy</a>.{% endif %}</div>
+            </details>
+            {% endfor %}
+        </div>
+    </section>
+</main>
+
+{% include '_footer.html' %}
+{% endblock %}

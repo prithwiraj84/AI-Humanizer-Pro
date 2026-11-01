@@ -1,0 +1,43 @@
+{# schema.org data for the landing page: the site, the app and the FAQ (built from the same `faqs` list as the page) #}
+{% set ns = namespace(questions=[]) %}
+{% for item in faqs %}
+    {% set ns.questions = ns.questions + [{'@type': 'Question', 'name': item.q,
+                                           'acceptedAnswer': {'@type': 'Answer', 'text': item.a}}] %}
+{% endfor %}
+{% set schema = {
+    '@context': 'https://schema.org',
+    '@graph': [
+        {
+            '@type': 'WebSite',
+            '@id': site_url ~ '/#website',
+            'url': site_url ~ '/',
+            'name': 'AI Humanizer',
+            'description': 'Rewrite AI-generated drafts in a natural, human voice.',
+            'inLanguage': 'en'
+        },
+        {
+            '@type': 'SoftwareApplication',
+            '@id': site_url ~ '/#app',
+            'name': 'AI Humanizer',
+            'url': site_url ~ '/',
+            'applicationCategory': 'UtilitiesApplication',
+            'operatingSystem': 'Web',
+            'description': 'Free AI humanizer that rewrites stiff, AI-generated text in a natural voice, with four writing tones, highlighted changes and a developer API.',
+            'offers': {'@type': 'Offer', 'price': '0', 'priceCurrency': 'USD'},
+            'featureList': [
+                'Four writing tones: standard, professional, casual and academic',
+                'Highlights every rewritten word',
+                'Keeps names, dates, numbers and technical terms intact',
+                'REST API with hashed API keys'
+            ],
+            'creator': {'@type': 'Person', 'name': 'Prithwiraj Das'},
+            'isPartOf': {'@id': site_url ~ '/#website'}
+        },
+        {
+            '@type': 'FAQPage',
+            '@id': site_url ~ '/#faq',
+            'mainEntity': ns.questions
+        }
+    ]
+} %}
+<script type="application/ld+json">{{ schema | tojson }}</script>

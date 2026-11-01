@@ -1,0 +1,510 @@
+{% extends 'base.html' %}
+{% from '_macros.html' import icon, logo %}
+{% set logged_in = session.get('user_id') %}
+{% set base_url = request.url_root %}
+
+{# Single source for the visible FAQ and its schema.org data, which must match word for word #}
+{% set faqs = [
+    {'q': 'Does it guarantee my text will pass AI detectors?',
+     'a': "No, and no tool honestly can. Detectors differ and change often. AI Humanizer rewrites wording in the tone you choose and shows you every change, so the final text is something you've reviewed and are happy to put your name to."},
+    {'q': 'Is my text stored anywhere?',
+     'a': 'Not on our server. Text is processed in memory and never written to the database. Your six most recent results are kept only in your own browser, and you can clear them at any time.'},
+    {'q': 'How does the rewriting work?',
+     'a': "It replaces common AI phrasing such as “Furthermore,” or “It is important to note that”, swaps overly formal words for plain ones (“utilize” becomes “use”), and picks synonyms that match each word's role and tense in the sentence. Names, dates, numbers and technical terms are left alone."},
+    {'q': 'What do the four tones change?',
+     'a': 'Standard swaps in natural alternatives. Casual uses contractions such as “don’t”, prefers shorter words and splits long sentences. Professional and Academic expand contractions, and Academic keeps a more formal vocabulary.'},
+    {'q': 'What is Chaos Mode?',
+     'a': 'A stronger setting for drafts that need a bigger change. It swaps far more words, applies every plain-English rewrite and splits long compound sentences in two. Review the highlights before you copy.'},
+    {'q': 'How much text can I submit?',
+     'a': 'Up to 20,000 characters per request, in the editor and through the API.'},
+    {'q': 'Can I use it from my own app?',
+     'a': 'Yes. The REST API is a paid add-on with affordable 30-day plans priced for your region, and new accounts get free requests to try it. Create an API key on your dashboard and send a POST request to /humanize. The API docs have examples in cURL, Python, Node.js and PHP.',
+     'html': 'Yes. The REST API is a paid add-on with affordable 30-day plans <a href="/pricing" style="color: var(--accent-ink); font-weight: 500;">priced for your region</a>, and new accounts get free requests to try it. Create an API key on your dashboard and send a POST request to <code class="inline">/humanize</code>. The <a href="/docs" style="color: var(--accent-ink); font-weight: 500;">API docs</a> have examples in cURL, Python, Node.js and PHP.'},
+    {'q': 'Is the web editor free?',
+     'a': 'Yes. Rewriting text in the editor is free with an account. Only the REST API, for use from your own apps, needs a plan.'},
+] %}
+
+{% block title %}AI Humanizer: Make AI Text Sound Human, Naturally{% endblock %}
+{% block description %}Free AI humanizer that rewrites stiff, AI-generated text in a natural voice. Pick a tone, review every highlighted change, and keep names and facts intact.{% endblock %}
+
+{% block head %}
+<link rel="stylesheet" href="{{ asset('css/landing.css') }}">
+<script>document.documentElement.classList.add('js');</script>
+{% include '_landing_schema.html' %}
+{% endblock %}
+
+{% block body %}
+<header class="nav">
+    <div class="container nav-inner">
+        <a href="/" class="brand">{{ logo() }}<span>AI Humanizer</span><span class="brand-tag">PRO</span></a>
+        <nav class="lp-nav-links" aria-label="Sections">
+            <a href="#features">Features</a>
+            <a href="#how">How it works</a>
+            <a href="#developers">Developers</a>
+            <a href="#pricing">Pricing</a>
+            <a href="#faq">FAQ</a>
+        </nav>
+        <div class="nav-right">
+            {% if logged_in %}
+            <a href="/dashboard" class="btn btn-ghost btn-sm">Dashboard</a>
+            <a href="/editor" class="btn btn-primary btn-sm">Open editor {{ icon('arrow-right') }}</a>
+            {% else %}
+            <a href="/login" class="btn btn-ghost btn-sm">Sign in</a>
+            <a href="/signup" class="btn btn-primary btn-sm">Get started</a>
+            {% endif %}
+        </div>
+    </div>
+</header>
+
+<main>
+    <!-- HERO -->
+    <section class="hero">
+        <div class="container">
+            <a href="#features" class="hero-badge reveal"><span class="tag">New</span>Tone control and a developer API {{ icon('arrow-right') }}</a>
+            <h1 class="reveal" style="--d: 1">Make AI drafts sound like <em>you</em> wrote them.</h1>
+            <p class="lede reveal" style="--d: 2">AI Humanizer rewrites stiff, machine-sounding text in the tone you choose, then highlights every change so you stay in control of the final words.</p>
+            <div class="hero-ctas reveal" style="--d: 3">
+                {% if logged_in %}
+                <a href="/editor" class="btn btn-primary btn-lg">Open the editor {{ icon('arrow-right') }}</a>
+                {% else %}
+                <a href="/signup" class="btn btn-primary btn-lg">Start for free {{ icon('arrow-right') }}</a>
+                {% endif %}
+                <a href="/docs" class="btn btn-secondary btn-lg">{{ icon('code') }} Read the API docs</a>
+            </div>
+            <div class="hero-notes reveal" style="--d: 4">
+                <span>{{ icon('check') }}Free account</span>
+                <span>{{ icon('check') }}Your text is never stored on our server</span>
+                <span>{{ icon('check') }}Every change highlighted</span>
+            </div>
+
+            <div class="hero-visual">
+                <div class="mock" aria-label="Product preview">
+                    <div class="mock-bar">
+                        <span class="mock-dots"><i></i><i></i><i></i></span>
+                        <span class="mock-url">ai-humanizer / editor</span>
+                        <span></span>
+                    </div>
+                    <div class="mock-toolbar">
+                        <div class="mock-tabs" id="mockTabs">
+                            <span data-tone="standard" class="active">Standard</span>
+                            <span data-tone="professional">Professional</span>
+                            <span data-tone="casual">Casual</span>
+                            <span data-tone="academic">Academic</span>
+                            <i class="mock-thumb" aria-hidden="true"></i>
+                        </div>
+                        <span class="mock-switch">Chaos Mode <i></i></span>
+                    </div>
+                    <div class="mock-panes">
+                        <div class="mock-pane">
+                            <div class="mock-label"><span><span class="dot"></span>Original</span><span class="pane-meta" id="mockWords"></span></div>
+                            <p class="mock-text" id="mockOriginal"></p>
+                        </div>
+                        <div class="mock-pane">
+                            <div class="mock-label"><span><span class="dot accent"></span>Humanized</span><span class="status-chip" id="mockStatus" data-state="done">Done</span></div>
+                            <div class="mock-text" id="mockOutput"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="float-card float-a">
+                    <div class="float-ring">
+                        <svg viewBox="0 0 42 42"><circle class="ring-track" cx="21" cy="21" r="16"/><circle class="ring-value" id="floatRing" cx="21" cy="21" r="16"/></svg>
+                        <b id="floatPercent">0%</b>
+                    </div>
+                    <div><strong>Words changed</strong><span id="floatTone">Standard tone</span></div>
+                </div>
+                <div class="float-card float-b">
+                    <span class="float-icon">{{ icon('check-circle', 'icon-lg') }}</span>
+                    <div><strong>Names kept</strong><span>People, places and dates untouched</span></div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- FACTS -->
+    <section class="container">
+        <div class="facts sr" id="facts">
+            <div class="fact"><div class="fact-num"><span data-count="4">0</span></div><div class="fact-label">Writing tones, from casual to academic</div></div>
+            <div class="fact"><div class="fact-num"><span data-count="20">0</span><small>K</small></div><div class="fact-label">Characters per request</div></div>
+            <div class="fact"><div class="fact-num"><span data-count="130">0</span><small>+</small></div><div class="fact-label">AI-style words and phrases rewritten</div></div>
+            <div class="fact"><div class="fact-num"><span data-count="0">0</span></div><div class="fact-label">Words of your text kept on our server</div></div>
+        </div>
+    </section>
+
+    <!-- FEATURES -->
+    <section class="lp-section" id="features">
+        <div class="container">
+            <div class="lp-head sr">
+                <span class="eyebrow">Features</span>
+                <h2 class="lp-title">Everything you need to <em>edit with confidence</em>.</h2>
+                <p class="lede">Built around one idea: you should see and approve every change before it leaves the page.</p>
+            </div>
+
+            <div class="bento">
+                <article class="bento-card span-4 sr">
+                    <div class="bento-visual">
+                        <div class="bento-diff">
+                            Our team <span class="mk" style="--md: 100ms">doesn't</span> <span class="mk" style="--md: 250ms">use</span> complex processes, and the new approach
+                            <span class="mk" style="--md: 400ms">greatly</span> improves the <span class="mk" style="--md: 550ms">whole</span> experience for customers.
+                        </div>
+                        <div class="diff-legend"><span><i></i>Rewritten</span><span><i class="plain"></i>Unchanged</span></div>
+                    </div>
+                    <h3>See every change</h3>
+                    <p>Rewritten words are highlighted in place, so you can review the result at a glance instead of rereading both versions.</p>
+                </article>
+
+                <article class="bento-card span-2 sr" style="--d: 1">
+                    <div class="bento-visual">
+                        <ul class="tone-list">
+                            <li><strong>Standard</strong><span>Balanced</span></li>
+                            <li><strong>Professional</strong><span>No contractions</span></li>
+                            <li><strong>Casual</strong><span>Shorter, friendlier</span></li>
+                            <li><strong>Academic</strong><span>Formal, precise</span></li>
+                        </ul>
+                    </div>
+                    <h3>Four writing tones</h3>
+                    <p>Pick the voice that fits the reader.</p>
+                </article>
+
+                <article class="bento-card span-2 sr">
+                    <div class="bento-visual">
+                        <div class="bars">
+                            <div class="bar-row"><div><span>Default</span><b>Targeted</b></div><div class="bar"><i style="--w: 30%"></i></div></div>
+                            <div class="bar-row"><div><span>Chaos Mode</span><b>Deep</b></div><div class="bar"><i class="accent" style="--w: 100%"></i></div></div>
+                        </div>
+                    </div>
+                    <h3>Chaos Mode</h3>
+                    <p>Need a bigger shift? Swap far more words and split long sentences in one click.</p>
+                </article>
+
+                <article class="bento-card span-2 sr" style="--d: 1">
+                    <div class="bento-visual">
+                        <ul class="checklist">
+                            <li><span class="check-dot">{{ icon('check') }}</span>Names and places</li>
+                            <li><span class="check-dot">{{ icon('check') }}</span>Dates and numbers</li>
+                            <li><span class="check-dot">{{ icon('check') }}</span>Paragraph breaks</li>
+                        </ul>
+                    </div>
+                    <h3>Keeps what matters</h3>
+                    <p>Language analysis spots names, figures and terms like "data pipeline", and leaves them exactly as you wrote them.</p>
+                </article>
+
+                <article class="bento-card span-2 sr" style="--d: 2">
+                    <div class="bento-visual">
+                        <div class="vault">
+                            <div><span>input_text</span><span class="ok">not stored</span></div>
+                            <div><span>api_key</span><span>sha256:9f86d081…</span></div>
+                            <div><span>password</span><span>scrypt:32768…</span></div>
+                        </div>
+                    </div>
+                    <h3>Private by design</h3>
+                    <p>Text is processed in memory and never saved. Keys and passwords are stored only as hashes.</p>
+                </article>
+
+                <article class="bento-card span-3 sr">
+                    <div class="bento-visual">
+                        <div class="mini-rings">
+                            <div class="mini-ring">
+                                <div class="ring">
+                                    <svg viewBox="0 0 76 76"><circle class="ring-track" cx="38" cy="38" r="32"/><circle class="ring-value" cx="38" cy="38" r="32" style="--off: 145"/></svg>
+                                    <span class="ring-label">28%</span>
+                                </div>
+                                <div><strong>Words changed</strong><span>Share rewritten</span></div>
+                            </div>
+                            <div class="mini-ring">
+                                <div class="ring">
+                                    <svg viewBox="0 0 76 76"><circle class="ring-track" cx="38" cy="38" r="32"/><circle class="ring-value ink" cx="38" cy="38" r="32" style="--off: 163"/></svg>
+                                    <span class="ring-label">19%</span>
+                                </div>
+                                <div><strong>Structural shift</strong><span>Sequence change</span></div>
+                            </div>
+                        </div>
+                    </div>
+                    <h3>Clear change stats</h3>
+                    <p>Know how much moved: words changed, structural shift and the longest passage left untouched.</p>
+                </article>
+
+                <article class="bento-card span-3 sr" style="--d: 1">
+                    <div class="bento-visual">
+                        <div class="stack">
+                            <div><b>Today, 10:42</b>Thanks for reaching out. We can't change the plan today, but…</div>
+                            <div><b>Today, 09:15</b>The quarterly results show a substantial improvement in…</div>
+                            <div><b>Yesterday, 17:03</b>Our team doesn't use complex processes, and the new…</div>
+                        </div>
+                    </div>
+                    <h3>Pick up where you left off</h3>
+                    <p>Your last six results stay in your own browser. One click restores the text and the result.</p>
+                </article>
+            </div>
+        </div>
+    </section>
+
+    <!-- HOW IT WORKS -->
+    <section class="lp-section" id="how" style="padding-top: 24px;">
+        <div class="container">
+            <div class="lp-head sr">
+                <span class="eyebrow">How it works</span>
+                <h2 class="lp-title">From draft to done in <em>three steps</em>.</h2>
+            </div>
+            <div class="how">
+                <div class="how-step sr">
+                    <span class="how-num">{{ icon('clipboard') }}<b>1</b></span>
+                    <h3>Paste your draft</h3>
+                    <p>Drop in up to 20,000 characters from any AI tool, email or document.</p>
+                </div>
+                <div class="how-step sr" style="--d: 1">
+                    <span class="how-num">{{ icon('sliders') }}<b>2</b></span>
+                    <h3>Choose a tone</h3>
+                    <p>Standard, professional, casual or academic. Turn on Chaos Mode for a bigger rewrite.</p>
+                </div>
+                <div class="how-step sr" style="--d: 2">
+                    <span class="how-num">{{ icon('eye') }}<b>3</b></span>
+                    <h3>Review and copy</h3>
+                    <p>Check the highlighted changes, then copy or download the final text.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- DEVELOPERS -->
+    <section class="container" id="developers">
+        <div class="dev sr">
+            <div>
+                <span class="eyebrow">For developers</span>
+                <h2>One endpoint. <em>Clean JSON.</em></h2>
+                <p>Add humanizing to your own product with a single POST request. Create keys from your dashboard and track every call.</p>
+                <ul class="dev-list">
+                    <li>{{ icon('check-circle') }}Keys are hashed and shown only once</li>
+                    <li>{{ icon('check-circle') }}Requests, latency and success rate on your dashboard</li>
+                    <li>{{ icon('check-circle') }}Plain error messages and documented limits</li>
+                </ul>
+                <div class="dev-actions">
+                    <a href="{{ '/dashboard' if logged_in else '/signup' }}" class="btn btn-light btn-lg">Get an API key</a>
+                    <a href="/docs" class="btn btn-outline-light btn-lg">Read the docs {{ icon('arrow-right') }}</a>
+                </div>
+            </div>
+
+            <div class="code" data-tabs>
+                <div class="code-head">
+                    <div class="code-tabs" role="tablist">
+                        <button class="code-tab active" type="button" data-tab="request" role="tab">Request</button>
+                        <button class="code-tab" type="button" data-tab="response" role="tab">Response</button>
+                    </div>
+                    <button class="code-copy" type="button" onclick="copyCode(this)">{{ icon('copy') }}<span>Copy</span></button>
+                </div>
+<pre data-panel="request" data-lang="code">curl -X POST {{ base_url }}humanize \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: hmnz_your_api_key_here" \
+  -d '{
+    "text": "Our team does not utilize complex processes.",
+    "tone": "casual"
+  }'</pre>
+<pre data-panel="response" data-lang="json" hidden>{
+  "original": "Our team does not utilize complex processes.",
+  "humanized": "Our team doesn't use complex processes.",
+  "longest_unchanged": "Our team",
+  "structural_changes": "38.5%",
+  "changed_words": 3
+}</pre>
+            </div>
+        </div>
+    </section>
+
+    <!-- PRICING -->
+    <section class="lp-section" id="pricing">
+        <div class="container">
+            <div class="lp-head sr">
+                <span class="eyebrow">Pricing</span>
+                <h2 class="lp-title">API plans that <em>fit your budget</em>.</h2>
+                <p class="lede">The editor is free. When you're ready to call the API from your own apps, pick a 30-day plan priced for where you are.</p>
+            </div>
+            <div class="sr">
+                {% include '_pricing_cards.html' %}
+            </div>
+        </div>
+    </section>
+
+    <!-- FAQ -->
+    <section class="lp-section" id="faq" style="padding-top: 24px;">
+        <div class="container">
+            <div class="lp-head sr">
+                <span class="eyebrow">FAQ</span>
+                <h2 class="lp-title">Questions, <em>answered</em>.</h2>
+            </div>
+            <div class="faq sr">
+                {% for item in faqs %}
+                <details>
+                    <summary>{{ item.q }}<span class="faq-icon" aria-hidden="true"></span></summary>
+                    <div class="faq-body">{{ item.html | safe if item.html else item.a }}</div>
+                </details>
+                {% endfor %}
+            </div>
+        </div>
+    </section>
+
+    <!-- FINAL CTA -->
+    <section class="container" style="padding-bottom: 112px;">
+        <div class="cta-band sr">
+            <span class="eyebrow">Get started</span>
+            <h2>Your next draft deserves <em>your voice</em>.</h2>
+            <p>Create a free account and humanize your first draft in under a minute.</p>
+            <div class="hero-ctas">
+                {% if logged_in %}
+                <a href="/editor" class="btn btn-primary btn-lg">Open the editor {{ icon('arrow-right') }}</a>
+                {% else %}
+                <a href="/signup" class="btn btn-primary btn-lg">Create free account {{ icon('arrow-right') }}</a>
+                <a href="/login" class="btn btn-secondary btn-lg">Sign in</a>
+                {% endif %}
+            </div>
+        </div>
+    </section>
+</main>
+
+<footer class="lp-footer">
+    <div class="container">
+        <div class="lp-footer-grid">
+            <div>
+                <a href="/" class="brand">{{ logo() }}<span>AI Humanizer</span></a>
+                <p>Rewrite AI-generated drafts in a natural, human voice, with every change visible.</p>
+            </div>
+            <div>
+                <h4>Product</h4>
+                <ul>
+                    <li><a href="/editor">Editor</a></li>
+                    <li><a href="/pricing">Pricing</a></li>
+                    <li><a href="/dashboard">Dashboard</a></li>
+                    <li><a href="/signup">Create account</a></li>
+                </ul>
+            </div>
+            <div>
+                <h4>Developers</h4>
+                <ul>
+                    <li><a href="/docs">API docs</a></li>
+                    <li><a href="/docs#examples">Code examples</a></li>
+                    <li><a href="/docs#errors">Errors &amp; limits</a></li>
+                </ul>
+            </div>
+            <div>
+                <h4>Legal</h4>
+                <ul>
+                    <li><a href="/terms">Terms</a></li>
+                    <li><a href="/refunds">Refunds</a></li>
+                    <li><a href="/privacy">Privacy</a></li>
+                    <li><a href="/contact">Contact</a></li>
+                </ul>
+            </div>
+        </div>
+        <div class="lp-footer-bottom">
+            <span>© {{ current_year }} {{ business_name }}</span>
+            <span>Developed by <strong>Prithwiraj Das</strong></span>
+        </div>
+    </div>
+</footer>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // --- SCROLL REVEAL ---
+    const revealTargets = document.querySelectorAll('.sr');
+    if ('IntersectionObserver' in window && !prefersReducedMotion()) {
+        const revealObserver = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (!entry.isIntersecting) return;
+                entry.target.classList.add('is-in');
+                revealObserver.unobserve(entry.target);
+            });
+        }, { threshold: 0.18, rootMargin: '0px 0px -40px 0px' });
+        revealTargets.forEach(el => revealObserver.observe(el));
+    } else {
+        revealTargets.forEach(el => el.classList.add('is-in'));
+    }
+
+    // --- FACT COUNTERS ---
+    const facts = document.getElementById('facts');
+    const runCounters = () => facts.querySelectorAll('[data-count]').forEach(el => {
+        countUp(el, Number(el.dataset.count), { duration: 1400 });
+    });
+    if ('IntersectionObserver' in window) {
+        const factObserver = new IntersectionObserver((entries) => {
+            if (entries.some(e => e.isIntersecting)) {
+                runCounters();
+                factObserver.disconnect();
+            }
+        }, { threshold: 0.4 });
+        factObserver.observe(facts);
+    } else {
+        runCounters();
+    }
+
+    // --- CODE SAMPLE ---
+    document.querySelectorAll('pre[data-lang]').forEach(highlightCode);
+    initCodeTabs();
+
+    // --- HERO DEMO (scripted preview of the editor) ---
+    const DEMO_ORIGINAL = 'Furthermore, it is important to note that our team does not utilize complex processes. We cannot overstate how significantly this approach improves the overall experience for customers.';
+    // Real engine output for DEMO_ORIGINAL in each tone; [brackets] mark rewritten words
+    const DEMO_STEPS = [
+        { tone: 'standard', text: '[Also,] our team does not [use] complex processes. We cannot overstate how [greatly] this approach improves the overall experience for customers.' },
+        { tone: 'casual', text: "[Also,] our team [doesn't] [use] complex processes. We [can't] overstate how [greatly] this approach improves the overall experience for customers." },
+        { tone: 'professional', text: '[Also,] our team does not [use] complex processes. We cannot overstate how [considerably] this approach improves the overall experience for customers.' },
+        { tone: 'academic', text: '[In addition,] our team does not [use] complex processes. We cannot overstate how [substantially] this approach improves the overall experience for customers.' },
+    ];
+    const FLOAT_RING_LENGTH = 2 * Math.PI * 16;
+
+    const mockTabs = document.getElementById('mockTabs');
+    const mockThumb = mockTabs.querySelector('.mock-thumb');
+    const mockOutput = document.getElementById('mockOutput');
+    const mockStatus = document.getElementById('mockStatus');
+    const originalWords = DEMO_ORIGINAL.split(/\s+/).length;
+
+    document.getElementById('mockOriginal').textContent = DEMO_ORIGINAL;
+    document.getElementById('mockWords').textContent = `${originalWords} words`;
+
+    function setMockTone(tone) {
+        mockTabs.querySelectorAll('span').forEach(tab => tab.classList.toggle('active', tab.dataset.tone === tone));
+        const active = mockTabs.querySelector('span.active');
+        mockThumb.style.width = `${active.offsetWidth}px`;
+        mockThumb.style.transform = `translateX(${active.offsetLeft}px)`;
+    }
+
+    function renderDemo(step) {
+        let index = 0;
+        mockOutput.innerHTML = escapeHtml(step.text).replace(/\[([^\]]+)\]/g, (_, word) =>
+            `<span class="mk" style="--md: ${index++ * 140}ms">${word}</span>`);
+        mockStatus.dataset.state = 'done';
+        mockStatus.textContent = 'Done';
+
+        const percent = Math.round(index / originalWords * 100);
+        document.getElementById('floatRing').style.strokeDashoffset = FLOAT_RING_LENGTH * (1 - percent / 100);
+        document.getElementById('floatPercent').textContent = `${percent}%`;
+        document.getElementById('floatTone').textContent = `${step.tone[0].toUpperCase()}${step.tone.slice(1)} tone`;
+    }
+
+    let demoIndex = 0;
+    function runDemo() {
+        const step = DEMO_STEPS[demoIndex];
+        demoIndex = (demoIndex + 1) % DEMO_STEPS.length;
+        setMockTone(step.tone);
+        mockStatus.dataset.state = 'working';
+        mockStatus.textContent = 'Rewriting';
+        mockOutput.innerHTML = [96, 100, 88, 70].map((w, i) =>
+            `<div class="skeleton-line" style="width: ${w}%; animation-delay: ${i * 90}ms"></div>`).join('');
+        setTimeout(() => renderDemo(step), 900);
+    }
+
+    mockThumb.style.transition = 'none';
+    setMockTone('standard');
+    requestAnimationFrame(() => { mockThumb.style.transition = ''; });
+
+    if (prefersReducedMotion()) {
+        renderDemo(DEMO_STEPS[1]);
+        setMockTone('casual');
+    } else {
+        setTimeout(() => {
+            runDemo();
+            setInterval(runDemo, 4800);
+        }, 1200);
+    }
+    if (document.fonts) document.fonts.ready.then(() => setMockTone(mockTabs.querySelector('span.active').dataset.tone));
+</script>
+{% endblock %}

@@ -1,0 +1,8 @@
+{% extends 'emails/_layout.html' %}
+{% block content %}
+<h1 style="margin:0 0 12px;font-size:22px;color:#16171B;">Your {{ plan_name }} plan ends on {{ end_date }}</h1>
+<p>Hi {{ username }}, your API plan has {{ remaining }} requests left and ends on {{ end_date }}. After that, API calls will return “402 Payment Required” until you buy a plan or a top-up.</p>
+<p>Buying any plan before then adds to your plan's time and carries over your unused requests.</p>
+{% with url = pricing_url, label = 'Renew my plan' %}{% include 'emails/_button.html' %}{% endwith %}
+{% endblock %}
+{% block footer %}We send this reminder once per plan period.{% endblock %}

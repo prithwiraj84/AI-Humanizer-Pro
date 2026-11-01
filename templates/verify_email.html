@@ -1,0 +1,39 @@
+{% extends 'base.html' %}
+{% from '_macros.html' import logo %}
+{% set headings = {'verified': 'Email confirmed', 'expired': 'This link has expired', 'invalid': "This link doesn't work"} %}
+
+{% block title %}{{ headings[state] }} · AI Humanizer{% endblock %}
+{% block description %}Confirm the email address for your AI Humanizer account.{% endblock %}
+{% block robots %}noindex, nofollow{% endblock %}
+{% block body_class %}app{% endblock %}
+
+{% block body %}
+<main class="container error-page">
+    <a href="/" class="brand">{{ logo() }}<span>AI Humanizer</span></a>
+    <div class="error-card reveal">
+        <span class="error-code">{{ 'Verified' if state == 'verified' else 'Email confirmation' }}</span>
+        <h1 class="display">{{ headings[state] }}</h1>
+        {% if state == 'verified' %}
+        <p class="lede">Thanks. Your address is confirmed, so you can create API keys, use the free API trial and buy plans.</p>
+        <div class="error-actions">
+            {% if signed_in %}
+            <a href="/dashboard" class="btn btn-primary btn-lg">Go to your dashboard</a>
+            {% else %}
+            <a href="/login?next=/dashboard" class="btn btn-primary btn-lg">Sign in</a>
+            {% endif %}
+            <a href="/docs" class="btn btn-secondary btn-lg">Read the API docs</a>
+        </div>
+        {% elif state == 'expired' %}
+        <p class="lede">Confirmation links work for 3 days. Sign in and send yourself a new one from the dashboard.</p>
+        <div class="error-actions">
+            <a href="/dashboard" class="btn btn-primary btn-lg">Send a new link</a>
+        </div>
+        {% else %}
+        <p class="lede">The link may be incomplete, or it was sent to an address the account no longer uses. Sign in to send a new one.</p>
+        <div class="error-actions">
+            <a href="/dashboard" class="btn btn-primary btn-lg">Go to your dashboard</a>
+        </div>
+        {% endif %}
+    </div>
+</main>
+{% endblock %}

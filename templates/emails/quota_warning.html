@@ -1,0 +1,8 @@
+{% extends 'emails/_layout.html' %}
+{% block content %}
+<h1 style="margin:0 0 12px;font-size:22px;color:#16171B;">You've used 80% of your API requests</h1>
+<p>Hi {{ username }}, your {{ plan_name }} plan has used {{ used }} of {{ limit }} requests. When they run out, API calls will return “402 Payment Required”.</p>
+<p>To keep going, buy a top-up (extra requests that never expire) or another plan; unused requests carry over.</p>
+{% with url = pricing_url, label = 'Top up or upgrade' %}{% include 'emails/_button.html' %}{% endwith %}
+{% endblock %}
+{% block footer %}We send this warning once per plan period.{% endblock %}

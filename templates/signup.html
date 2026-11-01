@@ -1,0 +1,161 @@
+{% extends 'auth_base.html' %}
+{% from '_macros.html' import icon, alert_box %}
+
+{% block title %}Create a Free Account · AI Humanizer{% endblock %}
+{% block description %}Create a free AI Humanizer account to rewrite AI-generated drafts in four tones and get an API key for your own apps.{% endblock %}
+
+{% block form %}
+<h1>Create your account</h1>
+<p class="sub">Start rewriting in under a minute.</p>
+
+{{ alert_box() }}
+
+{% with divider_text = 'or sign up with email' %}{% include '_oauth_buttons.html' %}{% endwith %}
+
+<form id="signupForm" novalidate>
+    <div class="field">
+        <label class="label" for="username">Username</label>
+        <div class="input-wrap">
+            {{ icon('user', 'input-icon') }}
+            <input class="input has-icon" type="text" id="username" placeholder="jane_doe" maxlength="50" autocomplete="username" autofocus>
+        </div>
+    </div>
+
+    <div class="field">
+        <label class="label" for="email">Email</label>
+        <div class="input-wrap">
+            {{ icon('mail', 'input-icon') }}
+            <input class="input has-icon" type="email" id="email" placeholder="you@company.com" autocomplete="email">
+        </div>
+    </div>
+
+    <div class="field">
+        <label class="label" for="password">Password</label>
+        <div class="input-wrap">
+            {{ icon('lock', 'input-icon') }}
+            <input class="input has-icon has-action" type="password" id="password" placeholder="At least 8 characters" autocomplete="new-password">
+            <button type="button" class="icon-btn input-action" id="togglePassword" aria-label="Show password">{{ icon('eye') }}</button>
+        </div>
+        <div class="strength" id="strengthMeter" data-level="0"><span></span><span></span><span></span><span></span></div>
+        <span class="hint-text" id="strengthLabel">Use 8 or more characters with a mix of letters and numbers.</span>
+    </div>
+
+    <div class="field">
+        <label class="label" for="confirmPassword">Confirm password</label>
+        <div class="input-wrap">
+            {{ icon('lock', 'input-icon') }}
+            <input class="input has-icon" type="password" id="confirmPassword" placeholder="Repeat your password" autocomplete="new-password">
+        </div>
+    </div>
+
+    {% if turnstile_site_key %}
+    <div class="field turnstile-field">
+        <div class="cf-turnstile" data-sitekey="{{ turnstile_site_key }}" data-theme="light" data-size="flexible" data-action="signup"></div>
+    </div>
+    {% endif %}
+
+    <button type="submit" class="btn btn-primary btn-lg btn-block" id="submitBtn">Create account {{ icon('arrow-right') }}</button>
+</form>
+
+<p class="auth-switch">Already have an account? <a href="/login">Sign in</a></p>
+{% endblock %}
+
+{% block page_scripts %}
+{% if turnstile_site_key %}<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>{% endif %}
+<script>
+    bindPasswordToggle('togglePassword', 'password');
+
+    const submitBtn = document.getElementById('submitBtn');
+    const submitLabel = submitBtn.innerHTML;
+    const passwordInput = document.getElementById('password');
+    const meter = document.getElementById('strengthMeter');
+    const meterLabel = document.getElementById('strengthLabel');
+
+    passwordInput.addEventListener('input', () => {
+        const password = passwordInput.value;
+
+        if (!password) {
+            meter.dataset.level = 0;
+            meterLabel.textContent = 'Use 8 or more characters with a mix of letters and numbers.';
+            return;
+        }
+        if (password.length < 8) {
+            meter.dataset.level = 1;
+            meterLabel.textContent = 'Too short. Use at least 8 characters.';
+            return;
+        }
+
+        // Length is the first point; mixed case, digits and symbols (or 12+ chars) add the rest
+        let level = 1;
+        if (/[a-z]/.test(password) && /[A-Z]/.test(password)) level++;
+        if (/[0-9]/.test(password)) level++;
+        if (/[^A-Za-z0-9]/.test(password) || password.length >= 12) level++;
+
+        meter.dataset.level = level;
+        meterLabel.textContent = ['', 'Weak password', 'Fair password', 'Good password', 'Strong password'][level];
+    });
+
+    document.getElementById('signupForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        hideAlert();
+
+        const username = document.getElementById('username').value.trim();
+        const email = document.getElementById('email').value.trim();
+        const password = passwordInput.value;
+        const confirmPassword = document.getElementById('confirmPassword').value;
+
+        if (!username || !email || !password) {
+            showAlert('error', 'Please fill in all fields.');
+            return;
+        }
+        if (password.length < 8) {
+            showAlert('error', 'Password must be at least 8 characters.');
+            return;
+        }
+        if (password !== confirmPassword) {
+            showAlert('error', 'Passwords do not match.');
+            return;
+        }
+
+        // Cloudflare Turnstile (when enabled) puts its token in a hidden field inside the widget
+        const turnstileWidget = document.querySelector('.cf-turnstile');
+        const turnstileToken = turnstileWidget ? (turnstileWidget.querySelector('[name="cf-turnstile-response"]') || {}).value : '';
+        if (turnstileWidget && !turnstileToken) {
+            showAlert('error', 'Please complete the "Verify you are human" check.');
+            return;
+        }
+
+        setLoading(submitBtn, true, 'Creating account…');
+
+        try {
+            const response = await fetch('/signup', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username, email, password, turnstile_token: turnstileToken || '' })
+            });
+            const data = await response.json().catch(() => ({}));
+
+            if (response.ok) {
+                const next = NEXT_PAGE ? `/login?next=${encodeURIComponent(NEXT_PAGE)}` : '/login';
+                if (data.verify_sent) {
+                    // Give them time to read where the confirmation link went
+                    showAlert('success', `${data.message} Open it to unlock API keys, then sign in.`);
+                    submitBtn.innerHTML = `Continue to sign in ${icon('arrow-right')}`;
+                    submitBtn.disabled = false;
+                    submitBtn.type = 'button';
+                    submitBtn.onclick = () => { window.location.href = next; };
+                    return;
+                }
+                showAlert('success', 'Account created. Redirecting you to sign in…');
+                setTimeout(() => { window.location.href = next; }, 1200);
+                return;
+            }
+            showAlert('error', data.message || 'Sign up failed. Please try again.');
+            if (window.turnstile && turnstileWidget) window.turnstile.reset(turnstileWidget);   // tokens are single-use
+        } catch (error) {
+            showAlert('error', 'Connection error. Please try again.');
+        }
+        setLoading(submitBtn, false, submitLabel);
+    });
+</script>
+{% endblock %}

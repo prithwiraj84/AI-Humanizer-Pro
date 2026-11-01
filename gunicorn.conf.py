@@ -1,17 +1,20 @@
-# Gunicorn configuration — auto-loaded by `gunicorn app:app` from the project root.
-#
-# app.py is a FastAPI (ASGI) application. Gunicorn's default "sync" worker is
-# WSGI and calls the app as wsgi(environ, start_response), which fails with:
-#   TypeError: FastAPI.__call__() missing 1 required positional argument: 'send'
-# Serving it with the Uvicorn worker class makes gunicorn speak ASGI.
+# Gunicorn settings, loaded automatically by `gunicorn app:app`.
+# Tuned for small instances such as Render's free tier (512 MB RAM, shared CPU):
+# one worker holds the spaCy model (~200 MB in total), and threads keep slow I/O
+# (email, OAuth) from blocking other requests. Raise WEB_CONCURRENCY only with more RAM.
 import os
 
-worker_class = "uvicorn.workers.UvicornWorker"
-
-# Bind to the port Render (or any host) provides; falls back to 10000 locally.
 bind = f"0.0.0.0:{os.environ.get('PORT', '10000')}"
+workers = int(os.environ.get('WEB_CONCURRENCY', 1))
+worker_class = 'gthread'
+threads = int(os.environ.get('GUNICORN_THREADS', 4))
+timeout = 60
+graceful_timeout = 20
+keepalive = 5
 
-# Render sets WEB_CONCURRENCY based on the instance size.
-workers = int(os.environ.get("WEB_CONCURRENCY", "1"))
+# Render's proxy terminates HTTPS and forwards the original scheme in X-Forwarded-Proto
+forwarded_allow_ips = '*'
 
-timeout = 120
+accesslog = '-'
+errorlog = '-'
+loglevel = 'info'

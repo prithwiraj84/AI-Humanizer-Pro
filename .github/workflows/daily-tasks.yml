@@ -1,0 +1,24 @@
+# Runs the app's daily jobs (plan-expiry reminder emails). Render's free tier has no scheduler,
+# so GitHub calls the app instead. Add two repository secrets (Settings > Secrets and variables > Actions):
+#   SITE_URL     e.g. https://your-domain.com
+#   CRON_SECRET  the same value as the CRON_SECRET environment variable on Render
+name: Daily tasks
+
+on:
+  schedule:
+    - cron: '30 3 * * *'   # 03:30 UTC = 09:00 IST
+  workflow_dispatch:
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Call /internal/tasks
+        env:
+          SITE_URL: ${{ secrets.SITE_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          # A sleeping free-tier instance can take a minute to wake up, hence the retries
+          curl --fail --silent --show-error --retry 5 --retry-delay 30 --retry-all-errors --max-time 120 \
+            -X POST -H "Authorization: Bearer ${CRON_SECRET}" "${SITE_URL%/}/internal/tasks"

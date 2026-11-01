@@ -1,87 +1,197 @@
 import os
-import json
-import random
-import difflib
+import math
 import re
-import unicodedata
-import nltk
-import secrets
-import sqlite3
-import hashlib
 import hmac
-import smtplib
-from datetime import datetime, timedelta
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
-
-from fastapi import FastAPI, Depends, Request
-from fastapi.responses import ORJSONResponse, FileResponse, Response
-from starlette.middleware.sessions import SessionMiddleware
-from starlette.concurrency import run_in_threadpool
+import time
+import json
+import logging
+import secrets
+import hashlib
+import threading
+import traceback
+from collections import defaultdict, deque
+from datetime import datetime, timedelta, timezone
+from functools import wraps
+from urllib.parse import urlparse
+from xml.sax.saxutils import escape as xml_escape
+import requests
+from flask import (Flask, render_template, request, jsonify, session, redirect, url_for, flash,
+                   Response, send_from_directory, has_app_context, has_request_context)
+from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
+from werkzeug.security import generate_password_hash, check_password_hash
+from werkzeug.middleware.proxy_fix import ProxyFix
+from authlib.integrations.flask_client import OAuth
 from dotenv import load_dotenv
+import db
+import billing
+import invoices
+import mailer
+import admin
+import humanizer
+from humanizer import TONES, perform_nuclear_chaos, calculate_diff_metrics
 
-# Load variables from a local .env file. No-op on hosts (e.g. Render) that
-# inject real environment variables, so it is safe in every environment.
-load_dotenv()
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-# --- SETUP: DOWNLOAD NLTK DATA (Runs once on startup) ---
-try:
-    from nltk.corpus import wordnet
-    nltk.data.find('corpora/wordnet.zip')
-except LookupError:
-    nltk.download('wordnet')
-    nltk.download('omw-1.4')
-    from nltk.corpus import wordnet
+# --- SETUP: LOAD SECRETS FROM .env (on Render, set them as environment variables instead) ---
+load_dotenv(os.path.join(BASE_DIR, '.env'))
+
+# --- SETUP: LOGGING (stdout/stderr, collected by Render's log viewer) ---
+logging.basicConfig(level=os.environ.get('LOG_LEVEL', 'INFO'),
+                    format='%(asctime)s %(levelname)s %(name)s: %(message)s')
+logger = logging.getLogger('ai_humanizer')
+
+app = Flask(__name__)
+
+# Behind Render's proxy, trust its X-Forwarded-* headers so external URLs use https
+ON_RENDER = bool(os.environ.get("RENDER"))
+if ON_RENDER or os.environ.get("TRUST_PROXY") == "1":
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 
 # --- CRITICAL CONFIGURATION ---
-# 1. Secret Key: signs the session cookie (Starlette SessionMiddleware).
-#    MUST be set via env in production: a fresh random key on every restart logs
-#    everyone out, and different keys per worker break auth across processes.
-SECRET_KEY = os.getenv("SECRET_KEY") or secrets.token_hex(32)
+# 1. Static Secret Key (from .env): Prevents logouts on server restart
+app.secret_key = os.environ.get("SECRET_KEY")
+if not app.secret_key:
+    logger.warning("SECRET_KEY is not set; using a temporary key (users will be logged out on restart)")
+    app.secret_key = secrets.token_hex(32)
 
-# --- EMAIL CONFIGURATION (FOR FORGOT PASSWORD) ---
-# Set these via environment variables. Create a Google App Password at:
-# GOOGLE ACCOUNT -> SECURITY -> 2-STEP VERIFICATION -> APP PASSWORDS
-SMTP_SERVER = os.getenv("SMTP_SERVER", "smtp.gmail.com")
-SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
-SENDER_EMAIL = os.getenv("SENDER_EMAIL", "")
-SENDER_PASSWORD = os.getenv("SENDER_PASSWORD", "")
+# 2. Strict Slashes False: Makes /dashboard and /dashboard/ work the same (canonical links pick one)
+app.url_map.strict_slashes = False
 
-# --- ADMIN LOGIN CONFIGURATION ---
-# Set these in environment variables for production deployments.
-ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "admin@aih.local")
-ADMIN_PASSWORD_HASH = hashlib.sha256(
-    os.getenv("ADMIN_PASSWORD", "ChangeAdminPassword123!").encode()
-).hexdigest()
+# 3. Template Folder: Ensure it looks in current directory/templates
+app.template_folder = 'templates'
+
+# 4. Request Size & Cookies: Reject oversized bodies, keep the session cookie same-site
+app.config['MAX_CONTENT_LENGTH'] = 1024 * 1024
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+app.config['SESSION_COOKIE_SECURE'] = ON_RENDER
+
+# 5. Static files are fingerprinted (?v=hash), so browsers may cache them for a year
+app.config['SEND_FILE_MAX_AGE_DEFAULT'] = timedelta(days=365)
+
+# 6. Public address used in canonical links, the sitemap and social previews (e.g. https://example.com).
+#    Falls back to the address the request came in on.
+SITE_URL = os.environ.get("SITE_URL", "").rstrip('/')
+CONTACT_EMAIL = os.environ.get("CONTACT_EMAIL", "")
+
+# 7. Business details shown on the contact and legal pages (Razorpay checks these before going live)
+BUSINESS_NAME = os.environ.get("BUSINESS_NAME", "AI Humanizer")
+BUSINESS_ADDRESS = os.environ.get("BUSINESS_ADDRESS", "")
+CONTACT_PHONE = os.environ.get("CONTACT_PHONE", "")
+GRIEVANCE_OFFICER = os.environ.get("GRIEVANCE_OFFICER", "")   # name required by Indian IT/data protection rules
+JURISDICTION_CITY = os.environ.get("JURISDICTION_CITY", "")   # courts named in the terms, e.g. "Kolkata"
+
+# 8. Country used for pricing when the visitor's IP can't be located (e.g. "IN" for local testing)
+GEO_DEFAULT_COUNTRY = os.environ.get("GEO_DEFAULT_COUNTRY", "").upper() or None
+
+# 9. Bot protection on sign-up with Cloudflare Turnstile (free). Enabled when both keys are set.
+TURNSTILE_SITE_KEY = os.environ.get("TURNSTILE_SITE_KEY", "")
+TURNSTILE_SECRET_KEY = os.environ.get("TURNSTILE_SECRET_KEY", "")
+TURNSTILE_VERIFY_URL = 'https://challenges.cloudflare.com/turnstile/v0/siteverify'
+
+# 10. Shared secret for the daily scheduled tasks (POST /internal/tasks, called by GitHub Actions)
+CRON_SECRET = os.environ.get("CRON_SECRET", "")
+
+# --- LIMITS ---
+MAX_TEXT_LENGTH = 20000
+MAX_BATCH_ITEMS = 25
+MAX_BATCH_CHARS = 50000
+MIN_PASSWORD_LENGTH = 8
+VERIFY_LINK_LIFETIME = timedelta(days=3)
+OTP_LIFETIME = timedelta(minutes=10)
+OTP_RESEND_COOLDOWN = timedelta(seconds=60)
+MAX_OTP_ATTEMPTS = 5
+MAX_LOGIN_FAILURES = 5
+LOGIN_LOCKOUT_WINDOW = timedelta(minutes=15)
+
+# Retention promised in the privacy policy; enforced by housekeeping() below
+ABANDONED_ORDER_RETENTION = timedelta(days=30)
+HOUSEKEEPING_INTERVAL = 600  # seconds between clean-up runs
+
+# Requests allowed per window (seconds), per client IP, or per user/API key for /humanize
+RATE_LIMITS = {
+    'login': (20, 600),
+    'signup': (5, 3600),
+    'send_otp': (5, 3600),
+    'reset_password': (20, 3600),
+    'humanize': (30, 60),
+    'billing': (20, 3600),
+    'coupon': (30, 3600),
+    'verify_email': (5, 3600),
+}
+
+# --- EMAIL ---
+# Sent over SMTP with SENDER_EMAIL / SENDER_PASSWORD from .env (for Gmail, an app password:
+# Google Account -> Security -> 2-Step Verification -> App passwords). See mailer.py.
+
+# --- SOCIAL LOGIN (GOOGLE & GITHUB) ---
+# Each provider is enabled only when its client ID and secret are set in .env
+oauth = OAuth(app)
+OAUTH_NAMES = {'google': 'Google', 'github': 'GitHub'}
+OAUTH_PROVIDERS = set()
+OAUTH_TIMEOUT = 10
+
+# Accounts created through social login get this marker instead of a password hash, so
+# password login never matches. The owner can still set a password via "Forgot password".
+OAUTH_ONLY_PASSWORD = '!oauth'
+
+if os.environ.get("GOOGLE_CLIENT_ID") and os.environ.get("GOOGLE_CLIENT_SECRET"):
+    oauth.register(
+        name='google',
+        client_id=os.environ["GOOGLE_CLIENT_ID"],
+        client_secret=os.environ["GOOGLE_CLIENT_SECRET"],
+        server_metadata_url='https://accounts.google.com/.well-known/openid-configuration',
+        client_kwargs={'scope': 'openid email profile', 'default_timeout': OAUTH_TIMEOUT},
+    )
+    OAUTH_PROVIDERS.add('google')
+
+if os.environ.get("GITHUB_CLIENT_ID") and os.environ.get("GITHUB_CLIENT_SECRET"):
+    oauth.register(
+        name='github',
+        client_id=os.environ["GITHUB_CLIENT_ID"],
+        client_secret=os.environ["GITHUB_CLIENT_SECRET"],
+        authorize_url='https://github.com/login/oauth/authorize',
+        access_token_url='https://github.com/login/oauth/access_token',
+        api_base_url='https://api.github.com/',
+        client_kwargs={'scope': 'read:user user:email', 'default_timeout': OAUTH_TIMEOUT},
+    )
+    OAUTH_PROVIDERS.add('github')
 
 # --- DATABASE SETUP ---
+# SQLite locally; set DATABASE_URL for PostgreSQL in production (see db.py)
+
+def hash_api_key(api_key):
+    # API keys are long random tokens, so a plain SHA-256 is enough for lookups
+    return hashlib.sha256(api_key.encode()).hexdigest()
+
 def init_db():
-    conn = sqlite3.connect('humanizer.db')
-    c = conn.cursor()
+    conn = db.connect()
+    c = conn
 
-    # Performance: write-ahead logging gives far better read/write concurrency.
-    c.execute('PRAGMA journal_mode = WAL')
-
-    # Users table
-    c.execute('''CREATE TABLE IF NOT EXISTS users
+    # Users table. email_verified defaults to 1 so accounts from before verification existed keep
+    # working; sign-ups insert 0 until the emailed link is opened.
+    c.execute(db.ddl('''CREATE TABLE IF NOT EXISTS users
                  (id INTEGER PRIMARY KEY AUTOINCREMENT,
                   username TEXT UNIQUE NOT NULL,
                   email TEXT UNIQUE NOT NULL,
                   password TEXT NOT NULL,
-                  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
+                  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                  email_verified INTEGER NOT NULL DEFAULT 1,
+                  referral_code TEXT,
+                  referred_by INTEGER)'''))
 
-    # API Keys table
-    c.execute('''CREATE TABLE IF NOT EXISTS api_keys
+    # API Keys table (api_key holds a SHA-256 hash; the raw key is only shown once at creation)
+    c.execute(db.ddl('''CREATE TABLE IF NOT EXISTS api_keys
                  (id INTEGER PRIMARY KEY AUTOINCREMENT,
                   user_id INTEGER NOT NULL,
                   key_name TEXT NOT NULL,
                   api_key TEXT UNIQUE NOT NULL,
+                  key_prefix TEXT,
                   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                   is_active INTEGER DEFAULT 1,
-                  FOREIGN KEY (user_id) REFERENCES users (id))''')
+                  FOREIGN KEY (user_id) REFERENCES users (id))'''))
 
     # API Usage table
-    c.execute('''CREATE TABLE IF NOT EXISTS api_usage
+    c.execute(db.ddl('''CREATE TABLE IF NOT EXISTS api_usage
                  (id INTEGER PRIMARY KEY AUTOINCREMENT,
                   api_key_id INTEGER NOT NULL,
                   endpoint TEXT NOT NULL,
@@ -89,828 +199,1134 @@ def init_db():
                   response_time REAL,
                   error_message TEXT,
                   timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                  FOREIGN KEY (api_key_id) REFERENCES api_keys (id))''')
+                  FOREIGN KEY (api_key_id) REFERENCES api_keys (id))'''))
 
     # Password Resets (OTP) Table
-    c.execute('''CREATE TABLE IF NOT EXISTS password_resets
+    c.execute(db.ddl('''CREATE TABLE IF NOT EXISTS password_resets
                  (email TEXT PRIMARY KEY,
                   otp TEXT NOT NULL,
-                  expires_at TIMESTAMP NOT NULL)''')
+                  expires_at TIMESTAMP NOT NULL,
+                  attempts INTEGER NOT NULL DEFAULT 0)'''))
 
-    # Activity logs table (admin console monitoring)
-    c.execute('''CREATE TABLE IF NOT EXISTS activity_logs
+    # Failed Logins Table (for locking an account after repeated wrong passwords)
+    c.execute(db.ddl('''CREATE TABLE IF NOT EXISTS login_failures
                  (id INTEGER PRIMARY KEY AUTOINCREMENT,
-                  user_id INTEGER,
-                  actor_type TEXT NOT NULL,
-                  actor_identifier TEXT,
-                  action TEXT NOT NULL,
-                  endpoint TEXT NOT NULL,
-                  method TEXT NOT NULL,
-                  status_code INTEGER NOT NULL,
-                  ip_address TEXT,
-                  details TEXT,
-                  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                  FOREIGN KEY (user_id) REFERENCES users (id))''')
+                  email TEXT NOT NULL,
+                  failed_at TIMESTAMP NOT NULL)'''))
+    c.execute('CREATE INDEX IF NOT EXISTS idx_login_failures_email ON login_failures (email)')
 
-    c.execute('CREATE INDEX IF NOT EXISTS idx_activity_logs_created_at ON activity_logs(created_at DESC)')
-    c.execute('CREATE INDEX IF NOT EXISTS idx_activity_logs_user_id ON activity_logs(user_id)')
+    # Social Login Table (links a Google/GitHub identity to a user)
+    c.execute(db.ddl('''CREATE TABLE IF NOT EXISTS oauth_accounts
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  user_id INTEGER NOT NULL,
+                  provider TEXT NOT NULL,
+                  provider_user_id TEXT NOT NULL,
+                  email TEXT,
+                  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                  UNIQUE (provider, provider_user_id),
+                  FOREIGN KEY (user_id) REFERENCES users (id))'''))
+
+    c.execute('CREATE INDEX IF NOT EXISTS idx_api_usage_key ON api_usage (api_key_id)')
+
+    # API plan per user: requests allowed and used in the current period, plus top-up credits
+    # that never expire (see billing.py)
+    c.execute(db.ddl('''CREATE TABLE IF NOT EXISTS api_subscriptions
+                 (user_id INTEGER PRIMARY KEY,
+                  plan_id TEXT NOT NULL,
+                  requests_limit INTEGER NOT NULL,
+                  requests_used INTEGER NOT NULL DEFAULT 0,
+                  period_start TIMESTAMP NOT NULL,
+                  period_end TIMESTAMP NOT NULL,
+                  cycle TEXT NOT NULL DEFAULT 'monthly',
+                  credits INTEGER NOT NULL DEFAULT 0,
+                  warned_80 INTEGER NOT NULL DEFAULT 0,
+                  reminder_sent INTEGER NOT NULL DEFAULT 0,
+                  FOREIGN KEY (user_id) REFERENCES users (id))'''))
+
+    # Razorpay orders, auto-renewal charges and their outcome (amounts in paise / cents).
+    # plan_id holds the product bought: 'pro', 'pro_yearly', 'topup', ...
+    c.execute(db.ddl('''CREATE TABLE IF NOT EXISTS payments
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  user_id INTEGER NOT NULL,
+                  plan_id TEXT NOT NULL,
+                  country TEXT,
+                  currency TEXT NOT NULL,
+                  amount INTEGER NOT NULL,
+                  razorpay_order_id TEXT UNIQUE NOT NULL,
+                  razorpay_payment_id TEXT,
+                  status TEXT NOT NULL DEFAULT 'created',
+                  created_at TIMESTAMP NOT NULL,
+                  paid_at TIMESTAMP,
+                  coupon_code TEXT,
+                  discount INTEGER NOT NULL DEFAULT 0,
+                  refunded_amount INTEGER NOT NULL DEFAULT 0,
+                  refund_id TEXT,
+                  razorpay_subscription_id TEXT,
+                  FOREIGN KEY (user_id) REFERENCES users (id))'''))
+    c.execute('CREATE INDEX IF NOT EXISTS idx_payments_user ON payments (user_id)')
+
+    # Columns added since the first release (databases created by older versions get them here)
+    for table, column, definition in [
+        ('api_keys', 'key_prefix', 'TEXT'),
+        ('password_resets', 'attempts', 'INTEGER NOT NULL DEFAULT 0'),
+        ('users', 'email_verified', 'INTEGER NOT NULL DEFAULT 1'),
+        ('users', 'referral_code', 'TEXT'),
+        ('users', 'referred_by', 'INTEGER'),
+        ('api_subscriptions', 'cycle', "TEXT NOT NULL DEFAULT 'monthly'"),
+        ('api_subscriptions', 'credits', 'INTEGER NOT NULL DEFAULT 0'),
+        ('api_subscriptions', 'warned_80', 'INTEGER NOT NULL DEFAULT 0'),
+        ('api_subscriptions', 'reminder_sent', 'INTEGER NOT NULL DEFAULT 0'),
+        ('payments', 'coupon_code', 'TEXT'),
+        ('payments', 'discount', 'INTEGER NOT NULL DEFAULT 0'),
+        ('payments', 'refunded_amount', 'INTEGER NOT NULL DEFAULT 0'),
+        ('payments', 'refund_id', 'TEXT'),
+        ('payments', 'razorpay_subscription_id', 'TEXT'),
+    ]:
+        db.ensure_column(c, table, column, definition)
+    c.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_referral_code ON users (referral_code)')
+    c.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_payments_payment_id ON payments (razorpay_payment_id)')
+    c.execute('CREATE INDEX IF NOT EXISTS idx_api_usage_time ON api_usage (timestamp)')
+
+    # Discount codes created in the admin panel (percent off; applies_to empty = everything)
+    c.execute(db.ddl('''CREATE TABLE IF NOT EXISTS coupons
+                 (code TEXT PRIMARY KEY,
+                  percent_off INTEGER NOT NULL,
+                  max_redemptions INTEGER,
+                  redeemed_count INTEGER NOT NULL DEFAULT 0,
+                  expires_at TIMESTAMP,
+                  active INTEGER NOT NULL DEFAULT 1,
+                  applies_to TEXT,
+                  created_at TIMESTAMP NOT NULL)'''))
+
+    # Who referred whom; rewarded on the referred account's first purchase
+    c.execute(db.ddl('''CREATE TABLE IF NOT EXISTS referrals
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  referrer_id INTEGER NOT NULL,
+                  referred_id INTEGER UNIQUE NOT NULL,
+                  status TEXT NOT NULL DEFAULT 'pending',
+                  referrer_credits INTEGER NOT NULL DEFAULT 0,
+                  referred_credits INTEGER NOT NULL DEFAULT 0,
+                  created_at TIMESTAMP NOT NULL,
+                  rewarded_at TIMESTAMP,
+                  FOREIGN KEY (referrer_id) REFERENCES users (id),
+                  FOREIGN KEY (referred_id) REFERENCES users (id))'''))
+    c.execute('CREATE INDEX IF NOT EXISTS idx_referrals_referrer ON referrals (referrer_id)')
+
+    # Invoices: one per paid purchase, with the seller's and buyer's details as they were when issued
+    c.execute(db.ddl('''CREATE TABLE IF NOT EXISTS invoices
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  payment_id INTEGER UNIQUE NOT NULL,
+                  user_id INTEGER NOT NULL,
+                  number TEXT UNIQUE NOT NULL,
+                  fy TEXT NOT NULL,
+                  seq INTEGER NOT NULL,
+                  kind TEXT NOT NULL,
+                  issued_at TIMESTAMP NOT NULL,
+                  currency TEXT NOT NULL,
+                  total INTEGER NOT NULL,
+                  taxable INTEGER NOT NULL,
+                  cgst INTEGER NOT NULL DEFAULT 0,
+                  sgst INTEGER NOT NULL DEFAULT 0,
+                  igst INTEGER NOT NULL DEFAULT 0,
+                  place_of_supply TEXT,
+                  sac TEXT,
+                  description TEXT NOT NULL,
+                  seller_name TEXT,
+                  seller_address TEXT,
+                  seller_gstin TEXT,
+                  buyer_name TEXT,
+                  buyer_email TEXT,
+                  buyer_business TEXT,
+                  buyer_gstin TEXT,
+                  buyer_state TEXT,
+                  buyer_address TEXT,
+                  UNIQUE (fy, seq),
+                  FOREIGN KEY (payment_id) REFERENCES payments (id),
+                  FOREIGN KEY (user_id) REFERENCES users (id))'''))
+    c.execute('CREATE INDEX IF NOT EXISTS idx_invoices_user ON invoices (user_id)')
+    # Last invoice number used in each financial year (see invoices.create_invoice)
+    c.execute('''CREATE TABLE IF NOT EXISTS invoice_counters
+                 (fy TEXT PRIMARY KEY,
+                  last_seq INTEGER NOT NULL)''')
+
+    # Details printed on invoices (business name, GSTIN, state for the place of supply)
+    c.execute(db.ddl('''CREATE TABLE IF NOT EXISTS billing_profiles
+                 (user_id INTEGER PRIMARY KEY,
+                  business_name TEXT,
+                  gstin TEXT,
+                  state_code TEXT,
+                  address TEXT,
+                  updated_at TIMESTAMP,
+                  FOREIGN KEY (user_id) REFERENCES users (id))'''))
+
+    # Audit trail of everything done in the admin panel
+    c.execute(db.ddl('''CREATE TABLE IF NOT EXISTS admin_actions
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  admin_id INTEGER NOT NULL,
+                  action TEXT NOT NULL,
+                  target_user_id INTEGER,
+                  details TEXT,
+                  created_at TIMESTAMP NOT NULL)'''))
+
+    # Auto-renewal: Razorpay plan objects (one per product and price) and customers' subscriptions
+    c.execute(db.ddl('''CREATE TABLE IF NOT EXISTS razorpay_plans
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  product_id TEXT NOT NULL,
+                  currency TEXT NOT NULL,
+                  amount INTEGER NOT NULL,
+                  razorpay_plan_id TEXT NOT NULL,
+                  UNIQUE (product_id, currency, amount))'''))
+    c.execute(db.ddl('''CREATE TABLE IF NOT EXISTS autopay_subscriptions
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  user_id INTEGER NOT NULL,
+                  product_id TEXT NOT NULL,
+                  country TEXT,
+                  currency TEXT NOT NULL,
+                  amount INTEGER NOT NULL,
+                  razorpay_subscription_id TEXT UNIQUE NOT NULL,
+                  razorpay_plan_id TEXT NOT NULL,
+                  status TEXT NOT NULL,
+                  created_at TIMESTAMP NOT NULL,
+                  updated_at TIMESTAMP NOT NULL,
+                  FOREIGN KEY (user_id) REFERENCES users (id))'''))
+    c.execute('CREATE INDEX IF NOT EXISTS idx_autopay_user ON autopay_subscriptions (user_id)')
+
+    # Replace any plaintext API keys with their hashes
+    for row in c.execute('SELECT id, api_key FROM api_keys').fetchall():
+        if row['api_key'].startswith('hmnz_'):
+            c.execute('UPDATE api_keys SET api_key = ?, key_prefix = ? WHERE id = ?',
+                      (hash_api_key(row['api_key']), row['api_key'][:12], row['id']))
 
     conn.commit()
     conn.close()
 
 # Initialize DB on startup
 init_db()
+logger.info('Humanizer engine: %s', 'spaCy' if humanizer.NLP is not None else 'basic fallback (spaCy not installed)')
 
 # --- HELPER FUNCTIONS ---
+utcnow = db.utcnow   # naive UTC, matching how the database stores timestamps
+
 def hash_password(password):
-    return hashlib.sha256(password.encode()).hexdigest()
+    return generate_password_hash(password)
+
+def is_legacy_password_hash(stored_hash):
+    # Accounts created before the upgrade use unsalted SHA-256, which has no '$' separator
+    return '$' not in stored_hash
+
+def verify_password(stored_hash, password):
+    if not stored_hash or stored_hash == OAUTH_ONLY_PASSWORD:
+        return False
+    if is_legacy_password_hash(stored_hash):
+        return hmac.compare_digest(stored_hash, hashlib.sha256(password.encode()).hexdigest())
+    return check_password_hash(stored_hash, password)
 
 def generate_api_key():
     return 'hmnz_' + secrets.token_hex(24)
 
+def get_json_body():
+    data = request.get_json(silent=True)
+    return data if isinstance(data, dict) else {}
+
+def get_str(data, key, strip=True):
+    value = data.get(key)
+    if not isinstance(value, str):
+        return ''
+    return value.strip() if strip else value
+
+def login_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'user_id' not in session:
+            # If accessing via API, return 401 JSON
+            if request.path.startswith('/api/'):
+                return jsonify({"error": "Unauthorized"}), 401
+            # If accessing via Browser, redirect to login
+            return redirect('/login')
+        return f(*args, **kwargs)
+    return decorated_function
+
 def get_db():
-    conn = sqlite3.connect('humanizer.db')
-    conn.row_factory = sqlite3.Row
-    # Wait (instead of erroring) if another writer holds the lock briefly.
-    conn.execute('PRAGMA busy_timeout = 5000')
-    conn.execute('PRAGMA synchronous = NORMAL')
-    return conn
+    return db.connect()
 
 def verify_api_key(api_key):
     conn = get_db()
-    key_data = conn.execute('SELECT * FROM api_keys WHERE api_key = ? AND is_active = 1',
-                            (api_key,)).fetchone()
-    conn.close()
-    return key_data
+    try:
+        return conn.execute('''SELECT k.*, u.email_verified FROM api_keys k JOIN users u ON u.id = k.user_id
+                               WHERE k.api_key = ? AND k.is_active = 1''', (hash_api_key(api_key),)).fetchone()
+    finally:
+        conn.close()
 
 def log_api_usage(api_key_id, endpoint, status, response_time, error_message=None):
+    log_api_usage_many([(api_key_id, endpoint, status, response_time, error_message)])
+
+def log_api_usage_many(rows):
+    """rows: (api_key_id, endpoint, status, response_time, error_message)"""
     conn = get_db()
     try:
-        conn.execute('''INSERT INTO api_usage (api_key_id, endpoint, status, response_time, error_message)
-                        VALUES (?, ?, ?, ?, ?)''',
-                     (api_key_id, endpoint, status, response_time, error_message))
+        for row in rows:
+            conn.execute('''INSERT INTO api_usage (api_key_id, endpoint, status, response_time, error_message)
+                            VALUES (?, ?, ?, ?, ?)''', row)
         conn.commit()
     except Exception as e:
-        print(f"Logging error: {e}")
+        logger.error('Usage logging failed: %s', type(e).__name__)
     finally:
         conn.close()
 
-def log_activity_event(user_id, actor_type, actor_identifier, action, endpoint, method, status_code, ip_address=None, details=None):
-    conn = get_db()
-    try:
-        conn.execute('''
-            INSERT INTO activity_logs
-            (user_id, actor_type, actor_identifier, action, endpoint, method, status_code, ip_address, details)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (
-            user_id,
-            actor_type,
-            actor_identifier,
-            action,
-            endpoint,
-            method,
-            status_code,
-            ip_address,
-            (details or '')[:400]
-        ))
-        conn.commit()
-    except Exception as e:
-        print(f"Activity log error: {e}")
-    finally:
-        conn.close()
-
-# --- AUTH DEPENDENCIES (FastAPI equivalent of the Flask decorators) ---
-class UnauthorizedJSON(Exception):
-    def __init__(self, payload, status):
-        self.payload = payload
-        self.status = status
-
-def require_login(request: Request):
-    # API-only backend: always answer with JSON. The Next.js frontend handles
-    # redirecting unauthenticated browsers to the login page.
-    if 'user_id' not in request.session:
-        raise UnauthorizedJSON({"error": "Unauthorized"}, 401)
-
-def require_admin(request: Request):
-    if not request.session.get('admin_authenticated'):
-        raise UnauthorizedJSON({"error": "Admin authorization required"}, 401)
-
-# --- ACTIVITY LOGGING PIPELINE ---
-def normalize_path(path):
-    if not path:
-        return '/'
-    if path != '/' and path.endswith('/'):
-        return path[:-1]
-    return path
-
-def infer_activity_action(path, method, status_code):
-    normalized = normalize_path(path)
-    method = (method or 'GET').upper()
-
-    if normalized == '/login' and method == 'POST':
-        return 'user_login_success' if status_code < 400 else 'user_login_failed'
-    if normalized == '/signup' and method == 'POST':
-        return 'user_signup_success' if status_code < 400 else 'user_signup_failed'
-    if normalized in ('/logout', '/auth/logout'):
-        return 'user_logout'
-    if normalized == '/dashboard':
-        return 'view_dashboard'
-    if normalized == '/':
-        return 'view_home'
-    if normalized == '/docs':
-        return 'view_docs'
-    if normalized == '/api/keys' and method == 'GET':
-        return 'view_api_keys'
-    if normalized == '/api/keys' and method == 'POST':
-        return 'api_key_created'
-    if normalized.startswith('/api/keys/') and method == 'DELETE':
-        return 'api_key_deleted'
-    if normalized == '/api/usage' and method == 'GET':
-        return 'view_usage_stats'
-    if normalized == '/humanize' and method == 'POST':
-        return 'humanize_text'
-    if normalized == '/api/send-otp' and method == 'POST':
-        return 'request_password_otp'
-    if normalized == '/api/reset-password' and method == 'POST':
-        return 'reset_password'
-    if normalized == '/admin/login' and method == 'POST':
-        return 'admin_login_success' if status_code < 400 else 'admin_login_failed'
-    if normalized == '/admin/logout' and method == 'POST':
-        return 'admin_logout'
-    if normalized.startswith('/admin/api/users/') and method == 'DELETE':
-        return 'admin_deleted_user'
-    if normalized.startswith('/admin/api/keys/') and method == 'DELETE':
-        return 'admin_revoked_key'
-
-    path_token = normalized.strip('/').replace('/', '_') or 'home'
-    return f"{method.lower()}_{path_token}"
-
-def build_activity_details(path, method, body_json):
-    normalized = normalize_path(path)
-    data = body_json
-    if not isinstance(data, dict):
-        return None
-
-    if normalized == '/humanize':
-        text_len = len(data.get('text') or '')
-        tone = data.get('tone') or 'standard'
-        deep_mode = bool(data.get('deep_mode'))
-        return f"text_length={text_len}, tone={tone}, deep_mode={deep_mode}"
-
-    if normalized == '/api/keys' and method == 'POST':
-        key_name = data.get('name') or 'My API Key'
-        return f"key_name={str(key_name)[:120]}"
-
-    if normalized in ('/login', '/signup', '/api/send-otp', '/api/reset-password', '/admin/login'):
-        email = data.get('email')
-        username = data.get('username')
-        parts = []
-        if email:
-            parts.append(f"email={email}")
-        if username:
-            parts.append(f"username={username}")
-        return ', '.join(parts) if parts else None
-
-    return None
-
-def resolve_activity_actor(path, method, headers, session_post, session_pre, body_json):
-    user_id = session_post.get('user_id')
-    if user_id:
-        return user_id, 'user', session_post.get('username') or f"user_{user_id}"
-
-    # Preserve actor identity for logout routes after the session is cleared.
-    if path in ('/logout', '/auth/logout'):
-        prev_user_id = session_pre.get('user_id')
-        if prev_user_id:
-            return prev_user_id, 'user', session_pre.get('username') or f"user_{prev_user_id}"
-
-    api_key = headers.get('x-api-key')
-    if api_key:
-        key_data = verify_api_key(api_key)
-        if key_data:
-            return key_data['user_id'], 'api_key', key_data['api_key'][:14] + '...'
-
-    if method == 'POST' and path in ('/login', '/signup', '/api/send-otp', '/api/reset-password'):
-        payload = body_json or {}
-        identifier = payload.get('email') or payload.get('username') or 'guest'
-        return None, 'guest', identifier
-
-    if session_post.get('admin_authenticated'):
-        return None, 'admin', session_post.get('admin_email') or 'admin'
-
-    if method == 'POST' and path == '/admin/login':
-        payload = body_json or {}
-        return None, 'admin_attempt', payload.get('email') or 'admin'
-
-    if path == '/admin/logout' and session_pre.get('admin_authenticated'):
-        return None, 'admin', session_pre.get('admin_email') or 'admin'
-
-    return None, None, None
-
-def _is_json_content_type(content_type):
-    # Mirror Flask's is_json: application/json or any "*+json" subtype.
-    ctype = (content_type or '').split(';')[0].strip().lower()
-    return ctype == 'application/json' or ctype.endswith('+json')
-
-def _parse_json_body(body, content_type):
-    # Mirror Flask's request.get_json(silent=True): only parse when the body is
-    # declared as JSON, and never raise.
-    if not body:
-        return None
-    if not _is_json_content_type(content_type):
-        return None
-    try:
-        return json.loads(body)
-    except Exception:
-        return None
-
-def record_activity(method, raw_path, status_code, headers, session_post, session_pre, body_json, ip_address):
-    path = normalize_path(raw_path)
-
-    if path.startswith('/static') or path in ('/favicon.ico',):
-        return
-
-    # Avoid polluting the activity log by logging activity-log reads themselves.
-    if path == '/admin/api/activity-log':
-        return
-
-    user_id, actor_type, actor_identifier = resolve_activity_actor(
-        path, method, headers, session_post, session_pre, body_json
-    )
-    if not actor_type:
-        return
-
-    log_activity_event(
-        user_id=user_id,
-        actor_type=actor_type,
-        actor_identifier=actor_identifier,
-        action=infer_activity_action(path, method, status_code),
-        endpoint=path,
-        method=method,
-        status_code=status_code,
-        ip_address=ip_address,
-        details=build_activity_details(path, method, body_json)
-    )
-
-class ActivityLoggerMiddleware:
-    """
-    Pure-ASGI port of the Flask before_request/after_request activity pipeline.
-
-    It buffers the request body (so both this middleware and the route handler
-    can read it), snapshots the session before the route runs (to preserve the
-    actor across logout), captures the response status, and writes the activity
-    record AFTER the response has been streamed to the client -- in a worker
-    thread so it never blocks the event loop or delays the response.
-    """
-    def __init__(self, app):
-        self.app = app
-
-    async def __call__(self, scope, receive, send):
-        if scope["type"] != "http":
-            await self.app(scope, receive, send)
-            return
-
-        # Static frontend assets: serve without the logging machinery.
-        _p = scope.get("path", "")
-        if _p.startswith("/_next/") or _p in ("/favicon.ico", "/favicon.svg"):
-            await self.app(scope, receive, send)
-            return
-
-        # Mirror Flask's strict_slashes=False: a trailing-slash variant runs the
-        # SAME handler (one request, no 307 redirect) instead of Starlette's
-        # default slash-redirect. Normalizing here -- before the router -- also
-        # keeps the activity log honest (it records the real outcome, not a 307).
-        raw_path = scope.get("path", "/")
-        normalized_path = normalize_path(raw_path)
-        if normalized_path != raw_path:
-            scope["path"] = normalized_path
-            scope["raw_path"] = normalized_path.encode("latin-1")
-
-        # Buffer the entire request body so it can be read more than once.
-        body = b""
-        while True:
-            message = await receive()
-            if message["type"] == "http.request":
-                body += message.get("body", b"")
-                if not message.get("more_body", False):
-                    break
-            elif message["type"] == "http.disconnect":
-                break
-
-        async def replay_receive():
-            return {"type": "http.request", "body": body, "more_body": False}
-
-        # Snapshot session BEFORE the route runs (SessionMiddleware is outer, so
-        # scope["session"] is already populated here).
-        session = scope.get("session", {})
-        session_pre = {
-            "user_id": session.get("user_id"),
-            "username": session.get("username"),
-            "admin_authenticated": session.get("admin_authenticated"),
-            "admin_email": session.get("admin_email"),
-        }
-
-        status_holder = {"code": 500}
-
-        async def send_wrapper(message):
-            if message["type"] == "http.response.start":
-                status_holder["code"] = message["status"]
-            await send(message)
-
-        await self.app(scope, replay_receive, send_wrapper)
-
-        # Response already sent to the client -- logging here adds zero latency.
-        try:
-            headers = {
-                k.decode("latin-1").lower(): v.decode("latin-1")
-                for k, v in scope.get("headers", [])
-            }
-            session_post = scope.get("session", {})
-            forwarded_for = headers.get("x-forwarded-for", "")
-            client = scope.get("client")
-            client_host = client[0] if client else ""
-            ip_address = forwarded_for.split(",")[0].strip() if forwarded_for else client_host
-
-            await run_in_threadpool(
-                record_activity,
-                scope["method"],
-                scope["path"],
-                status_holder["code"],
-                headers,
-                session_post,
-                session_pre,
-                _parse_json_body(body, headers.get("content-type", "")),
-                ip_address,
-            )
-        except Exception as e:
-            print(f"Activity capture error: {e}")
+def error_location(e):
+    """Where an exception happened, without its message (messages can quote user text)."""
+    frames = traceback.extract_tb(e.__traceback__)
+    return ' <- '.join(f'{os.path.basename(f.filename)}:{f.lineno} {f.name}' for f in reversed(frames[-4:]))
 
 def send_otp_email(to_email, otp):
+    # Sent inline (not queued) so the caller can tell the user if it failed
+    return mailer.deliver(mailer.build(to_email, f'Your {BUSINESS_NAME} reset code', 'reset_code', otp=otp))
+
+def get_user(user_id):
+    conn = get_db()
     try:
-        msg = MIMEMultipart()
-        msg['From'] = SENDER_EMAIL
-        msg['To'] = to_email
-        msg['Subject'] = "Your AI Humanizer Reset Code"
+        return conn.execute('SELECT * FROM users WHERE id = ?', (user_id,)).fetchone()
+    finally:
+        conn.close()
 
-        body = f"""
-        <html>
-          <body style="font-family: Arial, sans-serif; color: #333;">
-            <div style="max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #ddd; border-radius: 10px;">
-                <h2 style="color: #6366f1;">Password Reset Request</h2>
-                <p>You requested a password reset for your AI Humanizer account.</p>
-                <div style="background: #f4f4f5; padding: 15px; border-radius: 5px; text-align: center; font-size: 24px; font-weight: bold; letter-spacing: 5px;">
-                    {otp}
-                </div>
-                <p>This code expires in 10 minutes.</p>
-                <p style="color: #999; font-size: 12px;">If you didn't request this, please ignore this email.</p>
-            </div>
-          </body>
-        </html>
-        """
-        msg.attach(MIMEText(body, 'html'))
+# --- EMAIL VERIFICATION ---
+# Sign-ups get a signed link (no database table needed). Unverified accounts can use the free
+# editor, but need a verified address for API keys, the free API trial and purchases.
 
-        server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
-        server.starttls()
-        server.login(SENDER_EMAIL, SENDER_PASSWORD)
-        server.send_message(msg)
-        server.quit()
+def verification_required():
+    """REQUIRE_EMAIL_VERIFICATION=1/0; by default on whenever email sending is configured."""
+    setting = os.environ.get('REQUIRE_EMAIL_VERIFICATION', '')
+    return setting == '1' if setting in ('0', '1') else mailer.is_configured()
+
+def needs_verification(user):
+    return verification_required() and user is not None and not user['email_verified']
+
+def verify_serializer():
+    return URLSafeTimedSerializer(app.secret_key, salt='verify-email')
+
+def send_verification_email(user):
+    token = verify_serializer().dumps({'uid': user['id'], 'email': user['email']})
+    return mailer.send(user['email'], f'Confirm your email for {BUSINESS_NAME}', 'verify_email',
+                       username=user['username'], verify_url=f'{public_base_url()}/verify-email?token={token}')
+
+def unverified_response():
+    return jsonify({"error": "Verify your email address first. We sent you a link when you signed up; "
+                             "you can send a new one from the dashboard.", "code": "email_unverified"}), 403
+
+# --- BOT PROTECTION (CLOUDFLARE TURNSTILE) ---
+
+def turnstile_enabled():
+    return bool(TURNSTILE_SITE_KEY and TURNSTILE_SECRET_KEY)
+
+def turnstile_passed(token):
+    """Check a Turnstile token with Cloudflare. Fails closed: no answer means no sign-up."""
+    if not turnstile_enabled():
         return True
-    except Exception as e:
-        print(f"Email Error: {e}")
+    if not token or len(token) > 2048:
+        return False
+    try:
+        response = requests.post(TURNSTILE_VERIFY_URL, timeout=10, data={
+            'secret': TURNSTILE_SECRET_KEY, 'response': token, 'remoteip': client_ip()})
+        return bool(response.json().get('success'))
+    except (requests.RequestException, ValueError) as e:
+        logger.error('Turnstile check failed: %s', type(e).__name__)
         return False
 
 # ==========================================
-#   HUMANIZER LOGIC (Core Features)
+#   PRODUCTION SAFEGUARDS
 # ==========================================
-def get_rare_synonym(word):
-    synonyms = []
+
+class RateLimiter:
+    """In-memory sliding-window limiter. Exact with one gunicorn worker (the default config);
+    with several workers each one keeps its own counts."""
+
+    def __init__(self):
+        self.enabled = os.environ.get('RATE_LIMITS', 'on') != 'off'
+        self._hits = defaultdict(deque)
+        self._lock = threading.Lock()
+
+    def hit(self, bucket, limit, window, cost=1):
+        """Count a request (as `cost` requests); return the seconds to wait if the limit is exceeded, otherwise 0."""
+        if not self.enabled:
+            return 0
+        now = time.monotonic()
+        with self._lock:
+            hits = self._hits[bucket]
+            while hits and hits[0] <= now - window:
+                hits.popleft()
+            if len(hits) + cost > limit:
+                # Wait until enough earlier requests have left the window
+                index = min(len(hits) - 1, max(0, len(hits) + cost - limit - 1))
+                return max(1, math.ceil(hits[index] + window - now)) if hits else window
+            hits.extend([now] * cost)
+            if len(self._hits) > 10000:
+                stale = [k for k, v in self._hits.items() if not v or v[-1] <= now - 86400]
+                for k in stale:
+                    del self._hits[k]
+            return 0
+
+limiter = RateLimiter()
+
+def client_ip():
+    return request.remote_addr or 'unknown'
+
+JSON_PATHS = ('/api/', '/humanize', '/auth/', '/admin/api/', '/internal/')
+
+def wants_json():
+    return request.path.startswith(JSON_PATHS) or request.method != 'GET'
+
+def error_response(status, message):
+    if wants_json():
+        response = jsonify({"success": False, "error": message, "message": message})
+        response.status_code = status
+        return response
+    return render_template('error.html', code=status, message=message), status
+
+def too_many_requests(retry_after):
+    wait = f'{math.ceil(retry_after / 60)} minute(s)' if retry_after >= 60 else f'{retry_after} seconds'
+    response = error_response(429, f'Too many requests. Please try again in {wait}.')
+    response = response if isinstance(response, Response) else app.make_response(response)
+    response.headers['Retry-After'] = str(retry_after)
+    return response
+
+def rate_limited(name):
+    """Limit POST requests to a route per client IP."""
+    limit, window = RATE_LIMITS[name]
+
+    def decorator(f):
+        @wraps(f)
+        def wrapped(*args, **kwargs):
+            if request.method == 'POST':
+                retry_after = limiter.hit(f'{name}:{client_ip()}', limit, window)
+                if retry_after:
+                    return too_many_requests(retry_after)
+            return f(*args, **kwargs)
+        return wrapped
+    return decorator
+
+@app.before_request
+def reject_cross_site_writes():
+    # Browsers always send Origin on cross-site POSTs; API clients authenticate with X-API-Key instead
+    if request.method in ('POST', 'PUT', 'PATCH', 'DELETE') and not request.headers.get('X-API-Key'):
+        origin = request.headers.get('Origin')
+        if origin and urlparse(origin).netloc != request.host:
+            return error_response(403, 'Cross-site request blocked.')
+
+# Razorpay Checkout loads scripts from several of its subdomains (checkout, cdn for fraud checks),
+# opens its payment window in a frame, and reports back to its API
+_last_housekeeping = float('-inf')
+_housekeeping_lock = threading.Lock()
+
+@app.before_request
+def housekeeping():
+    """Delete short-lived records on the schedule the privacy policy promises (at most every 10 minutes)."""
+    global _last_housekeeping
+    if time.monotonic() - _last_housekeeping < HOUSEKEEPING_INTERVAL or not _housekeeping_lock.acquire(blocking=False):
+        return
     try:
-        for syn in wordnet.synsets(word):
-            for lemma in syn.lemmas():
-                if lemma.name().lower() != word.lower() and "_" not in lemma.name():
-                    synonyms.append(lemma.name())
-    except:
-        return word
-
-    if not synonyms:
-        return word
-    return random.choice(synonyms)
-
-def spike_perplexity(text, intensity=0.3):
-    words = text.split()
-    new_text = []
-    for word in words:
-        if (len(word) > 4 and random.random() < intensity):
-            new_word = get_rare_synonym(word)
-            new_text.append(new_word)
-        else:
-            new_text.append(word)
-    return " ".join(new_text)
-
-def unicode_spoofing(text):
-    chars = list(text)
-    new_chars = []
-    for char in chars:
-        if random.random() < 0.5:
-            new_chars.append(unicodedata.normalize('NFD', char))
-        else:
-            new_chars.append(unicodedata.normalize('NFC', char))
-    return "".join(new_chars)
-
-def inject_invisible_glue(text):
-    invisible_chars = ['\u200B', '\u2060', '\u200C', '\u200D']
-    words = text.split()
-    new_words = []
-    for word in words:
-        if len(word) > 3 and random.random() < 0.4:
-            split = random.randint(1, len(word)-1)
-            word = word[:split] + random.choice(invisible_chars) + word[split:]
-        new_words.append(word)
-    return " ".join(new_words)
-
-def calculate_diff_metrics(original, humanized):
-    clean_ver = humanized
-    for char in ['\u200B', '\u2060', '\u200C', '\u200D']:
-        clean_ver = clean_ver.replace(char, "")
-
-    matcher = difflib.SequenceMatcher(None, original.split(), clean_ver.split())
-    match = matcher.find_longest_match(0, len(original.split()), 0, len(clean_ver.split()))
-    longest_unchanged = " ".join(original.split()[match.a: match.a + match.size])
-    similarity = matcher.ratio()
-    structural_change_score = (1 - similarity) * 100
-
-    diff = list(difflib.ndiff(original.split(), clean_ver.split()))
-    diff_html = ""
-    changes_count = 0
-
-    for token in diff:
-        word = token[2:]
-        if token.startswith('- '):
-            changes_count += 1
-            continue
-        elif token.startswith('+ '):
-            diff_html += f'<span class="added">{word}</span> '
-            changes_count += 1
-        elif token.startswith('  '):
-            diff_html += f'<span class="unchanged">{word}</span> '
-
-    return {
-        "diff_html": diff_html,
-        "longest_unchanged": longest_unchanged if longest_unchanged else "None",
-        "structural_score": round(structural_change_score, 1),
-        "changed_words_count": changes_count
-    }
-
-def perform_nuclear_chaos(text, tone, deep_mode):
-    current_text = text
-    if deep_mode:
-        current_text = spike_perplexity(current_text, intensity=0.4)
-        current_text = unicode_spoofing(current_text)
-        current_text = inject_invisible_glue(current_text)
-    else:
-        current_text = spike_perplexity(current_text, intensity=0.1)
-    return current_text
-
-# ==========================================
-#   APPLICATION & MIDDLEWARE
-# ==========================================
-# docs_url/redoc_url/openapi_url disabled so FastAPI's auto Swagger UI does not
-# collide with the app's own GET /docs page route.
-app = FastAPI(
-    default_response_class=ORJSONResponse,
-    docs_url=None,
-    redoc_url=None,
-    openapi_url=None,
-    redirect_slashes=False,   # trailing slashes are normalized in middleware instead
-)
-
-# Order matters: SessionMiddleware must be OUTER so scope["session"] is decoded
-# before the activity logger reads it. add_middleware adds outermost-last.
-app.add_middleware(ActivityLoggerMiddleware)
-app.add_middleware(
-    SessionMiddleware,
-    secret_key=SECRET_KEY,
-    session_cookie="session",
-    max_age=None,        # browser-session cookie, matching Flask's default
-    same_site="lax",
-    https_only=False,
-)
-
-@app.exception_handler(UnauthorizedJSON)
-async def _unauthorized_handler(request: Request, exc: UnauthorizedJSON):
-    return ORJSONResponse(exc.payload, status_code=exc.status)
-
-def J(content, status=200):
-    return ORJSONResponse(content, status_code=status)
-
-class APIError(Exception):
-    def __init__(self, status, message="Bad Request"):
-        self.status = status
-        self.message = message
-
-@app.exception_handler(APIError)
-async def _api_error_handler(request: Request, exc: APIError):
-    return ORJSONResponse({"error": exc.message}, status_code=exc.status)
-
-async def parse_json_body(request: Request):
-    # Faithful port of Flask's `request.json` (the raising variant): 415 when the
-    # body is not declared as JSON, 400 when it cannot be parsed.
-    if not _is_json_content_type(request.headers.get('content-type', '')):
-        raise APIError(415, "Did not attempt to load JSON data because the request Content-Type was not 'application/json'.")
-    body = await request.body()
-    try:
-        return json.loads(body)
-    except Exception:
-        raise APIError(400, "Failed to decode JSON object.")
-
-async def get_json_silent(request: Request):
-    # Faithful port of Flask's `request.get_json(silent=True)`.
-    if not _is_json_content_type(request.headers.get('content-type', '')):
-        return None
-    try:
-        return await request.json()
-    except Exception:
-        return None
-
-# ==========================================
-#   AUTH & SESSION ROUTES
-# ==========================================
-
-@app.post('/admin/login')
-async def admin_login(request: Request):
-    data = (await get_json_silent(request)) or {}
-    email = (data.get('email') or '').strip().lower()
-    raw_password = data.get('password') or ''
-
-    if email == ADMIN_EMAIL.lower() and hmac.compare_digest(hash_password(raw_password), ADMIN_PASSWORD_HASH):
-        request.session['admin_authenticated'] = True
-        request.session['admin_email'] = ADMIN_EMAIL
-        return J({"success": True, "message": "Admin login successful"})
-
-    return J({"success": False, "message": "Invalid admin credentials"}, 401)
-
-@app.get('/admin/auth/check')
-def admin_auth_check(request: Request):
-    if request.session.get('admin_authenticated'):
-        return J({"authenticated": True, "email": request.session.get('admin_email')})
-    return J({"authenticated": False}, 401)
-
-@app.post('/admin/logout')
-def admin_logout(request: Request, _=Depends(require_admin)):
-    request.session.pop('admin_authenticated', None)
-    request.session.pop('admin_email', None)
-    return J({"success": True})
-
-@app.api_route('/healthz', methods=['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'])
-def healthz():
-    # Lightweight health check for platform pings (e.g. Render).
-    return J({"service": "AI Humanizer Pro API", "status": "ok"})
-
-@app.post('/login')
-async def login(request: Request):
-    data = await parse_json_body(request)
-    email = data.get('email')
-    password = hash_password(data.get('password'))
-
-    def _find_user():
-        conn = get_db()
-        user = conn.execute('SELECT * FROM users WHERE email = ? AND password = ?',
-                            (email, password)).fetchone()
-        conn.close()
-        return user
-
-    user = await run_in_threadpool(_find_user)
-
-    if user:
-        request.session['user_id'] = user['id']
-        request.session['username'] = user['username']
-        return J({"success": True, "message": "Login successful"})
-    else:
-        return J({"success": False, "message": "Invalid credentials"}, 401)
-
-@app.post('/signup')
-async def signup(request: Request):
-    data = await parse_json_body(request)
-    username = data.get('username')
-    email = data.get('email')
-    raw_password = data.get('password')
-
-    if not username or not email or not raw_password:
-        return J({"success": False, "message": "All fields are required"}, 400)
-
-    password = hash_password(raw_password)
-
-    def _create_user():
+        _last_housekeeping = time.monotonic()
+        now = utcnow()
         conn = get_db()
         try:
-            conn.execute('INSERT INTO users (username, email, password) VALUES (?, ?, ?)',
-                         (username, email, password))
+            conn.execute('DELETE FROM login_failures WHERE failed_at <= ?', (now - LOGIN_LOCKOUT_WINDOW,))
+            conn.execute('DELETE FROM password_resets WHERE expires_at <= ?', (now,))
+            conn.execute("DELETE FROM payments WHERE status = 'created' AND created_at <= ?",
+                         (now - ABANDONED_ORDER_RETENTION,))
             conn.commit()
+        finally:
             conn.close()
-            return True
-        except sqlite3.IntegrityError:
+    except Exception as e:
+        logger.error('Housekeeping failed: %s at %s', type(e).__name__, error_location(e))
+    finally:
+        _housekeeping_lock.release()
+
+# Cloudflare Turnstile (sign-up bot check) loads its script and widget frame from challenges.cloudflare.com
+CONTENT_SECURITY_POLICY = '; '.join([
+    "default-src 'self'",
+    "script-src 'self' 'unsafe-inline' https://*.razorpay.com https://challenges.cloudflare.com",
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+    "font-src 'self' https://fonts.gstatic.com",
+    "img-src 'self' data: https://*.razorpay.com",
+    "frame-src https://*.razorpay.com https://challenges.cloudflare.com",
+    "connect-src 'self' https://*.razorpay.com",
+    "form-action 'self'",
+    "frame-ancestors 'none'",
+    "base-uri 'self'",
+    "object-src 'none'",
+])
+
+@app.after_request
+def add_security_headers(response):
+    headers = response.headers
+    headers.setdefault('Content-Security-Policy', CONTENT_SECURITY_POLICY)
+    headers.setdefault('X-Content-Type-Options', 'nosniff')
+    headers.setdefault('X-Frame-Options', 'DENY')
+    headers.setdefault('Referrer-Policy', 'strict-origin-when-cross-origin')
+    headers.setdefault('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), '
+                                             'payment=(self "https://api.razorpay.com" "https://checkout.razorpay.com")')
+    # Netbanking and wallet payments open in a popup that must be able to report back
+    headers.setdefault('Cross-Origin-Opener-Policy', 'same-origin-allow-popups')
+    if request.is_secure:
+        headers.setdefault('Strict-Transport-Security', 'max-age=31536000; includeSubDomains')
+
+    # Pages are revalidated on every visit (they can show account details); API answers are never cached
+    if request.path.startswith(JSON_PATHS) or request.path.startswith('/admin'):
+        headers['Cache-Control'] = 'no-store'
+    elif response.mimetype == 'text/html' and 'Cache-Control' not in headers:
+        headers['Cache-Control'] = 'no-cache'
+    return response
+
+@app.errorhandler(404)
+def not_found(e):
+    return error_response(404, "We couldn't find that page.")
+
+@app.errorhandler(405)
+def method_not_allowed(e):
+    return error_response(405, "That method isn't allowed here.")
+
+@app.errorhandler(413)
+def request_too_large(e):
+    return error_response(413, 'Request too large (max 1 MB).')
+
+@app.errorhandler(500)
+def server_error(e):
+    # Flask has already logged the traceback
+    return error_response(500, 'Something went wrong on our side. Please try again.')
+
+# ==========================================
+#   SEO & TEMPLATE HELPERS
+# ==========================================
+
+_asset_versions = {}
+
+def asset(filename):
+    """URL of a static file with a content hash, so it can be cached for a year and still update."""
+    version = _asset_versions.get(filename)
+    if version is None:
+        with open(os.path.join(app.static_folder, filename), 'rb') as f:
+            version = hashlib.sha256(f.read()).hexdigest()[:10]
+        _asset_versions[filename] = version
+    return url_for('static', filename=filename, v=version)
+
+def public_base_url():
+    return SITE_URL or request.url_root.rstrip('/')
+
+@app.context_processor
+def template_globals():
+    # Emails can be rendered outside a request (scripts, tests), where there's no URL to work from
+    base = public_base_url() if has_request_context() else SITE_URL
+    path = (request.path.rstrip('/') or '/') if has_request_context() else '/'
+    return {
+        'asset': asset,
+        'site_url': base,
+        'canonical_url': base + path,
+        'turnstile_site_key': TURNSTILE_SITE_KEY if turnstile_enabled() else '',
+        'is_admin': lambda: has_request_context() and admin.current_admin() is not None,
+        'contact_email': CONTACT_EMAIL,
+        'contact_phone': CONTACT_PHONE,
+        'business_name': BUSINESS_NAME,
+        'business_address': BUSINESS_ADDRESS,
+        'grievance_officer': GRIEVANCE_OFFICER,
+        'jurisdiction_city': JURISDICTION_CITY,
+        'api_trial_requests': billing.trial_requests(),
+        'api_plans': billing.PLANS,
+        'current_year': utcnow().year,
+    }
+
+def visitor_country():
+    """(ISO code, name) of the visitor's country from their IP, for regional pricing."""
+    code, name = billing.lookup_country(client_ip())
+    if not code and GEO_DEFAULT_COUNTRY:
+        code = GEO_DEFAULT_COUNTRY
+    return code, name
+
+def visitor_pricing():
+    return billing.pricing_for(*visitor_country())
+
+def safe_next(target):
+    """Only allow redirects to paths on this site."""
+    return target if target and target.startswith('/') and not target.startswith('//') else None
+
+@app.before_request
+def remember_referral():
+    # A referral link (?ref=CODE) is remembered until the visitor signs up
+    code = billing.normalize_code(request.args.get('ref'))
+    if request.method == 'GET' and code and 'user_id' not in session and re.fullmatch(r'[A-Z0-9]{4,16}', code):
+        session['ref'] = code
+
+# Pages listed in the sitemap: (path, template whose change date is used as lastmod)
+SITEMAP_PAGES = [('/', 'landing.html'), ('/pricing', 'pricing.html'), ('/docs', 'docs.html'), ('/signup', 'signup.html'),
+                 ('/privacy', 'privacy.html'), ('/terms', 'terms.html'), ('/refunds', 'refunds.html'),
+                 ('/contact', 'contact.html')]
+# Paths search engines shouldn't crawl (account pages, API endpoints, auth flows)
+PRIVATE_PATHS = ['/editor', '/dashboard', '/api/', '/humanize', '/auth/', '/login/', '/logout', '/forgot-password',
+                 '/verify-email', '/admin', '/internal/']
+
+@app.route('/robots.txt')
+def robots_txt():
+    lines = ['User-agent: *', 'Allow: /'] + [f'Disallow: {path}' for path in PRIVATE_PATHS]
+    lines += ['', f'Sitemap: {public_base_url()}/sitemap.xml']
+    return Response('\n'.join(lines) + '\n', mimetype='text/plain')
+
+@app.route('/sitemap.xml')
+def sitemap_xml():
+    entries = []
+    for path, template in SITEMAP_PAGES:
+        modified = datetime.fromtimestamp(os.path.getmtime(os.path.join(BASE_DIR, 'templates', template)), timezone.utc)
+        entries.append(f'  <url>\n    <loc>{xml_escape(public_base_url() + path)}</loc>\n'
+                       f'    <lastmod>{modified:%Y-%m-%d}</lastmod>\n  </url>')
+    xml = ('<?xml version="1.0" encoding="UTF-8"?>\n'
+           '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n' + '\n'.join(entries) + '\n</urlset>\n')
+    return Response(xml, mimetype='application/xml')
+
+@app.route('/favicon.ico')
+def favicon():
+    return send_from_directory(os.path.join(app.static_folder, 'img'), 'favicon.ico', max_age=7 * 86400)
+
+@app.route('/site.webmanifest')
+def web_manifest():
+    manifest = {
+        'name': 'AI Humanizer',
+        'short_name': 'Humanizer',
+        'description': 'Rewrite AI-generated drafts in a natural, human voice.',
+        'start_url': '/editor',
+        'display': 'standalone',
+        'background_color': '#FAF9F6',
+        'theme_color': '#FAF9F6',
+        'icons': [
+            {'src': asset('img/icon-192.png'), 'sizes': '192x192', 'type': 'image/png'},
+            {'src': asset('img/icon-512.png'), 'sizes': '512x512', 'type': 'image/png'},
+        ],
+    }
+    return Response(json.dumps(manifest), mimetype='application/manifest+json')
+
+# ==========================================
+#   PAGE ROUTES
+# ==========================================
+
+@app.route('/')
+def landing():
+    return render_template('landing.html', pricing=visitor_pricing())
+
+@app.route('/pricing')
+def pricing_page():
+    return render_template('pricing.html', pricing=visitor_pricing())
+
+@app.route('/terms')
+def terms():
+    return render_template('terms.html')
+
+@app.route('/refunds')
+def refunds():
+    return render_template('refunds.html')
+
+@app.route('/contact')
+def contact():
+    return render_template('contact.html')
+
+@app.route('/editor')
+@login_required
+def home():
+    return render_template('index.html')
+
+@app.route('/login', methods=['GET', 'POST'])
+@rate_limited('login')
+def login():
+    if request.method == 'POST':
+        data = get_json_body()
+        email = get_str(data, 'email')
+        password = get_str(data, 'password', strip=False)
+
+        if not email or not password:
+            return jsonify({"success": False, "message": "Email and password are required"}), 400
+
+        throttle_key = email.lower()
+        now = utcnow()
+        window_start = now - LOGIN_LOCKOUT_WINDOW
+
+        conn = get_db()
+        try:
+            # Slow down password guessing: lock the account for a while after repeated failures
+            recent_failures = conn.execute(
+                'SELECT failed_at FROM login_failures WHERE email = ? AND failed_at > ? ORDER BY failed_at',
+                (throttle_key, window_start)).fetchall()
+            if len(recent_failures) >= MAX_LOGIN_FAILURES:
+                unlock_at = db.to_datetime(recent_failures[-MAX_LOGIN_FAILURES]['failed_at']) + LOGIN_LOCKOUT_WINDOW
+                minutes = max(1, math.ceil((unlock_at - now).total_seconds() / 60))
+                return jsonify({"success": False, "message": f"Too many failed attempts. Try again in {minutes} minute(s)."}), 429
+
+            user = conn.execute('SELECT * FROM users WHERE email = ?', (email,)).fetchone()
+            if not user or not verify_password(user['password'], password):
+                conn.execute('INSERT INTO login_failures (email, failed_at) VALUES (?, ?)', (throttle_key, now))
+                conn.execute('DELETE FROM login_failures WHERE failed_at <= ?', (window_start,))
+                conn.commit()
+                return jsonify({"success": False, "message": "Invalid credentials"}), 401
+
+            conn.execute('DELETE FROM login_failures WHERE email = ?', (throttle_key,))
+
+            # Upgrade old SHA-256 hashes now that we have the plaintext password
+            if is_legacy_password_hash(user['password']):
+                conn.execute('UPDATE users SET password = ? WHERE id = ?', (hash_password(password), user['id']))
+            conn.commit()
+        finally:
             conn.close()
-            return False
 
-    created = await run_in_threadpool(_create_user)
-    if created:
-        return J({"success": True, "message": "Account created successfully"})
-    return J({"success": False, "message": "Username or email already exists"}, 400)
+        session.clear()
+        session['user_id'] = user['id']
+        session['username'] = user['username']
+        return jsonify({"success": True, "message": "Login successful"})
 
-@app.post('/auth/logout')
-def auth_logout(request: Request):
-    request.session.clear()
-    return J({"success": True})
+    return render_template('login.html')
 
-@app.get('/auth/check')
-def check_auth(request: Request):
-    if 'user_id' in request.session:
-        return J({"authenticated": True, "username": request.session.get('username')})
+@app.route('/signup', methods=['GET', 'POST'])
+@rate_limited('signup')
+def signup():
+    if request.method == 'POST':
+        data = get_json_body()
+        username = get_str(data, 'username')
+        email = get_str(data, 'email')
+        raw_password = get_str(data, 'password', strip=False)
+
+        if not username or not email or not raw_password:
+            return jsonify({"success": False, "message": "All fields are required"}), 400
+        if len(username) > 50:
+            return jsonify({"success": False, "message": "Username must be 50 characters or fewer"}), 400
+        if '@' not in email or len(email) > 254:
+            return jsonify({"success": False, "message": "Please enter a valid email address"}), 400
+        if len(raw_password) < MIN_PASSWORD_LENGTH:
+            return jsonify({"success": False, "message": f"Password must be at least {MIN_PASSWORD_LENGTH} characters"}), 400
+        if not turnstile_passed(get_str(data, 'turnstile_token')):
+            return jsonify({"success": False, "message": "We couldn't confirm you're human. Please complete the check and try again.",
+                            "turnstile_failed": True}), 400
+
+        password = hash_password(raw_password)
+        conn = get_db()
+        try:
+            user_id = conn.execute('INSERT INTO users (username, email, password, email_verified) VALUES (?, ?, ?, 0) RETURNING id',
+                                   (username, email, password)).fetchone()['id']
+            billing.record_referral(conn, user_id, session.get('ref'), utcnow())
+            conn.commit()
+        except db.IntegrityError:
+            return jsonify({"success": False, "message": "Username or email already exists"}), 400
+        finally:
+            conn.close()
+
+        session.pop('ref', None)
+        verify_sent = mailer.is_configured() and send_verification_email({'id': user_id, 'email': email, 'username': username})
+        message = (f"Account created. We sent a confirmation link to {email}." if verify_sent
+                   else "Account created successfully")
+        return jsonify({"success": True, "message": message, "verify_sent": bool(verify_sent)})
+
+    return render_template('signup.html')
+
+@app.route('/verify-email')
+def verify_email():
+    """Open the link from the confirmation email."""
+    try:
+        data = verify_serializer().loads(request.args.get('token', ''), max_age=int(VERIFY_LINK_LIFETIME.total_seconds()))
+    except SignatureExpired:
+        return render_template('verify_email.html', state='expired'), 400
+    except BadSignature:
+        return render_template('verify_email.html', state='invalid'), 400
+
+    conn = get_db()
+    try:
+        # The link only counts for the address it was sent to
+        updated = conn.execute('UPDATE users SET email_verified = 1 WHERE id = ? AND lower(email) = lower(?)',
+                               (data.get('uid'), data.get('email', ''))).rowcount
+        conn.commit()
+    finally:
+        conn.close()
+    if not updated:
+        return render_template('verify_email.html', state='invalid'), 400
+    return render_template('verify_email.html', state='verified', signed_in='user_id' in session)
+
+@app.route('/api/account', methods=['GET'])
+@login_required
+def account_info():
+    user = get_user(session['user_id'])
+    if user is None:
+        session.clear()
+        return jsonify({"error": "Unauthorized"}), 401
+    conn = get_db()
+    try:
+        referral = billing.referral_summary(conn, user['id'])
+    finally:
+        conn.close()
+    referral['url'] = f"{public_base_url()}/signup?ref={referral['code']}" if referral['code'] else None
+    return jsonify({
+        "username": user['username'], "email": user['email'],
+        "email_verified": bool(user['email_verified']), "verification_required": verification_required(),
+        "referral": referral,
+    })
+
+@app.route('/api/account/resend-verification', methods=['POST'])
+@login_required
+def resend_verification():
+    retry_after = limiter.hit(f"verify_email:{session['user_id']}", *RATE_LIMITS['verify_email'])
+    if retry_after:
+        return too_many_requests(retry_after)
+    user = get_user(session['user_id'])
+    if user is None or user['email_verified']:
+        return jsonify({"success": True, "message": "Your email address is already verified."})
+    if not mailer.is_configured() or not send_verification_email(user):
+        return jsonify({"success": False, "error": "We couldn't send the email. Please try again later."}), 503
+    return jsonify({"success": True, "message": f"We sent a new link to {user['email']}."})
+
+@app.route('/forgot-password')
+def forgot_password_page():
+    return render_template('forgot_password.html')
+
+@app.route('/logout')
+def logout():
+    session.clear()
+    return redirect('/login')
+
+@app.route('/auth/logout', methods=['POST'])
+def auth_logout():
+    session.clear()
+    return jsonify({"success": True})
+
+@app.route('/auth/check')
+def check_auth():
+    if 'user_id' in session:
+        return jsonify({"authenticated": True, "username": session.get('username')})
     else:
-        return J({"authenticated": False}, 401)
+        return jsonify({"authenticated": False}), 401
+
+@app.route('/healthz')
+def healthz():
+    return 'ok'
+
+@app.route('/docs')
+def docs():
+    return render_template('docs.html')
+
+@app.route('/privacy')
+def privacy():
+    return render_template('privacy.html')
+
+@app.route('/dashboard')
+@login_required
+def dashboard():
+    return render_template('dashboard.html')
+
+# ==========================================
+#   AUTH ROUTES: SOCIAL LOGIN (GOOGLE & GITHUB)
+# ==========================================
+
+class OAuthProfileError(Exception):
+    """A provider answered, but the account can't be used (message is shown to the user)."""
+
+def get_oauth_profile(provider):
+    """Finish the OAuth exchange and return (provider_user_id, verified_email, display_name)."""
+    client = oauth.create_client(provider)
+    token = client.authorize_access_token()
+
+    if provider == 'google':
+        info = token.get('userinfo') or client.userinfo(token=token)
+        if not info.get('email') or not info.get('email_verified'):
+            raise OAuthProfileError("Your Google account's email address isn't verified.")
+        return str(info['sub']), info['email'], info.get('name') or info['email'].split('@')[0]
+
+    user_resp = client.get('user', token=token)
+    user_resp.raise_for_status()
+    profile = user_resp.json()
+    emails_resp = client.get('user/emails', token=token)
+    emails_resp.raise_for_status()
+    email = next((e['email'] for e in emails_resp.json() if e.get('primary') and e.get('verified')), None)
+    if not email:
+        raise OAuthProfileError('Add a verified primary email to your GitHub account, then try again.')
+    return str(profile['id']), email, profile.get('login') or email.split('@')[0]
+
+def unique_username(conn, name):
+    base = re.sub(r'[^A-Za-z0-9_.-]+', '_', name).strip('_.-')[:40] or 'user'
+    candidate, n = base, 1
+    while conn.execute('SELECT 1 FROM users WHERE username = ?', (candidate,)).fetchone():
+        n += 1
+        candidate = f'{base}{n}'
+    return candidate
+
+def find_or_create_oauth_user(provider, provider_user_id, email, display_name, referral_code=None):
+    conn = get_db()
+    try:
+        user = conn.execute('''SELECT u.* FROM oauth_accounts o JOIN users u ON u.id = o.user_id
+                               WHERE o.provider = ? AND o.provider_user_id = ?''',
+                            (provider, provider_user_id)).fetchone()
+        if user:
+            return user
+
+        # Providers only give us verified emails, so it's safe to link to a matching account
+        user = conn.execute('SELECT * FROM users WHERE lower(email) = lower(?)', (email,)).fetchone()
+        if user and not user['email_verified']:
+            # Someone may have signed up with this address without owning it; their password stops working
+            conn.execute('UPDATE users SET email_verified = 1, password = ? WHERE id = ?', (OAUTH_ONLY_PASSWORD, user['id']))
+            user = conn.execute('SELECT * FROM users WHERE id = ?', (user['id'],)).fetchone()
+        if not user:
+            new_id = conn.execute('INSERT INTO users (username, email, password, email_verified) VALUES (?, ?, ?, 1) RETURNING id',
+                                  (unique_username(conn, display_name), email, OAUTH_ONLY_PASSWORD)).fetchone()['id']
+            billing.record_referral(conn, new_id, referral_code, utcnow())
+            user = conn.execute('SELECT * FROM users WHERE id = ?', (new_id,)).fetchone()
+
+        conn.execute('INSERT INTO oauth_accounts (user_id, provider, provider_user_id, email) VALUES (?, ?, ?, ?)',
+                     (user['id'], provider, provider_user_id, email))
+        conn.commit()
+        return user
+    finally:
+        conn.close()
+
+@app.route('/login/<any(google, github):provider>')
+def oauth_login(provider):
+    if provider not in OAUTH_PROVIDERS:
+        logger.warning('%s sign-in is not configured: set %s_CLIENT_ID and %s_CLIENT_SECRET',
+                       OAUTH_NAMES[provider], provider.upper(), provider.upper())
+        flash(f"Sign in with {OAUTH_NAMES[provider]} isn't set up yet. Use your email and password for now.", 'error')
+        return redirect('/login')
+
+    session['login_next'] = safe_next(request.args.get('next'))
+    redirect_uri = url_for('oauth_callback', provider=provider, _external=True)
+    return oauth.create_client(provider).authorize_redirect(redirect_uri)
+
+@app.route('/login/<any(google, github):provider>/callback')
+def oauth_callback(provider):
+    name = OAUTH_NAMES[provider]
+    if provider not in OAUTH_PROVIDERS:
+        return redirect('/login')
+    if request.args.get('error'):
+        flash(f'{name} sign-in was cancelled.', 'error')
+        return redirect('/login')
+
+    try:
+        provider_user_id, email, display_name = get_oauth_profile(provider)
+    except OAuthProfileError as e:
+        flash(str(e), 'error')
+        return redirect('/login')
+    except Exception as e:
+        logger.error('%s sign-in failed: %s at %s', name, type(e).__name__, error_location(e))
+        flash(f"{name} sign-in didn't complete. Please try again.", 'error')
+        return redirect('/login')
+
+    user = find_or_create_oauth_user(provider, provider_user_id, email, display_name, session.get('ref'))
+    next_page = safe_next(session.get('login_next'))
+    session.clear()
+    session['user_id'] = user['id']
+    session['username'] = user['username']
+    return redirect(next_page or '/editor')
 
 # ==========================================
 #   API ROUTES: FORGOT PASSWORD (OTP)
 # ==========================================
 
-@app.post('/api/send-otp')
-async def send_otp(request: Request):
-    data = await parse_json_body(request)
-    email = data.get('email')
+@app.route('/api/send-otp', methods=['POST'])
+@rate_limited('send_otp')
+def send_otp():
+    email = get_str(get_json_body(), 'email')
+    if not email:
+        return jsonify({"success": False, "message": "Email is required."}), 400
 
-    def _store_otp():
-        conn = get_db()
-        try:
-            user = conn.execute('SELECT * FROM users WHERE email = ?', (email,)).fetchone()
-            if not user:
-                return (False, None)
-            otp = str(random.randint(100000, 999999))
-            expires_at = datetime.now() + timedelta(minutes=10)
-            conn.execute('INSERT OR REPLACE INTO password_resets (email, otp, expires_at) VALUES (?, ?, ?)',
-                         (email, otp, expires_at))
-            conn.commit()
-            return (True, otp)
-        finally:
-            conn.close()
+    # Same reply whether or not the account exists, so emails can't be probed
+    generic_reply = {"success": True, "message": "If this email exists, an OTP has been sent."}
 
-    user_exists, otp = await run_in_threadpool(_store_otp)
+    conn = get_db()
+    try:
+        # 1. Check if user exists
+        user = conn.execute('SELECT * FROM users WHERE email = ?', (email,)).fetchone()
 
-    # 1. Check if user exists (do not reveal whether it does)
-    if not user_exists:
-        return J({"success": True, "message": "If this email exists, an OTP has been sent."})
+        if not user:
+            return jsonify(generic_reply)
 
-    # 4. Send Email
-    if await run_in_threadpool(send_otp_email, email, otp):
-        return J({"success": True, "message": "OTP sent to your email."})
-    else:
-        return J({"success": False, "message": "Failed to send email. Check server logs."}, 500)
+        # 2. Don't resend within the cooldown (stops email flooding and attempt resets)
+        now = utcnow()
+        record = conn.execute('SELECT expires_at FROM password_resets WHERE email = ?', (email,)).fetchone()
+        if record and now - (db.to_datetime(record['expires_at']) - OTP_LIFETIME) < OTP_RESEND_COOLDOWN:
+            return jsonify(generic_reply)
 
-@app.post('/api/reset-password')
-async def reset_password_logic(request: Request):
-    data = await parse_json_body(request)
-    email = data.get('email')
-    otp = data.get('otp')
-    new_password = data.get('new_password')
+        # 3. Generate OTP with a cryptographically secure generator
+        otp = f"{secrets.randbelow(1000000):06d}"
 
-    def _reset():
-        conn = get_db()
-        try:
-            # 1. Verify OTP
-            cursor = conn.execute('SELECT * FROM password_resets WHERE email = ?', (email,))
-            record = cursor.fetchone()
+        # 4. Save OTP (replacing any earlier code for this email)
+        conn.execute('''INSERT INTO password_resets (email, otp, expires_at, attempts) VALUES (?, ?, ?, 0)
+                        ON CONFLICT (email) DO UPDATE
+                        SET otp = excluded.otp, expires_at = excluded.expires_at, attempts = 0''',
+                     (email, otp, now + OTP_LIFETIME))
+        conn.commit()
 
-            if not record:
-                return {"success": False, "message": "Invalid request."}, 400
+        # 5. Send Email
+        if send_otp_email(email, otp):
+            return jsonify(generic_reply)
 
-            saved_otp = record['otp']
+        conn.execute('DELETE FROM password_resets WHERE email = ?', (email,))
+        conn.commit()
+        return jsonify({"success": False, "message": "Failed to send email. Please try again later."}), 500
+    finally:
+        conn.close()
 
-            # Robust timestamp parsing
-            try:
-                expiry = datetime.strptime(record['expires_at'], '%Y-%m-%d %H:%M:%S.%f')
-            except ValueError:
-                expiry = datetime.strptime(record['expires_at'], '%Y-%m-%d %H:%M:%S')
+@app.route('/api/reset-password', methods=['POST'])
+@rate_limited('reset_password')
+def reset_password_logic():
+    data = get_json_body()
+    email = get_str(data, 'email')
+    otp = get_str(data, 'otp')
+    new_password = get_str(data, 'new_password', strip=False)
 
-            if otp != saved_otp:
-                return {"success": False, "message": "Invalid OTP."}, 400
+    if not email or not otp or not new_password:
+        return jsonify({"success": False, "message": "All fields are required."}), 400
+    if len(new_password) < MIN_PASSWORD_LENGTH:
+        return jsonify({"success": False, "message": f"Password must be at least {MIN_PASSWORD_LENGTH} characters."}), 400
 
-            if datetime.now() > expiry:
-                return {"success": False, "message": "OTP has expired."}, 400
+    conn = get_db()
 
-            # 2. Update Password
-            hashed_pw = hash_password(new_password)
-            conn.execute('UPDATE users SET password = ? WHERE email = ?', (hashed_pw, email))
+    try:
+        # 1. Verify OTP
+        record = conn.execute('SELECT * FROM password_resets WHERE email = ?', (email,)).fetchone()
 
-            # 3. Delete OTP (Prevents reuse)
+        if not record:
+            return jsonify({"success": False, "message": "Invalid or expired code. Request a new one."}), 400
+
+        if utcnow() > db.to_datetime(record['expires_at']):
             conn.execute('DELETE FROM password_resets WHERE email = ?', (email,))
-
-            # Commit everything
             conn.commit()
+            return jsonify({"success": False, "message": "OTP has expired."}), 400
 
-            return {"success": True, "message": "Password reset successfully!"}, 200
+        if not hmac.compare_digest(otp, record['otp']):
+            # Limit guesses so the 6-digit code can't be brute-forced
+            attempts = record['attempts'] + 1
+            if attempts >= MAX_OTP_ATTEMPTS:
+                conn.execute('DELETE FROM password_resets WHERE email = ?', (email,))
+                conn.commit()
+                return jsonify({"success": False, "message": "Too many wrong attempts. Request a new code."}), 400
+            conn.execute('UPDATE password_resets SET attempts = ? WHERE email = ?', (attempts, email))
+            conn.commit()
+            return jsonify({"success": False, "message": "Invalid OTP."}), 400
 
-        except Exception as e:
-            print(f"Reset Error: {e}")
-            return {"success": False, "message": "Server error."}, 500
+        # 2. Update Password (the code reached this inbox, so the address is verified too)
+        conn.execute('UPDATE users SET password = ?, email_verified = 1 WHERE email = ?', (hash_password(new_password), email))
 
-        finally:
-            conn.close()
+        # 3. Delete OTP (Prevents reuse)
+        conn.execute('DELETE FROM password_resets WHERE email = ?', (email,))
 
-    payload, status = await run_in_threadpool(_reset)
-    return J(payload, status)
+        # 4. Lift any login lockout so the owner can sign in right away
+        conn.execute('DELETE FROM login_failures WHERE email = ?', (email.lower(),))
+
+        # Commit everything
+        conn.commit()
+
+        return jsonify({"success": True, "message": "Password reset successfully!"})
+
+    except Exception as e:
+        logger.error('Password reset failed: %s at %s', type(e).__name__, error_location(e))
+        return jsonify({"success": False, "message": "Server error."}), 500
+
+    finally:
+        conn.close()
 
 # ==========================================
 #   API ROUTES: DASHBOARD & USAGE
 # ==========================================
 
-@app.get('/api/keys')
-def get_api_keys(request: Request, _=Depends(require_login)):
-    user_id = request.session['user_id']
+@app.route('/api/keys', methods=['GET'])
+@login_required
+def get_api_keys():
+    user_id = session['user_id']
     conn = get_db()
-    keys = conn.execute('SELECT * FROM api_keys WHERE user_id = ? ORDER BY created_at DESC', (user_id,)).fetchall()
-    conn.close()
+    try:
+        keys = conn.execute('SELECT * FROM api_keys WHERE user_id = ? AND is_active = 1 ORDER BY created_at DESC',
+                            (user_id,)).fetchall()
+    finally:
+        conn.close()
 
     keys_list = []
     for key in keys:
         keys_list.append({
             "id": key['id'],
             "name": key['key_name'],
-            "api_key": key['api_key'],
-            "created_at": key['created_at'],
-            "is_active": key['is_active']
+            "key_preview": (key['key_prefix'] or 'hmnz_') + '…',
+            "created_at": db.timestamp_str(key['created_at'])
         })
-    return J({"keys": keys_list})
+    return jsonify({"keys": keys_list})
 
-@app.post('/api/keys')
-async def create_api_key_endpoint(request: Request, _=Depends(require_login)):
-    data = await parse_json_body(request)
-    key_name = data.get('name', 'My API Key')
-    user_id = request.session['user_id']
+@app.route('/api/keys', methods=['POST'])
+@login_required
+def create_api_key_endpoint():
+    key_name = get_str(get_json_body(), 'name')[:50] or 'My API Key'
+    user_id = session['user_id']
+    if needs_verification(get_user(user_id)):
+        return unverified_response()
     api_key = generate_api_key()
 
-    def _insert():
-        conn = get_db()
-        conn.execute('INSERT INTO api_keys (user_id, key_name, api_key) VALUES (?, ?, ?)',
-                     (user_id, key_name, api_key))
+    conn = get_db()
+    try:
+        conn.execute('INSERT INTO api_keys (user_id, key_name, api_key, key_prefix) VALUES (?, ?, ?, ?)',
+                     (user_id, key_name, hash_api_key(api_key), api_key[:12]))
         conn.commit()
+    finally:
         conn.close()
 
-    await run_in_threadpool(_insert)
-
-    return J({
+    # The raw key is returned only here; the database keeps just its hash
+    return jsonify({
         "success": True,
         "key": {
             "name": key_name,
             "api_key": api_key,
-            "secret": "hidden_for_security",
-            "created_at": datetime.now().strftime("%Y-%m-%d")
+            "created_at": utcnow().strftime("%Y-%m-%d")
         }
     })
 
-@app.delete('/api/keys/{key_id:int}')
-def delete_api_key_endpoint(key_id: int, request: Request, _=Depends(require_login)):
-    user_id = request.session['user_id']
+@app.route('/api/keys/<int:key_id>', methods=['DELETE'])
+@login_required
+def delete_api_key_endpoint(key_id):
+    user_id = session['user_id']
     conn = get_db()
-    conn.execute('DELETE FROM api_keys WHERE id = ? AND user_id = ?', (key_id, user_id))
-    conn.commit()
-    conn.close()
-    return J({"success": True})
+    try:
+        # Deactivate rather than delete, so past usage still counts in the dashboard stats
+        cursor = conn.execute('UPDATE api_keys SET is_active = 0 WHERE id = ? AND user_id = ? AND is_active = 1',
+                              (key_id, user_id))
+        conn.commit()
+    finally:
+        conn.close()
+    if cursor.rowcount == 0:
+        return jsonify({"success": False, "error": "Key not found"}), 404
+    return jsonify({"success": True})
 
-@app.get('/api/usage')
-def get_dashboard_stats(request: Request, _=Depends(require_login)):
-    user_id = request.session['user_id']
+@app.route('/api/usage', methods=['GET'])
+@login_required
+def get_dashboard_stats():
+    user_id = session['user_id']
     conn = get_db()
+    try:
+        stats = conn.execute('''
+            SELECT
+                COUNT(*) as total_requests,
+                SUM(CASE WHEN u.status = 'success' THEN 1 ELSE 0 END) as successful_requests,
+                AVG(u.response_time) as avg_latency
+            FROM api_usage u
+            JOIN api_keys k ON u.api_key_id = k.id
+            WHERE k.user_id = ?
+        ''', (user_id,)).fetchone()
 
-    stats = conn.execute('''
-        SELECT
-            COUNT(*) as total_requests,
-            AVG(response_time) as avg_latency
-        FROM api_usage u
-        JOIN api_keys k ON u.api_key_id = k.id
-        WHERE k.user_id = ?
-    ''', (user_id,)).fetchone()
+        logs_data = conn.execute('''
+            SELECT u.timestamp, u.endpoint, u.status, u.response_time
+            FROM api_usage u
+            JOIN api_keys k ON u.api_key_id = k.id
+            WHERE k.user_id = ?
+            ORDER BY u.timestamp DESC LIMIT 10
+        ''', (user_id,)).fetchall()
+    finally:
+        conn.close()
 
-    logs_data = conn.execute('''
-        SELECT u.timestamp, u.endpoint, u.status, u.response_time
-        FROM api_usage u
-        JOIN api_keys k ON u.api_key_id = k.id
-        WHERE k.user_id = ?
-        ORDER BY u.timestamp DESC LIMIT 10
-    ''', (user_id,)).fetchall()
+    total_req = stats['total_requests'] or 0
+    avg_lat = round(float(stats['avg_latency']), 2) if stats['avg_latency'] else 0
+    success_rate = f"{round(stats['successful_requests'] / total_req * 100, 1):g}%" if total_req else "N/A"
 
-    conn.close()
-
-    total_req = stats['total_requests'] if stats['total_requests'] else 0
-    avg_lat = round(stats['avg_latency'], 2) if stats['avg_latency'] else 0
-
-    return J({
+    return jsonify({
         "stats": {
             "total_requests": total_req,
-            "success_rate": "100%",
+            "success_rate": success_rate,
             "avg_latency_ms": avg_lat
         },
         "logs": [
             {
-                "timestamp": log['timestamp'],
+                "timestamp": db.timestamp_str(log['timestamp']),
                 "endpoint": log['endpoint'],
                 "status_code": 200 if log['status'] == 'success' else 500,
                 "latency_ms": round(log['response_time'] or 0, 2)
@@ -918,487 +1334,503 @@ def get_dashboard_stats(request: Request, _=Depends(require_login)):
         ]
     })
 
-# ==========================================
-#   ADMIN API ROUTES
-# ==========================================
-
-@app.get('/admin/api/overview')
-def admin_overview(request: Request, _=Depends(require_admin)):
+@app.route('/api/usage/daily', methods=['GET'])
+@login_required
+def daily_usage():
+    """API requests per day (UTC) and per key, for the dashboard chart."""
+    try:
+        days = min(90, max(7, int(request.args.get('days', 30))))
+    except ValueError:
+        days = 30
+    today = utcnow().date()
+    first_day = today - timedelta(days=days - 1)
     conn = get_db()
+    try:
+        rows = conn.execute('''
+            SELECT DATE(u.timestamp) AS day, k.id AS key_id, k.key_name, k.is_active, COUNT(*) AS requests,
+                   SUM(CASE WHEN u.status = 'success' THEN 0 ELSE 1 END) AS errors
+            FROM api_usage u JOIN api_keys k ON u.api_key_id = k.id
+            WHERE k.user_id = ? AND u.timestamp >= ?
+            GROUP BY DATE(u.timestamp), k.id, k.key_name, k.is_active
+        ''', (session['user_id'], datetime.combine(first_day, datetime.min.time()))).fetchall()
+    finally:
+        conn.close()
 
-    metrics = conn.execute('''
-        SELECT
-            (SELECT COUNT(*) FROM users) AS total_users,
-            (SELECT COUNT(*) FROM api_keys) AS total_api_keys,
-            (SELECT COUNT(*) FROM api_keys WHERE is_active = 1) AS active_api_keys,
-            (SELECT COUNT(*) FROM api_usage) AS total_requests,
-            (SELECT COUNT(*) FROM api_usage WHERE timestamp >= datetime('now', '-24 hours')) AS requests_24h,
-            (SELECT AVG(response_time) FROM api_usage) AS avg_latency,
-            (SELECT COUNT(*) FROM api_usage WHERE status != 'success') AS error_requests
-    ''').fetchone()
+    labels = [(first_day + timedelta(days=i)).isoformat() for i in range(days)]
+    position = {day: i for i, day in enumerate(labels)}
+    totals, errors, keys = [0] * days, [0] * days, {}
+    for row in rows:
+        i = position.get(str(row['day'])[:10])
+        if i is None:
+            continue
+        key = keys.setdefault(row['key_id'], {"id": row['key_id'], "name": row['key_name'],
+                                               "active": bool(row['is_active']), "counts": [0] * days, "total": 0})
+        key['counts'][i] += row['requests']
+        key['total'] += row['requests']
+        totals[i] += row['requests']
+        errors[i] += row['errors'] or 0
+    return jsonify({"days": labels, "totals": totals, "errors": errors,
+                    "keys": sorted(keys.values(), key=lambda k: -k['total'])})
 
-    endpoint_stats = conn.execute('''
-        SELECT endpoint,
-               COUNT(*) AS total_requests,
-               AVG(response_time) AS avg_latency,
-               SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) AS success_count
-        FROM api_usage
-        GROUP BY endpoint
-        ORDER BY total_requests DESC
-        LIMIT 8
-    ''').fetchall()
+# ==========================================
+#   API ROUTES: BILLING (RAZORPAY)
+# ==========================================
 
-    recent_activity = conn.execute('''
-        SELECT au.timestamp,
-               au.endpoint,
-               au.status,
-               au.response_time,
-               au.error_message,
-               k.key_name,
-               u.username,
-               u.email
-        FROM api_usage au
-        JOIN api_keys k ON k.id = au.api_key_id
-        JOIN users u ON u.id = k.user_id
-        ORDER BY au.timestamp DESC
-        LIMIT 25
-    ''').fetchall()
+@app.route('/api/billing/status', methods=['GET'])
+@login_required
+def billing_status():
+    return jsonify(billing.account_status(session['user_id'], utcnow()))
 
-    conn.close()
+def requested_product(data):
+    # 'product' since yearly plans and top-ups; older pages sent 'plan'
+    return get_str(data, 'product') or get_str(data, 'plan')
 
-    total_requests = metrics['total_requests'] or 0
-    error_requests = metrics['error_requests'] or 0
-    success_rate = round(((total_requests - error_requests) / total_requests) * 100, 2) if total_requests else 100.0
+@app.route('/api/billing/quote', methods=['POST'])
+@login_required
+@rate_limited('coupon')
+def billing_quote():
+    """Price after a coupon, so the pricing page can show the discount before checkout."""
+    data = get_json_body()
+    country, _ = visitor_country()
+    try:
+        quote = billing.quote(requested_product(data), country, get_str(data, 'coupon'), session['user_id'], utcnow())
+    except billing.PaymentError as e:
+        return jsonify({"error": str(e)}), 400
+    return jsonify(quote)
 
-    return J({
-        "stats": {
-            "total_users": metrics['total_users'] or 0,
-            "total_api_keys": metrics['total_api_keys'] or 0,
-            "active_api_keys": metrics['active_api_keys'] or 0,
-            "total_requests": total_requests,
-            "requests_24h": metrics['requests_24h'] or 0,
-            "avg_latency_ms": round(metrics['avg_latency'], 2) if metrics['avg_latency'] else 0,
-            "success_rate": success_rate
-        },
-        "top_endpoints": [
-            {
-                "endpoint": row['endpoint'],
-                "total_requests": row['total_requests'],
-                "success_rate": round((row['success_count'] / row['total_requests']) * 100, 2) if row['total_requests'] else 100,
-                "avg_latency_ms": round(row['avg_latency'], 2) if row['avg_latency'] else 0
-            }
-            for row in endpoint_stats
-        ],
-        "recent_activity": [
-            {
-                "timestamp": row['timestamp'],
-                "endpoint": row['endpoint'],
-                "status": row['status'],
-                "response_time": round(row['response_time'], 2) if row['response_time'] else 0,
-                "error_message": row['error_message'],
-                "key_name": row['key_name'],
-                "username": row['username'],
-                "email": row['email']
-            }
-            for row in recent_activity
-        ]
-    })
+@app.route('/api/billing/coupon', methods=['POST'])
+@login_required
+@rate_limited('coupon')
+def billing_coupon():
+    """Check a coupon code; the pricing page shows the discount on the products it applies to."""
+    try:
+        return jsonify(billing.coupon_info(get_str(get_json_body(), 'coupon'), session['user_id'], utcnow()))
+    except billing.CouponError as e:
+        return jsonify({"error": str(e)}), 400
 
-@app.get('/admin/api/activity-log')
-def admin_activity_log(request: Request, _=Depends(require_admin)):
-    raw_limit = request.query_params.get('limit', '200')
-    include_admin = request.query_params.get('include_admin', 'false').lower() == 'true'
+@app.route('/api/billing/order', methods=['POST'])
+@login_required
+@rate_limited('billing')
+def create_billing_order():
+    if not billing.is_enabled():
+        return jsonify({"error": "Payments aren't available yet. Please check back soon."}), 503
+    data = get_json_body()
+    product_id = requested_product(data)
+    if product_id not in billing.PRODUCTS:
+        return jsonify({"error": "Unknown plan."}), 400
+    user = get_user(session['user_id'])
+    if needs_verification(user):
+        return unverified_response()
+
+    country, _ = visitor_country()
+    try:
+        order = billing.create_order(session['user_id'], product_id, country, utcnow(), get_str(data, 'coupon'))
+    except billing.CouponError as e:
+        return jsonify({"error": str(e)}), 400
+    except billing.PaymentError as e:
+        return jsonify({"error": str(e)}), 502
+
+    if order.get('free'):
+        return jsonify({**order, "success": True, **billing.account_status(session['user_id'], utcnow())})
+    order['description'] = billing.PRODUCTS[product_id]['description']
+    order['prefill'] = {'name': user['username'], 'email': user['email']} if user else {}
+    return jsonify(order)
+
+@app.route('/api/billing/subscribe', methods=['POST'])
+@login_required
+@rate_limited('billing')
+def create_billing_subscription():
+    """Start auto-renewal for a plan (Razorpay Subscriptions: card or UPI AutoPay)."""
+    if not billing.autopay_enabled():
+        return jsonify({"error": "Auto-renewal isn't available yet. You can still buy a plan for 30 days or a year."}), 503
+    data = get_json_body()
+    if get_str(data, 'coupon'):
+        return jsonify({"error": "Coupons can't be combined with auto-renewal. Turn off auto-renew to use one."}), 400
+    user = get_user(session['user_id'])
+    if needs_verification(user):
+        return unverified_response()
+
+    country, _ = visitor_country()
+    try:
+        subscription = billing.create_autopay(session['user_id'], requested_product(data), country, utcnow())
+    except billing.PaymentError as e:
+        return jsonify({"error": str(e)}), 400
+    subscription['description'] = billing.PRODUCTS[subscription['product']]['description'] + ', renews automatically'
+    subscription['prefill'] = {'name': user['username'], 'email': user['email']}
+    return jsonify(subscription)
+
+@app.route('/api/billing/verify-subscription', methods=['POST'])
+@login_required
+def verify_billing_subscription():
+    data = get_json_body()
+    payment_id = get_str(data, 'razorpay_payment_id')
+    subscription_id = get_str(data, 'razorpay_subscription_id')
+    signature = get_str(data, 'razorpay_signature')
+    if not (payment_id and subscription_id and signature) or \
+            not billing.verify_subscription_signature(payment_id, subscription_id, signature):
+        return jsonify({"error": "We couldn't verify this payment."}), 400
+
+    conn = get_db()
+    try:
+        sub = conn.execute('SELECT user_id FROM autopay_subscriptions WHERE razorpay_subscription_id = ?',
+                           (subscription_id,)).fetchone()
+    finally:
+        conn.close()
+    if not sub or sub['user_id'] != session['user_id']:
+        return jsonify({"error": "Subscription not found."}), 404
 
     try:
-        limit = max(1, min(int(raw_limit), 500))
+        payment = billing.razorpay_request('GET', f'/payments/{payment_id}')
+    except billing.PaymentError as e:
+        return jsonify({"error": str(e)}), 502
+    if payment.get('status') != 'captured':
+        # The subscription.charged webhook grants the plan once the first charge settles
+        return jsonify({"error": "Auto-renewal is set up. Your plan will activate as soon as the first payment completes."}), 409
+    billing.record_subscription_charge(subscription_id, payment, utcnow())
+    return jsonify({"success": True, **billing.account_status(session['user_id'], utcnow())})
+
+@app.route('/api/billing/autopay/cancel', methods=['POST'])
+@login_required
+def cancel_billing_autopay():
+    try:
+        billing.cancel_autopay(session['user_id'], utcnow())
+    except billing.PaymentError as e:
+        return jsonify({"error": str(e)}), 400
+    return jsonify({"success": True, **billing.account_status(session['user_id'], utcnow())})
+
+@app.route('/api/billing/profile', methods=['GET', 'POST'])
+@login_required
+def billing_profile():
+    """Business name, GSTIN and state printed on invoices."""
+    conn = get_db()
+    try:
+        if request.method == 'POST':
+            data = get_json_body()
+            error = invoices.save_profile(conn, session['user_id'], get_str(data, 'business_name'), get_str(data, 'gstin'),
+                                          get_str(data, 'state_code'), get_str(data, 'address'), utcnow())
+            if error:
+                return jsonify({"error": error}), 400
+            conn.commit()
+        profile = invoices.get_profile(conn, session['user_id'])
+    finally:
+        conn.close()
+    return jsonify({"profile": profile, "states": invoices.STATES, "gst_invoices": bool(invoices.seller_gstin())})
+
+@app.route('/api/billing/invoices/<int:invoice_id>.pdf', methods=['GET'])
+@login_required
+def download_invoice(invoice_id):
+    owner = None if admin.current_admin() else session['user_id']
+    result = invoices.pdf_for(invoice_id, owner)
+    if result is None:
+        return jsonify({"error": "Invoice not found."}), 404
+    filename, pdf = result
+    return Response(pdf, mimetype='application/pdf',
+                    headers={'Content-Disposition': f'inline; filename="{filename}"'})
+
+def after_payment(payment_id, extras):
+    """Runs once per completed purchase: issue the invoice, email the receipt, thank the referrer."""
+    if not has_app_context():
+        # Payments fulfilled from a script or worker still render their emails
+        with app.app_context():
+            return after_payment(payment_id, extras)
+    conn = get_db()
+    try:
+        payment = conn.execute('''SELECT p.*, u.username, u.email FROM payments p JOIN users u ON u.id = p.user_id
+                                  WHERE p.id = ?''', (payment_id,)).fetchone()
+    finally:
+        conn.close()
+    product = billing.PRODUCTS.get(payment['plan_id'], {'name': payment['plan_id'], 'description': payment['plan_id']})
+    invoice = invoices.create_invoice(payment_id, product['description'])
+    attachments = []
+    if invoice is not None:
+        try:
+            attachments.append(invoices.pdf_for(invoice['id']) + ('application/pdf',))
+        except Exception as e:
+            logger.error('Invoice PDF for payment %s failed: %s at %s', payment_id, type(e).__name__, error_location(e))
+    mailer.send(payment['email'], f'Your {BUSINESS_NAME} receipt', 'receipt', attachments=attachments,
+                username=payment['username'], product_name=product['name'],
+                amount=billing.format_price(payment['amount'], payment['currency']),
+                paid_date=db.to_datetime(payment['paid_at']).strftime('%d %b %Y'),
+                invoice_number=invoice['number'] if invoice else None, dashboard_url=f'{public_base_url()}/dashboard')
+
+    reward = extras.get('referral_reward')
+    if reward:
+        referrer = get_user(reward['referrer_id'])
+        if referrer:
+            mailer.send(referrer['email'], f"You earned {reward['credits']:,} free API requests", 'referral_reward',
+                        username=referrer['username'], credits=f"{reward['credits']:,}", dashboard_url=f'{public_base_url()}/dashboard')
+
+billing.on_paid.append(after_payment)
+
+@app.route('/api/billing/verify', methods=['POST'])
+@login_required
+def verify_billing_payment():
+    data = get_json_body()
+    order_id = get_str(data, 'razorpay_order_id')
+    payment_id = get_str(data, 'razorpay_payment_id')
+    signature = get_str(data, 'razorpay_signature')
+    if not (order_id and payment_id and signature) or not billing.verify_payment_signature(order_id, payment_id, signature):
+        return jsonify({"error": "We couldn't verify this payment."}), 400
+
+    conn = get_db()
+    try:
+        order = conn.execute('SELECT user_id, amount, currency FROM payments WHERE razorpay_order_id = ?',
+                             (order_id,)).fetchone()
+    finally:
+        conn.close()
+    if not order or order['user_id'] != session['user_id']:
+        return jsonify({"error": "Order not found."}), 404
+
+    try:
+        payment = billing.capture_if_needed(payment_id, order['amount'], order['currency'])
+    except billing.PaymentError as e:
+        return jsonify({"error": str(e)}), 502
+    if payment.get('status') != 'captured' or payment.get('order_id') != order_id:
+        return jsonify({"error": "The payment hasn't completed yet. If you were charged, your plan will activate shortly."}), 409
+
+    billing.fulfil_payment(order_id, payment_id, utcnow(), payment.get('amount'), payment.get('currency'))
+    return jsonify({"success": True, **billing.account_status(session['user_id'], utcnow())})
+
+@app.route('/api/billing/webhook', methods=['POST'])
+def razorpay_webhook():
+    # Razorpay confirms paid orders here too, in case the browser closed before /verify ran
+    body = request.get_data()
+    if not billing.verify_webhook_signature(body, request.headers.get('X-Razorpay-Signature')):
+        return jsonify({"error": "Invalid signature"}), 400
+    try:
+        event = json.loads(body or b'{}')
     except ValueError:
-        limit = 200
+        return jsonify({"error": "Invalid JSON"}), 400
+    name = event.get('event', '')
+    payload = event.get('payload', {})
+    payment = payload.get('payment', {}).get('entity', {})
+    subscription = payload.get('subscription', {}).get('entity', {})
 
-    conn = get_db()
-    if include_admin:
-        logs = conn.execute('''
-            SELECT al.id,
-                   al.user_id,
-                   al.actor_type,
-                   al.actor_identifier,
-                   al.action,
-                   al.endpoint,
-                   al.method,
-                   al.status_code,
-                   al.ip_address,
-                   al.details,
-                   al.created_at,
-                   u.username,
-                   u.email
-            FROM activity_logs al
-            LEFT JOIN users u ON u.id = al.user_id
-            ORDER BY al.created_at DESC
-            LIMIT ?
-        ''', (limit,)).fetchall()
+    if name in ('order.paid', 'payment.captured'):
+        # Auto-renewal charges also fire these, for orders Razorpay created itself; subscription.charged handles them
+        if payment.get('order_id') and payment.get('id') and payment.get('status') == 'captured' and not payment.get('invoice_id'):
+            billing.fulfil_payment(payment['order_id'], payment['id'], utcnow(), payment.get('amount'), payment.get('currency'))
+    elif name == 'subscription.charged':
+        if subscription.get('id') and payment.get('id') and payment.get('status') == 'captured':
+            billing.record_subscription_charge(subscription['id'], payment, utcnow())
+    elif name.startswith('subscription.') and subscription.get('id') and subscription.get('status'):
+        # activated, authenticated, pending (charge failing, retrying), halted (retries exhausted), cancelled, completed
+        billing.update_autopay_status(subscription['id'], subscription['status'], utcnow())
+    return jsonify({"status": "ok"})
+
+def plan_required_response(subscription):
+    """402 telling an API client why the request wasn't allowed and where to fix it."""
+    pricing_url = f'{public_base_url()}/pricing'
+    if subscription is None or subscription['plan_id'] in (billing.TRIAL_PLAN, billing.NO_PLAN):
+        message = f'The REST API needs a paid plan or a top-up. Choose one at {pricing_url}'
+    elif db.to_datetime(subscription['period_end']) <= utcnow():
+        message = f'Your API plan has expired. Renew it or buy a top-up at {pricing_url}'
     else:
-        logs = conn.execute('''
-            SELECT al.id,
-                   al.user_id,
-                   al.actor_type,
-                   al.actor_identifier,
-                   al.action,
-                   al.endpoint,
-                   al.method,
-                   al.status_code,
-                   al.ip_address,
-                   al.details,
-                   al.created_at,
-                   u.username,
-                   u.email
-            FROM activity_logs al
-            LEFT JOIN users u ON u.id = al.user_id
-            WHERE al.actor_type IN ('user', 'api_key', 'guest')
-            ORDER BY al.created_at DESC
-            LIMIT ?
-        ''', (limit,)).fetchall()
-    conn.close()
+        message = f'Your API plan has used all its requests. Buy a top-up or upgrade at {pricing_url}'
+    return jsonify({"error": message}), 402
 
-    return J({
-        "logs": [
-            {
-                "id": row['id'],
-                "user_id": row['user_id'],
-                "actor_type": row['actor_type'],
-                "actor_identifier": row['actor_identifier'],
-                "username": row['username'],
-                "email": row['email'],
-                "action": row['action'],
-                "endpoint": row['endpoint'],
-                "method": row['method'],
-                "status_code": row['status_code'],
-                "ip_address": row['ip_address'],
-                "details": row['details'],
-                "created_at": row['created_at']
-            }
-            for row in logs
-        ]
-    })
+def send_quota_warning(user_id, row):
+    user = get_user(user_id)
+    if user is None:
+        return
+    mailer.send(user['email'], f"You've used 80% of your {BUSINESS_NAME} API requests", 'quota_warning',
+                username=user['username'], plan_name=billing.plan_label(row['plan_id']),
+                used=f"{row['requests_used']:,}", limit=f"{row['requests_limit']:,}", pricing_url=f'{public_base_url()}/pricing')
 
-@app.get('/admin/api/users')
-def admin_list_users(request: Request, _=Depends(require_admin)):
-    conn = get_db()
-    users = conn.execute('''
-        SELECT u.id,
-               u.username,
-               u.email,
-               u.created_at,
-               COUNT(DISTINCT k.id) AS api_key_count,
-               COUNT(au.id) AS total_requests,
-               SUM(CASE WHEN au.status = 'success' THEN 1 ELSE 0 END) AS success_count,
-               MAX(au.timestamp) AS last_activity
-        FROM users u
-        LEFT JOIN api_keys k ON k.user_id = u.id
-        LEFT JOIN api_usage au ON au.api_key_id = k.id
-        GROUP BY u.id
-        ORDER BY u.created_at DESC
-    ''').fetchall()
-    conn.close()
+def quota_headers(response, charge):
+    row = charge.row
+    plan_left = max(0, row['requests_limit'] - row['requests_used']) if db.to_datetime(row['period_end']) > utcnow() else 0
+    response.headers['X-Quota-Limit'] = str(row['requests_limit'])
+    response.headers['X-Quota-Remaining'] = str(plan_left)
+    response.headers['X-Credits-Remaining'] = str(row['credits'])
+    return response
 
-    return J({
-        "users": [
-            {
-                "id": row['id'],
-                "username": row['username'],
-                "email": row['email'],
-                "created_at": row['created_at'],
-                "api_key_count": row['api_key_count'] or 0,
-                "total_requests": row['total_requests'] or 0,
-                "success_rate": round((row['success_count'] / row['total_requests']) * 100, 2) if row['total_requests'] else 100,
-                "last_activity": row['last_activity']
-            }
-            for row in users
-        ]
-    })
+# ==========================================
+#   SCHEDULED TASKS
+# ==========================================
 
-@app.get('/admin/api/users/{user_id:int}/usage')
-def admin_user_usage(user_id: int, request: Request, _=Depends(require_admin)):
-    conn = get_db()
+@app.route('/internal/tasks', methods=['POST'])
+def scheduled_tasks():
+    """Daily jobs, called by .github/workflows/daily-tasks.yml with the CRON_SECRET bearer token."""
+    supplied = request.headers.get('Authorization', '').removeprefix('Bearer ').strip()
+    if not CRON_SECRET or not hmac.compare_digest(supplied, CRON_SECRET):
+        return error_response(404, "We couldn't find that page.")
 
-    user = conn.execute(
-        'SELECT id, username, email, created_at FROM users WHERE id = ?',
-        (user_id,)
-    ).fetchone()
-    if not user:
-        conn.close()
-        return J({"error": "User not found"}, 404)
-
-    keys = conn.execute('''
-        SELECT k.id,
-               k.key_name,
-               k.api_key,
-               k.created_at,
-               k.is_active,
-               COUNT(au.id) AS request_count,
-               SUM(CASE WHEN au.status = 'success' THEN 1 ELSE 0 END) AS success_count,
-               MAX(au.timestamp) AS last_used
-        FROM api_keys k
-        LEFT JOIN api_usage au ON au.api_key_id = k.id
-        WHERE k.user_id = ?
-        GROUP BY k.id
-        ORDER BY k.created_at DESC
-    ''', (user_id,)).fetchall()
-
-    endpoint_breakdown = conn.execute('''
-        SELECT au.endpoint,
-               COUNT(*) AS total_requests,
-               SUM(CASE WHEN au.status = 'success' THEN 1 ELSE 0 END) AS success_count,
-               AVG(au.response_time) AS avg_latency
-        FROM api_usage au
-        JOIN api_keys k ON k.id = au.api_key_id
-        WHERE k.user_id = ?
-        GROUP BY au.endpoint
-        ORDER BY total_requests DESC
-    ''', (user_id,)).fetchall()
-
-    recent_logs = conn.execute('''
-        SELECT au.timestamp,
-               au.endpoint,
-               au.status,
-               au.response_time,
-               au.error_message,
-               k.key_name
-        FROM api_usage au
-        JOIN api_keys k ON k.id = au.api_key_id
-        WHERE k.user_id = ?
-        ORDER BY au.timestamp DESC
-        LIMIT 30
-    ''', (user_id,)).fetchall()
-
-    conn.close()
-
-    return J({
-        "user": {
-            "id": user['id'],
-            "username": user['username'],
-            "email": user['email'],
-            "created_at": user['created_at']
-        },
-        "keys": [
-            {
-                "id": row['id'],
-                "key_name": row['key_name'],
-                "api_key": row['api_key'],
-                "created_at": row['created_at'],
-                "is_active": row['is_active'],
-                "request_count": row['request_count'] or 0,
-                "success_rate": round((row['success_count'] / row['request_count']) * 100, 2) if row['request_count'] else 100,
-                "last_used": row['last_used']
-            }
-            for row in keys
-        ],
-        "endpoint_breakdown": [
-            {
-                "endpoint": row['endpoint'],
-                "total_requests": row['total_requests'],
-                "success_rate": round((row['success_count'] / row['total_requests']) * 100, 2) if row['total_requests'] else 100,
-                "avg_latency_ms": round(row['avg_latency'], 2) if row['avg_latency'] else 0
-            }
-            for row in endpoint_breakdown
-        ],
-        "recent_logs": [
-            {
-                "timestamp": row['timestamp'],
-                "endpoint": row['endpoint'],
-                "status": row['status'],
-                "response_time": round(row['response_time'], 2) if row['response_time'] else 0,
-                "error_message": row['error_message'],
-                "key_name": row['key_name']
-            }
-            for row in recent_logs
-        ]
-    })
-
-@app.delete('/admin/api/users/{user_id:int}')
-def admin_delete_user(user_id: int, request: Request, _=Depends(require_admin)):
-    conn = get_db()
-
-    user = conn.execute('SELECT id, username, email FROM users WHERE id = ?', (user_id,)).fetchone()
-    if not user:
-        conn.close()
-        return J({"success": False, "message": "User not found"}, 404)
-
-    # Delete usage logs first, then keys, then the user account.
-    conn.execute('DELETE FROM api_usage WHERE api_key_id IN (SELECT id FROM api_keys WHERE user_id = ?)', (user_id,))
-    conn.execute('DELETE FROM api_keys WHERE user_id = ?', (user_id,))
-    conn.execute('DELETE FROM users WHERE id = ?', (user_id,))
-    conn.commit()
-    conn.close()
-
-    return J({
-        "success": True,
-        "message": f"Deleted user {user['username']} and all related API data"
-    })
-
-@app.get('/admin/api/keys')
-def admin_list_keys(request: Request, _=Depends(require_admin)):
-    conn = get_db()
-    keys = conn.execute('''
-        SELECT k.id,
-               k.key_name,
-               k.api_key,
-               k.created_at,
-               k.is_active,
-               u.id AS user_id,
-               u.username,
-               u.email,
-               COUNT(au.id) AS request_count,
-               MAX(au.timestamp) AS last_used
-        FROM api_keys k
-        JOIN users u ON u.id = k.user_id
-        LEFT JOIN api_usage au ON au.api_key_id = k.id
-        GROUP BY k.id
-        ORDER BY k.created_at DESC
-    ''').fetchall()
-    conn.close()
-
-    return J({
-        "keys": [
-            {
-                "id": row['id'],
-                "key_name": row['key_name'],
-                "api_key": row['api_key'],
-                "created_at": row['created_at'],
-                "is_active": row['is_active'],
-                "user_id": row['user_id'],
-                "username": row['username'],
-                "email": row['email'],
-                "request_count": row['request_count'] or 0,
-                "last_used": row['last_used']
-            }
-            for row in keys
-        ]
-    })
-
-@app.delete('/admin/api/keys/{key_id:int}')
-def admin_delete_key(key_id: int, request: Request, _=Depends(require_admin)):
-    conn = get_db()
-    key = conn.execute('SELECT id, key_name FROM api_keys WHERE id = ?', (key_id,)).fetchone()
-    if not key:
-        conn.close()
-        return J({"success": False, "message": "API key not found"}, 404)
-
-    conn.execute('DELETE FROM api_usage WHERE api_key_id = ?', (key_id,))
-    conn.execute('DELETE FROM api_keys WHERE id = ?', (key_id,))
-    conn.commit()
-    conn.close()
-
-    return J({"success": True, "message": f"API key '{key['key_name']}' deleted"})
+    sent = 0
+    for row in billing.claim_expiry_reminders(utcnow()):
+        sent += bool(mailer.send(row['email'], f'Your {BUSINESS_NAME} API plan ends soon', 'plan_expiring',
+                                 username=row['username'], plan_name=billing.plan_label(row['plan_id']),
+                                 end_date=db.to_datetime(row['period_end']).strftime('%d %b %Y'),
+                                 remaining=f"{max(0, row['requests_limit'] - row['requests_used']):,}",
+                                 pricing_url=f'{public_base_url()}/pricing'))
+    logger.info('Scheduled tasks: %s expiry reminder(s) sent', sent)
+    return jsonify({"success": True, "reminders_sent": sent})
 
 # ==========================================
 #   CORE HUMANIZER ENDPOINT
 # ==========================================
 
-@app.post('/humanize')
-async def humanize(request: Request):
+@app.route('/humanize', methods=['POST'])
+def humanize():
     api_key = request.headers.get('X-API-Key')
-    start_time = datetime.now()
+    start_time = time.perf_counter()
     api_key_id = None
+    api_user_id = None
 
     if api_key:
-        key_data = await run_in_threadpool(verify_api_key, api_key)
+        key_data = verify_api_key(api_key)
         if not key_data:
-            return J({"error": "Invalid or inactive API key"}, 401)
+            return jsonify({"error": "Invalid or inactive API key"}), 401
+        if needs_verification(key_data):
+            return unverified_response()
         api_key_id = key_data['id']
+        api_user_id = key_data['user_id']
     else:
-        if 'user_id' not in request.session:
-            return J({"error": "Authentication required"}, 401)
+        if 'user_id' not in session:
+            return jsonify({"error": "Authentication required"}), 401
 
-    data = await parse_json_body(request)
+    # Rewriting is CPU-heavy, so each key / signed-in user gets a fair share
+    identity = f'key:{api_key_id}' if api_key_id else f'user:{session["user_id"]}'
+    retry_after = limiter.hit(f'humanize:{identity}', *RATE_LIMITS['humanize'])
+    if retry_after:
+        return too_many_requests(retry_after)
+
+    data = get_json_body()
     text = data.get('text', '')
     tone = data.get('tone', 'standard')
     deep_mode = data.get('deep_mode', False)
 
-    if not text:
-        return J({"error": "No text provided"}, 400)
+    if not isinstance(text, str) or not text.strip():
+        return jsonify({"error": "No text provided"}), 400
+    if len(text) > MAX_TEXT_LENGTH:
+        return jsonify({"error": f"Text too long (max {MAX_TEXT_LENGTH} characters)"}), 400
+    if tone not in TONES:
+        return jsonify({"error": f"Invalid tone. Use one of: {', '.join(TONES)}"}), 400
+    if not isinstance(deep_mode, bool):
+        return jsonify({"error": "deep_mode must be true or false"}), 400
+
+    # The REST API is paid: each valid API request uses one request from the account's plan
+    # (then its top-up credits). The web editor (signed-in session, no API key) stays free.
+    charge = None
+    if api_user_id:
+        charge = billing.consume_request(api_user_id, utcnow())
+        if not charge.allowed:
+            return plan_required_response(charge.row)
+        if charge.warn:
+            send_quota_warning(api_user_id, charge.row)
 
     try:
-        def _process():
-            humanized_text = perform_nuclear_chaos(text, tone, deep_mode)
-            metrics = calculate_diff_metrics(text, humanized_text)
-            return humanized_text, metrics
+        humanized_text = perform_nuclear_chaos(text, tone, deep_mode)
+        metrics = calculate_diff_metrics(text, humanized_text)
 
-        humanized_text, metrics = await run_in_threadpool(_process)
-
-        ai_prob = random.uniform(0.0, 0.9) if deep_mode else random.uniform(5.0, 12.0)
-        confidence = random.uniform(99.5, 100.0) if deep_mode else random.uniform(88.0, 95.0)
-
-        response_time = (datetime.now() - start_time).total_seconds() * 1000
+        response_time = (time.perf_counter() - start_time) * 1000
 
         if api_key_id:
-            await run_in_threadpool(log_api_usage, api_key_id, '/humanize', 'success', response_time)
+            log_api_usage(api_key_id, '/humanize', 'success', response_time)
 
-        return J({
+        response = jsonify({
             "original": text,
             "humanized": humanized_text,
-            "ai_probability": f"{ai_prob:.1f}%",
-            "confidence": f"{confidence:.1f}%",
-            "classification": "Human-Written",
             "diff_html": metrics['diff_html'],
             "longest_unchanged": metrics['longest_unchanged'],
             "structural_changes": f"{metrics['structural_score']}%",
             "changed_words": metrics['changed_words_count']
         })
+        return quota_headers(response, charge) if charge else response
 
     except Exception as e:
+        # Log only the error type and location: messages can quote the user's text, which is never stored
+        logger.error('Humanize failed: %s at %s', type(e).__name__, error_location(e))
+        if charge:
+            billing.refund_request(api_user_id, charge)
         if api_key_id:
-            await run_in_threadpool(log_api_usage, api_key_id, '/humanize', 'error', 0, str(e))
-        print(f"Error: {e}")
-        return J({"error": "Processing failed."}, 500)
+            response_time = (time.perf_counter() - start_time) * 1000
+            log_api_usage(api_key_id, '/humanize', 'error', response_time, type(e).__name__)
+        return jsonify({"error": "Processing failed."}), 500
 
-# ==========================================
-#   STATIC FRONTEND (single-server deploy)
-# ==========================================
-# If the Next.js static export exists (frontend/out), serve it from FastAPI so
-# the website AND the API run on ONE web server / URL. Registered LAST so every
-# API route above wins. Without the export, GET / falls back to a JSON root.
-FRONTEND_DIST = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'frontend', 'out')
+@app.route('/humanize/batch', methods=['POST'])
+def humanize_batch():
+    """Rewrite up to MAX_BATCH_ITEMS texts in one call (API keys only). Each item costs one request;
+    items that fail on our side are given back."""
+    start_time = time.perf_counter()
+    api_key = request.headers.get('X-API-Key')
+    if not api_key:
+        return jsonify({"error": "The batch endpoint needs an API key in the X-API-Key header"}), 401
+    key_data = verify_api_key(api_key)
+    if not key_data:
+        return jsonify({"error": "Invalid or inactive API key"}), 401
+    if needs_verification(key_data):
+        return unverified_response()
 
-if os.path.isdir(FRONTEND_DIST):
-    _DIST_ROOT = os.path.abspath(FRONTEND_DIST)
+    data = get_json_body()
+    default_tone = data.get('tone', 'standard')
+    default_deep = data.get('deep_mode', False)
+    raw_items = data.get('items')
+    if not isinstance(raw_items, list) or not raw_items:
+        return jsonify({"error": 'Send "items": a list of texts, or of objects with "text" (and optional "tone", "deep_mode", "id")'}), 400
+    if len(raw_items) > MAX_BATCH_ITEMS:
+        return jsonify({"error": f"Too many items (max {MAX_BATCH_ITEMS} per request)"}), 400
 
-    @app.get('/favicon.ico')
-    def favicon_ico():
-        # Browsers auto-request /favicon.ico; serve the SVG icon (or 204) so it
-        # never 404s.
-        svg = os.path.join(_DIST_ROOT, 'favicon.svg')
-        return FileResponse(svg) if os.path.isfile(svg) else Response(status_code=204)
+    items = []
+    for i, item in enumerate(raw_items):
+        if isinstance(item, str):
+            item = {'text': item}
+        if not isinstance(item, dict):
+            return jsonify({"error": f"Item {i}: must be a string or an object with \"text\""}), 400
+        text, tone, deep_mode = item.get('text', ''), item.get('tone', default_tone), item.get('deep_mode', default_deep)
+        item_id = item.get('id')
+        if not isinstance(text, str) or not text.strip():
+            return jsonify({"error": f"Item {i}: no text provided"}), 400
+        if len(text) > MAX_TEXT_LENGTH:
+            return jsonify({"error": f"Item {i}: text too long (max {MAX_TEXT_LENGTH} characters)"}), 400
+        if tone not in TONES:
+            return jsonify({"error": f"Item {i}: invalid tone. Use one of: {', '.join(TONES)}"}), 400
+        if not isinstance(deep_mode, bool):
+            return jsonify({"error": f"Item {i}: deep_mode must be true or false"}), 400
+        if item_id is not None and not (isinstance(item_id, (str, int)) and not isinstance(item_id, bool) and len(str(item_id)) <= 100):
+            return jsonify({"error": f"Item {i}: id must be a string or number (max 100 characters)"}), 400
+        items.append({'text': text, 'tone': tone, 'deep_mode': deep_mode, 'id': item_id})
+    if sum(len(item['text']) for item in items) > MAX_BATCH_CHARS:
+        return jsonify({"error": f"Batch too large (max {MAX_BATCH_CHARS} characters in total)"}), 400
 
-    @app.get('/{full_path:path}')
-    def serve_frontend(full_path: str):
-        if full_path:
-            candidates = [
-                os.path.join(_DIST_ROOT, full_path),
-                os.path.join(_DIST_ROOT, full_path + '.html'),
-                os.path.join(_DIST_ROOT, full_path, 'index.html'),
-            ]
-        else:
-            candidates = [os.path.join(_DIST_ROOT, 'index.html')]
+    # Each item counts against the key's rate limit, like a separate request
+    retry_after = limiter.hit(f"humanize:key:{key_data['id']}", *RATE_LIMITS['humanize'], cost=len(items))
+    if retry_after:
+        return too_many_requests(retry_after)
 
-        for candidate in candidates:
-            resolved = os.path.abspath(candidate)
-            if resolved.startswith(_DIST_ROOT) and os.path.isfile(resolved):
-                headers = (
-                    {'Cache-Control': 'public, max-age=31536000, immutable'}
-                    if full_path.startswith('_next/')
-                    else None
-                )
-                return FileResponse(resolved, headers=headers)
+    charge = billing.consume_request(key_data['user_id'], utcnow(), len(items))
+    if not charge.allowed:
+        return plan_required_response(charge.row)
+    if charge.warn:
+        send_quota_warning(key_data['user_id'], charge.row)
 
-        not_found = os.path.join(_DIST_ROOT, '404.html')
-        if os.path.isfile(not_found):
-            return FileResponse(not_found, status_code=404)
-        return FileResponse(os.path.join(_DIST_ROOT, 'index.html'), status_code=404)
-else:
-    @app.api_route('/', methods=['GET', 'HEAD'])
-    def api_root():
-        return J({"service": "AI Humanizer Pro API", "status": "ok"})
+    results, usage_rows, failed = [], [], 0
+    for i, item in enumerate(items):
+        item_start = time.perf_counter()
+        result = {"index": i} if item['id'] is None else {"index": i, "id": item['id']}
+        try:
+            humanized_text = perform_nuclear_chaos(item['text'], item['tone'], item['deep_mode'])
+            metrics = calculate_diff_metrics(item['text'], humanized_text)
+            result.update({"humanized": humanized_text, "longest_unchanged": metrics['longest_unchanged'],
+                           "structural_changes": f"{metrics['structural_score']}%", "changed_words": metrics['changed_words_count']})
+            usage_rows.append((key_data['id'], '/humanize/batch', 'success', (time.perf_counter() - item_start) * 1000, None))
+        except Exception as e:
+            logger.error('Batch item failed: %s at %s', type(e).__name__, error_location(e))
+            result["error"] = "Processing failed."
+            failed += 1
+            usage_rows.append((key_data['id'], '/humanize/batch', 'error', (time.perf_counter() - item_start) * 1000, type(e).__name__))
+        results.append(result)
+
+    log_api_usage_many(usage_rows)
+    if failed:
+        billing.refund_request(key_data['user_id'], charge, failed)
+    response = jsonify({"results": results, "count": len(items), "succeeded": len(items) - failed,
+                        "processing_ms": round((time.perf_counter() - start_time) * 1000, 2)})
+    return quota_headers(response, charge)
+
+# Admin panel at /admin (only for verified accounts listed in ADMIN_EMAILS)
+app.register_blueprint(admin.bp)
 
 if __name__ == '__main__':
-    import uvicorn
-    # Running on 5001 to avoid conflicts (mirrors the original Flask dev server).
-    uvicorn.run("app:app", host="127.0.0.1", port=5001, reload=True)
+    # Running on 5001 to avoid conflicts. Debug mode only when FLASK_DEBUG=1 (never in production)
+    app.run(debug=os.environ.get("FLASK_DEBUG") == "1", port=5001)
