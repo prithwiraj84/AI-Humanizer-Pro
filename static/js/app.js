@@ -260,7 +260,24 @@ function renderPricing() {
         was.hidden = discounted === amount;
         was.textContent = formatMoney(amount, root.dataset.currency);
         price.textContent = formatMoney(discounted, root.dataset.currency);
+        const unit = card.querySelector('.plan-unit');
+        if (unit && discounted !== amount) {
+            unit.textContent = unitLine(card, cycle, discounted, root.dataset.currency);
+        }
     });
+}
+
+// The line under a plan's price, for a discounted price (same rules as billing.pricing_for on the server)
+function unitLine(card, cycle, amount, currency) {
+    const monthlyRequests = Number(card.dataset.requestsMonthly);
+    if (cycle === 'monthly') {
+        return amount * 1000 >= monthlyRequests
+            ? `About ${formatMoney(Math.round(amount / monthlyRequests * 1000), currency)} per 1,000 requests`
+            : ' ';
+    }
+    const perMonth = currency === 'INR' ? Math.round(amount / 1200) * 100 : Math.round(amount / 12);
+    const saving = Number(card.dataset.amountMonthly) * 12 - amount;
+    return `${formatMoney(perMonth, currency)} a month, billed yearly · save ${formatMoney(saving, currency)}`;
 }
 
 function autopayOn(card) {

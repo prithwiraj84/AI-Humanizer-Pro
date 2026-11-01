@@ -416,9 +416,11 @@ kbd {
 }
 .plan-name { font-size: 18px; font-weight: 600; letter-spacing: -.01em; }
 .plan-blurb { margin-top: 4px; font-size: 14px; color: var(--ink-3); }
-.plan-price { display: flex; align-items: baseline; gap: 6px; margin: 22px 0 4px; }
+.plan-price { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 6px; margin: 22px 0 4px; }
 .plan-price .amount { font-size: 44px; font-weight: 600; letter-spacing: -.03em; line-height: 1; font-variant-numeric: tabular-nums; }
-.plan-price .period { font-size: 14px; color: var(--ink-3); }
+.plan-price .period { font-size: 14px; color: var(--ink-3); white-space: nowrap; }
+/* A discounted price shows the old one beside it, so it's set a little smaller to stay on one line */
+.plan .plan-price:has(.price-was:not([hidden])) .amount { font-size: 36px; }
 .plan-unit { margin-bottom: 22px; font-size: 13px; color: var(--ink-3); }
 .plan .btn-block { margin-bottom: 24px; }
 .plan-features { display: grid; gap: 10px; font-size: 14px; color: var(--ink-2); }

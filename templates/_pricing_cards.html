@@ -31,7 +31,8 @@
 <div class="pricing-grid">
     {% for plan in pricing.plans %}
     <article class="card plan{{ ' plan-best' if plan.best }}" data-plan="{{ plan.id }}"
-             data-amount-monthly="{{ plan.amount }}" data-amount-yearly="{{ plan.yearly.amount }}">
+             data-amount-monthly="{{ plan.amount }}" data-amount-yearly="{{ plan.yearly.amount }}"
+             data-requests-monthly="{{ plan.requests }}">
         {% if plan.best %}<span class="plan-badge">Recommended</span>{% endif %}
         <h3 class="plan-name">{{ plan.name }}</h3>
         <p class="plan-blurb">{{ plan.blurb }}</p>
