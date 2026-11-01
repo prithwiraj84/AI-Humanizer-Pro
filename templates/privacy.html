@@ -69,10 +69,10 @@
 
             <h3>Information from Google or GitHub, if you sign in with them</h3>
             <ul>
-                <li><strong>Google:</strong> your name, email address, whether Google has verified it, and your Google account ID (the standard “openid”, “email” and “profile” permissions).</li>
-                <li><strong>GitHub:</strong> your username, GitHub account ID and your primary verified email address (the “read:user” and “user:email” permissions).</li>
+                <li><strong>Google:</strong> your name, email address, whether Google has verified it, your Google account ID and the address of your profile picture (the standard “openid”, “email” and “profile” permissions).</li>
+                <li><strong>GitHub:</strong> your username, GitHub account ID, your primary verified email address and the address of your profile picture (the “read:user” and “user:email” permissions).</li>
             </ul>
-            <p>We use these only to create your account and sign you in. We never receive your Google or GitHub password, and the access tokens they issue are used once during sign-in and not stored.</p>
+            <p>We use these only to create your account, sign you in and show your profile picture in the site’s menu bar. The picture itself stays on Google’s or GitHub’s servers and loads from there; we keep only its address, updated each time you sign in with them. We never receive your Google or GitHub password, and the access tokens they issue are used once during sign-in and not stored.</p>
 
             <h3>Information created when you use the service</h3>
             <ul>
@@ -97,7 +97,7 @@
         <section id="your-text" class="doc-section">
             <h2>3. The text you rewrite</h2>
             <p>Text you send to the editor or the API is processed in our server’s memory to produce the result and is discarded as soon as the response is sent. It is never written to our database or logs, never used to train any model, and never shared with anyone. If something fails while processing, our error logs record only the type of error and where in our code it happened, not its message, because messages could quote your text.</p>
-            <p>To let you reopen recent work, the editor saves your six most recent results (the original and rewritten text) in your own browser’s local storage. This stays on your device, and you can delete it with “Clear history” in the editor or through your browser settings.</p>
+            <p>To let you reopen recent work, the editor saves your six most recent results (the original and rewritten text) in your own browser’s local storage, separately for each account, so other people who sign in on the same browser don’t see them. This stays on your device, and you can delete it with “Clear history” in the editor or through your browser settings.</p>
         </section>
 
         <section id="how-we-use" class="doc-section">
@@ -135,7 +135,7 @@
                         <thead><tr><th>Name</th><th>Type</th><th>Purpose</th><th>Kept for</th></tr></thead>
                         <tbody>
                             <tr><td><span class="param">session</span></td><td>Essential cookie</td><td>Keeps you signed in, and holds short-lived sign-in and checkout state. Signed so it can’t be tampered with, and not readable by scripts.</td><td>Until you sign out or close your browser</td></tr>
-                            <tr><td><span class="param">ai_humanizer_history</span></td><td>Local storage</td><td>Your last six editor results, on your device only</td><td>Until you clear it</td></tr>
+                            <tr><td><span class="param">ai_humanizer_history:</span><wbr><span class="param">&lt;account number&gt;</span></td><td>Local storage</td><td>Your last six editor results, on your device only, kept separately for each account</td><td>Until you clear it</td></tr>
                             <tr><td>Razorpay cookies</td><td>Third-party, essential</td><td>Set by Razorpay only when you open the checkout, to process the payment and prevent fraud</td><td>As set by Razorpay</td></tr>
                         </tbody>
                     </table>

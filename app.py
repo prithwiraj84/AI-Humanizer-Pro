@@ -177,7 +177,8 @@ def init_db():
                   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                   email_verified INTEGER NOT NULL DEFAULT 1,
                   referral_code TEXT,
-                  referred_by INTEGER)'''))
+                  referred_by INTEGER,
+                  avatar_url TEXT)'''))
 
     # API Keys table (api_key holds a SHA-256 hash; the raw key is only shown once at creation)
     c.execute(db.ddl('''CREATE TABLE IF NOT EXISTS api_keys
@@ -272,6 +273,7 @@ def init_db():
         ('users', 'email_verified', 'INTEGER NOT NULL DEFAULT 1'),
         ('users', 'referral_code', 'TEXT'),
         ('users', 'referred_by', 'INTEGER'),
+        ('users', 'avatar_url', 'TEXT'),
         ('api_subscriptions', 'cycle', "TEXT NOT NULL DEFAULT 'monthly'"),
         ('api_subscriptions', 'credits', 'INTEGER NOT NULL DEFAULT 0'),
         ('api_subscriptions', 'warned_80', 'INTEGER NOT NULL DEFAULT 0'),
@@ -640,13 +642,16 @@ def housekeeping():
     finally:
         _housekeeping_lock.release()
 
+# Profile pictures from Google and GitHub sign-in are loaded straight from their image servers
+AVATAR_HOSTS = ('*.googleusercontent.com', 'avatars.githubusercontent.com')
+
 # Cloudflare Turnstile (sign-up bot check) loads its script and widget frame from challenges.cloudflare.com
 CONTENT_SECURITY_POLICY = '; '.join([
     "default-src 'self'",
     "script-src 'self' 'unsafe-inline' https://*.razorpay.com https://challenges.cloudflare.com",
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
     "font-src 'self' https://fonts.gstatic.com",
-    "img-src 'self' data: https://*.razorpay.com",
+    "img-src 'self' data: https://*.razorpay.com " + ' '.join(f'https://{host}' for host in AVATAR_HOSTS),
     "frame-src https://*.razorpay.com https://challenges.cloudflare.com",
     "connect-src 'self' https://*.razorpay.com",
     "form-action 'self'",
@@ -874,6 +879,7 @@ def login():
         session.clear()
         session['user_id'] = user['id']
         session['username'] = user['username']
+        session['avatar'] = user['avatar_url']   # set if the account was ever used with Google/GitHub
         return jsonify({"success": True, "message": "Login successful"})
 
     return render_template('login.html')
@@ -1018,8 +1024,19 @@ def dashboard():
 class OAuthProfileError(Exception):
     """A provider answered, but the account can't be used (message is shown to the user)."""
 
+def safe_avatar_url(url):
+    """A profile picture address from Google or GitHub, if it's https on their image servers (the only
+    hosts the CSP allows); anything else is ignored and the initial is shown instead."""
+    if not isinstance(url, str) or len(url) > 500:
+        return None
+    parsed = urlparse(url)
+    host = parsed.hostname or ''
+    if parsed.scheme != 'https' or not any(host == h or (h.startswith('*.') and host.endswith(h[1:])) for h in AVATAR_HOSTS):
+        return None
+    return url
+
 def get_oauth_profile(provider):
-    """Finish the OAuth exchange and return (provider_user_id, verified_email, display_name)."""
+    """Finish the OAuth exchange and return (provider_user_id, verified_email, display_name, avatar_url)."""
     client = oauth.create_client(provider)
     token = client.authorize_access_token()
 
@@ -1027,7 +1044,8 @@ def get_oauth_profile(provider):
         info = token.get('userinfo') or client.userinfo(token=token)
         if not info.get('email') or not info.get('email_verified'):
             raise OAuthProfileError("Your Google account's email address isn't verified.")
-        return str(info['sub']), info['email'], info.get('name') or info['email'].split('@')[0]
+        return (str(info['sub']), info['email'], info.get('name') or info['email'].split('@')[0],
+                safe_avatar_url(info.get('picture')))
 
     user_resp = client.get('user', token=token)
     user_resp.raise_for_status()
@@ -1037,7 +1055,7 @@ def get_oauth_profile(provider):
     email = next((e['email'] for e in emails_resp.json() if e.get('primary') and e.get('verified')), None)
     if not email:
         raise OAuthProfileError('Add a verified primary email to your GitHub account, then try again.')
-    return str(profile['id']), email, profile.get('login') or email.split('@')[0]
+    return str(profile['id']), email, profile.get('login') or email.split('@')[0], safe_avatar_url(profile.get('avatar_url'))
 
 def unique_username(conn, name):
     base = re.sub(r'[^A-Za-z0-9_.-]+', '_', name).strip('_.-')[:40] or 'user'
@@ -1047,14 +1065,23 @@ def unique_username(conn, name):
         candidate = f'{base}{n}'
     return candidate
 
-def find_or_create_oauth_user(provider, provider_user_id, email, display_name, referral_code=None):
+def find_or_create_oauth_user(provider, provider_user_id, email, display_name, referral_code=None, avatar_url=None):
     conn = get_db()
+
+    def with_avatar(user):
+        # Keep the picture from the latest Google/GitHub sign-in (people change them)
+        if avatar_url and user['avatar_url'] != avatar_url:
+            conn.execute('UPDATE users SET avatar_url = ? WHERE id = ?', (avatar_url, user['id']))
+            conn.commit()
+            user = conn.execute('SELECT * FROM users WHERE id = ?', (user['id'],)).fetchone()
+        return user
+
     try:
         user = conn.execute('''SELECT u.* FROM oauth_accounts o JOIN users u ON u.id = o.user_id
                                WHERE o.provider = ? AND o.provider_user_id = ?''',
                             (provider, provider_user_id)).fetchone()
         if user:
-            return user
+            return with_avatar(user)
 
         # Providers only give us verified emails, so it's safe to link to a matching account
         user = conn.execute('SELECT * FROM users WHERE lower(email) = lower(?)', (email,)).fetchone()
@@ -1071,7 +1098,7 @@ def find_or_create_oauth_user(provider, provider_user_id, email, display_name, r
         conn.execute('INSERT INTO oauth_accounts (user_id, provider, provider_user_id, email) VALUES (?, ?, ?, ?)',
                      (user['id'], provider, provider_user_id, email))
         conn.commit()
-        return user
+        return with_avatar(user)
     finally:
         conn.close()
 
@@ -1097,7 +1124,7 @@ def oauth_callback(provider):
         return redirect('/login')
 
     try:
-        provider_user_id, email, display_name = get_oauth_profile(provider)
+        provider_user_id, email, display_name, avatar_url = get_oauth_profile(provider)
     except OAuthProfileError as e:
         flash(str(e), 'error')
         return redirect('/login')
@@ -1106,11 +1133,12 @@ def oauth_callback(provider):
         flash(f"{name} sign-in didn't complete. Please try again.", 'error')
         return redirect('/login')
 
-    user = find_or_create_oauth_user(provider, provider_user_id, email, display_name, session.get('ref'))
+    user = find_or_create_oauth_user(provider, provider_user_id, email, display_name, session.get('ref'), avatar_url)
     next_page = safe_next(session.get('login_next'))
     session.clear()
     session['user_id'] = user['id']
     session['username'] = user['username']
+    session['avatar'] = user['avatar_url']
     return redirect(next_page or '/editor')
 
 # ==========================================

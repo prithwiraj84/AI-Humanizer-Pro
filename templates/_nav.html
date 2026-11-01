@@ -14,7 +14,9 @@
         <div class="nav-right">
             {% if session.get('user_id') %}
             <div class="user-chip">
-                <span class="avatar">{{ (session.get('username') or '?')[:1] | upper }}</span>
+                <span class="avatar">{{ (session.get('username') or '?')[:1] | upper }}
+                    {%- if session.get('avatar') %}<img src="{{ session.get('avatar') }}" alt="" width="30" height="30" referrerpolicy="no-referrer" loading="lazy" onerror="this.remove()">{% endif -%}
+                </span>
                 <span class="user-name">{{ session.get('username') }}</span>
             </div>
             <a href="/logout" class="btn btn-ghost btn-sm" title="Log out">{{ icon('logout') }}<span>Log out</span></a>

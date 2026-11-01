@@ -133,7 +133,12 @@
 {% block scripts %}
 <script>
     const MAX_CHARS = 20000;
-    const HISTORY_KEY = 'ai_humanizer_history';
+    // Each account keeps its own history in this browser, so people sharing a device don't see each other's work
+    const HISTORY_KEY = 'ai_humanizer_history:' + {{ session.get('user_id') | tojson }};
+    try {
+        // Older versions kept one list for everyone who used this browser; it can't be assigned to an account
+        localStorage.removeItem('ai_humanizer_history');
+    } catch {}
     const RING_LENGTH = 2 * Math.PI * 32;
 
     // Exact text returned by the server (the on-screen diff is only for display)

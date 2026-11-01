@@ -385,6 +385,12 @@ def can_rewrite(token):
             and not in_compound_term                                  # terms like "data pipeline"
             and token.tag_ not in SKIP_TAGS and not in_hyphenated_word)
 
+def takes_preposition(token):
+    """Verbs and adjectives bound to a preposition ("rely on", "aware of", "carry out"). Their WordNet
+    synonyms rarely take the same one ("trust on"), so only the curated swaps may change them."""
+    return token.pos_ in ('VERB', 'ADJ') and any(
+        child.dep_ in ('prep', 'prt') and 0 < child.i - token.i <= 2 for child in token.children)
+
 def plan_sentence_split(sent, edits, capitalize):
     """Turn "X, and Y" into "X. Y" when both halves are long, complete clauses."""
     if len(sent) < 22:
@@ -431,8 +437,8 @@ def rewrite_with_spacy(text, tone, deep_mode):
                 replacement = pick(AI_WORDS[key], tone)
             elif key in PLAIN_WORDS and random.random() < plain_chance:
                 replacement = random.choice(PLAIN_WORDS[key])
-            elif token.ent_type_:
-                continue  # number phrases only get the curated swaps above
+            elif token.ent_type_ or takes_preposition(token):
+                continue  # number phrases and "rely on"-style pairs only get the curated swaps above
             elif random.random() < intensity * weight:
                 entry = SYNONYMS.get(f'{lemma}|{UPOS_TO_WORDNET[token.pos_]}')
                 replacement = pick_synonym(entry, tone, floor, avoid) if entry else None
@@ -464,10 +470,22 @@ def rewrite_with_spacy(text, tone, deep_mode):
 # A word with optional surrounding punctuation, e.g. '"Hello,' -> ('"', 'Hello', ',')
 WORD_PATTERN = re.compile(r'^(\W*)([A-Za-z]+)(\W*)$')
 
+# Curated words that are also common as another part of speech ("an attempt", "a myriad of",
+# "individual results", "the objective view"); without tagging, the fallback can't tell which is meant
+AMBIGUOUS_WORDS = frozenset('''
+    leverage foster underscore harness myriad individual purchase attempt objective exhibit showcase
+    assist cease component initial streamline bolster endeavor endeavour comprehensive
+'''.split())
+
+def single_part_of_speech(word):
+    """True if the word can only be one part of speech (so a curated swap can't change its meaning)."""
+    return word not in AMBIGUOUS_WORDS and sum(f'{word}|{p}' in SYNONYMS for p in 'nvar') <= 1
+
 def rewrite_basic(text, tone, deep_mode):
-    """Fallback without spaCy: swap whole words only, with no tagging or inflection."""
-    intensity = 0.4 if deep_mode else 0.1
-    floor = CHAOS_FLOOR if deep_mode else SYNONYM_FLOOR[tone]
+    """Fallback without spaCy: only the curated swaps, for words that can't be read as another part of
+    speech. Without tagging, WordNet synonyms pick the wrong sense ("land cover" -> "land blanket",
+    "despite" -> "scorn"), so they are left out; the phrase rules and contractions still apply."""
+    plain_chance = 1.0 if deep_mode and tone != 'academic' else PLAIN_CHANCE[tone]
     tokens = re.split(r'(\s+)', text)
     for i, token in enumerate(tokens):
         match = WORD_PATTERN.match(token)
@@ -475,19 +493,17 @@ def rewrite_basic(text, tone, deep_mode):
             continue
         lead, core, trail = match.groups()
         lower = core.lower()
+        if not single_part_of_speech(lower):
+            continue
         ai_key = next((f'{lower}|{p}' for p in UPOS_TO_WORDNET if f'{lower}|{p}' in AI_WORDS), None)
         plain_key = next((f'{lower}|{p}' for p in UPOS_TO_WORDNET if f'{lower}|{p}' in PLAIN_WORDS), None)
         if ai_key:
             replacement = pick(AI_WORDS[ai_key], tone)
-        elif plain_key and random.random() < PLAIN_CHANCE[tone]:
+        elif plain_key and random.random() < plain_chance:
             replacement = random.choice(PLAIN_WORDS[plain_key])
-        elif len(core) > 4 and random.random() < intensity:
-            entry = next((SYNONYMS[f'{lower}|{p}'] for p in 'vnar' if f'{lower}|{p}' in SYNONYMS), None)
-            replacement = pick_synonym(entry, tone, floor, {lower}) if entry else None
         else:
             continue
-        if replacement:
-            tokens[i] = lead + match_case(core, replacement) + trail
+        tokens[i] = lead + match_case(core, replacement) + trail
     return ''.join(tokens)
 
 # ==========================================

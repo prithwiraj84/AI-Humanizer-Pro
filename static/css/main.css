@@ -379,7 +379,11 @@ kbd {
     color: var(--accent-ink);
     font-size: 12.5px;
     font-weight: 600;
+    position: relative;
+    overflow: hidden;
 }
+/* Google/GitHub profile picture covers the initial; if it fails to load it's removed and the initial shows */
+.avatar img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 
 /* --- FOOTER --- */
 .site-footer { border-top: 1px solid var(--line); padding: 22px 0; font-size: 13px; color: var(--ink-3); }

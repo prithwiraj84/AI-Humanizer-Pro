@@ -2,3 +2,5 @@
 humanizer.db
 __pycache__/
 data/geoip/
+venv/
+.venv/
