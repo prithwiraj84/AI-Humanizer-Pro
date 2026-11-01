@@ -50,6 +50,11 @@ with gzip.open(os.path.join(DATA_DIR, 'bigrams.json.gz'), 'rt', encoding='utf-8'
 def pair_count(first, second):
     return BIGRAMS.get(f'{first} {second}', 0) if first and second else 0
 
+# --- ACTION NOUNS (built offline with NLTK from WordNet by scripts/build_nominalizations.py) ---
+# "integration" -> "integrate": nouns that read better as the verb ("integrating X")
+with gzip.open(os.path.join(DATA_DIR, 'nominalizations.json.gz'), 'rt', encoding='utf-8') as _f:
+    NOMINALIZATIONS = json.load(_f)
+
 # --- SPACY (optional at runtime) ---
 try:
     import spacy
@@ -217,6 +222,10 @@ PHRASES = [
      {'*': ['especially important', 'more important than it used to be'], 'casual': ['a bigger deal than ever'],
       'professional': ['especially important'], 'academic': ['increasingly important']}),
     (("a deep dive into",), {'*': ['a close look at']}),
+    (("is designed to",), {'*': ['is meant to', 'is built to'], 'academic': ['is intended to']}),
+    (("are designed to",), {'*': ['are meant to', 'are built to'], 'academic': ['are intended to']}),
+    (("was designed to",), {'*': ['was meant to', 'was built to'], 'academic': ['was intended to']}),
+    (("were designed to",), {'*': ['were meant to', 'were built to'], 'academic': ['were intended to']}),
 ]
 # An optional "a"/"an" in front is captured so it can agree with the replacement
 PHRASE_RULES = [(re.compile(r"(?P<art>\b(?:a|an)\s+)?\b(?P<phrase>" + phrase_regex(words) + r")\b", re.I), options)
@@ -317,13 +326,13 @@ CHAOS_FLOOR = 0.1
 
 # Share of eligible content words that get a WordNet synonym. Predictable word choice is one of the
 # strongest signs of AI text, and the word-pair check below keeps the swaps idiomatic.
-WORD_RATE = {'standard': 0.4, 'casual': 0.45, 'professional': 0.3, 'academic': 0.3}
-CHAOS_WORD_RATE = 0.7
+WORD_RATE = {'standard': 0.5, 'casual': 0.55, 'professional': 0.35, 'academic': 0.35}
+CHAOS_WORD_RATE = 0.8
 
 # Nouns carry most of a sentence's meaning and WordNet's noun synonyms often miss the context
 # ("updated the details" is not "updated the points"), so only Chaos Mode swaps them, less often,
 # and only when the new word is attested next to a neighbour in real English
-NOUN_WEIGHT = {False: 0.0, True: 0.35}
+NOUN_WEIGHT = {False: 0.0, True: 0.45}
 
 # Curated adverb swaps that only read well in some positions ("manage time effectively" -> "well",
 # but not "effectively reduces" -> "well reduces"; "truly matters" but not "truly unique" -> "really unique")
@@ -488,7 +497,7 @@ PLAIN_WORDS = {
     'emphasize|VERB': ['stress', 'highlight'],
     'highlight|VERB': ['point out', 'show'],
     'enable|VERB': ['allow'],
-    'significant|ADJ': ['major', 'big', 'notable'],
+    'significant|ADJ': ['major', 'big'],
     'substantial|ADJ': ['large', 'major'],
     'various|ADJ': ['different', 'several'],
     'fundamental|ADJ': ['basic', 'core'],
@@ -505,7 +514,7 @@ PLAIN_WORDS = {
     'continuously|ADV': ['constantly'],
 }
 # Chance of making a plain-English swap; Academic keeps its formal vocabulary
-PLAIN_CHANCE = {'casual': 1.0, 'standard': 0.7, 'professional': 0.4, 'academic': 0.0}
+PLAIN_CHANCE = {'casual': 1.0, 'standard': 0.85, 'professional': 0.5, 'academic': 0.0}
 IRREGULAR_PLURALS = {'person': 'people'}
 
 def neighbours(token):
@@ -897,13 +906,121 @@ def enabling_to_with(sent, pieces):
     return ([[None, 'With']] + means + [[None, ',']] + actor + tense + adverb_pieces
             + take(pieces, action.i, stop - 1) + take(pieces, stop, stop))
 
+# --- "The integration of X has transformed Y." -> "Integrating X has transformed Y." ---
+# AI text is noun-heavy; people tend to use the verb. Word positions are kept (the noun's piece
+# becomes the -ing form, "the" and "of" become empty), so this combines with the other transforms.
+
+NOMINAL_RATE = {'standard': 0.7, 'casual': 0.8, 'professional': 0.5, 'academic': 0.3}
+GERUND_PREPOSITIONS = {'in', 'for', 'by', 'through', 'after', 'before', 'without', 'on', 'about'}
+GERUND_VERBS = {'require', 'involve', 'include', 'need', 'avoid', 'consider', 'recommend', 'suggest', 'mean', 'support'}
+GROUP_NOUNS = {'people', 'person', 'user', 'team', 'board', 'committee', 'government', 'company', 'staff', 'customer',
+               'member', 'student', 'citizen', 'community', 'public', 'author', 'researcher', 'participant', 'employee'}
+
+def denominalize(sent, pieces):
+    doc = sent.doc
+    for token in sent:
+        verb = NOMINALIZATIONS.get(token.lower_)
+        if verb is None or token.tag_ != 'NN' or token.i < 1 or token.i + 2 >= sent.end:
+            continue
+        det, of = doc[token.i - 1], doc[token.i + 1]
+        if det.lower_ != 'the' or det.head != token or of.lower_ != 'of' or of.head != token:
+            continue
+        if any(c.dep_ not in ('det', 'prep') for c in token.children) or token.right_edge != of.right_edge:
+            continue    # "the rapid integration of", "the integration of X with Y"
+        thing = next((c for c in of.children if c.dep_ == 'pobj'), None)
+        if thing is None or thing.ent_type_ in ('PERSON', 'ORG', 'NORP') or thing.lemma_.lower() in GROUP_NOUNS or thing.pos_ == 'PRON':
+            continue    # "the education of children" is fine; "the approval of the board" has the board as the doer
+        role = token.dep_
+        if not (role in ('nsubj', 'nsubjpass')
+                or (role == 'pobj' and token.head.lower_ in GERUND_PREPOSITIONS)
+                or (role == 'dobj' and token.head.lemma_.lower() in GERUND_VERBS)):
+            continue
+        forms = getInflection(verb, tag='VBG')
+        if not forms:
+            continue
+        new = [list(p) for p in pieces]
+        for piece in new:
+            if piece[0] in (det.i, of.i):
+                piece[1] = ''
+            elif piece[0] == token.i:
+                piece[1] = forms[0][0].upper() + forms[0][1:] if det.i == sent.start else forms[0]
+        return new
+    return None
+
+# --- "Fortunately, there are many tools that can help." -> "Fortunately, many tools can help." ---
+
+def existential_to_direct(sent, pieces):
+    doc, root, stop = sent.doc, sent.root, sent[-1].i
+    if root.lemma_ != 'be' or any(c.dep_ == 'neg' for c in root.children):
+        return None
+    there = next((c for c in root.children if c.dep_ == 'expl' and c.lower_ == 'there'), None)
+    thing = next((c for c in root.children if c.dep_ == 'attr' and c.i > root.i), None)
+    if there is None or thing is None or there.i + 1 != root.i or root.i + 1 != thing.left_edge.i:
+        return None
+    clause = next((t for t in thing.subtree if t.dep_ == 'relcl'), None)
+    if clause is None or clause.right_edge.i != stop - 1:
+        return None
+    relative = clause.left_edge
+    if relative.lower_ not in ('that', 'who', 'which') or relative.dep_ not in ('nsubj', 'nsubjpass'):
+        return None
+    prefix = leading_signpost(sent, there.i)
+    if prefix is None:
+        return None
+    head = take(pieces, prefix.start, prefix.end - 1) if len(prefix) else []
+    noun_phrase = take(pieces, thing.left_edge.i, relative.i - 1)
+    if head:
+        lowercase_first(noun_phrase, doc)
+    else:
+        capitalize_first(noun_phrase)
+    return head + noun_phrase + take(pieces, relative.i + 1, stop - 1) + take(pieces, stop, stop)
+
+# --- "It's important to choose a policy." -> "Choosing a policy is important." ---
+
+EVALUATIVE_ADJECTIVES = {'important', 'essential', 'crucial', 'necessary', 'vital', 'helpful', 'useful', 'wise', 'easy',
+                         'hard', 'difficult', 'possible', 'impossible', 'common', 'smart', 'critical', 'beneficial',
+                         'worthwhile', 'advisable', 'best', 'better', 'good', 'key'}
+
+def extraposed_to_gerund(sent, pieces):
+    doc, root, stop = sent.doc, sent.root, sent[-1].i
+    if root.lemma_ != 'be' or any(c.dep_ in ('neg', 'aux') for c in root.children):
+        return None
+    it = next((c for c in root.children if c.dep_ in ('nsubj', 'expl') and c.lower_ == 'it'), None)
+    adjective = next((c for c in root.children if c.dep_ == 'acomp' and c.lower_ in EVALUATIVE_ADJECTIVES), None)
+    if it is None or adjective is None or it.i + 1 != root.i or adjective.left_edge.i != root.i + 1:
+        return None
+    action = next((c for c in list(adjective.children) + list(root.children) if c.dep_ == 'xcomp' and c.tag_ == 'VB'), None)
+    if action is None or doc[action.i - 1].lower_ != 'to' or action.i - 1 != adjective.i + 1 or action.right_edge.i != stop - 1:
+        return None
+    prefix = leading_signpost(sent, it.i)
+    if prefix is None:
+        return None
+    current = next((p[1] for p in pieces if p[0] == action.i), action.text)
+    gerund = inflect(current.lower(), 'VBG')
+    if not gerund:
+        return None
+    verb = 'was' if root.lower_ == 'was' else 'is'
+    head = take(pieces, prefix.start, prefix.end - 1) if len(prefix) else []
+    subject = [[action.i, gerund]] + take(pieces, action.i + 1, stop - 1)
+    if head:
+        lowercase_first(subject, doc)
+    else:
+        capitalize_first(subject)
+    return (head + subject + [[None, verb]] + take(pieces, adjective.left_edge.i, adjective.i)
+            + take(pieces, stop, stop))
+
 # Chance of changing a sentence's structure, by tone (Academic keeps more of its passive voice)
-PASSIVE_RATE = {'standard': 0.6, 'casual': 0.8, 'professional': 0.5, 'academic': 0.15}
-MOVE_RATE = {'standard': 0.3, 'casual': 0.35, 'professional': 0.2, 'academic': 0.2}
-CHAOS_STRUCTURE_BOOST = 0.2
+PASSIVE_RATE = {'standard': 0.7, 'casual': 0.85, 'professional': 0.55, 'academic': 0.2}
+MOVE_RATE = {'standard': 0.4, 'casual': 0.45, 'professional': 0.3, 'academic': 0.25}
+# The constructions AI text is known for are rewritten more often than plain reordering
+SIGNATURE_RATE = {'standard': 0.8, 'casual': 0.9, 'professional': 0.6, 'academic': 0.4}
+CHAOS_STRUCTURE_BOOST = 0.3
 
 def restructure(sent, pieces, tone, deep_mode, after_move):
     boost = CHAOS_STRUCTURE_BOOST if deep_mode else 0.0
+    if random.random() < SIGNATURE_RATE[tone] + boost:
+        new = existential_to_direct(sent, pieces) or extraposed_to_gerund(sent, pieces)
+        if new:
+            return new
     if random.random() < PASSIVE_RATE[tone] + boost:
         new = passive_to_active(sent, pieces)
         if new:
@@ -967,9 +1084,9 @@ def split_sentence(sentence, point, tone):
 # lengths (standard deviation / mean) is pushed toward a human-like level by splitting long
 # sentences at safe points and joining short neighbours.
 
-RHYTHM_TARGET = {'standard': 0.5, 'casual': 0.55, 'professional': 0.4, 'academic': 0.4}
-RHYTHM_OPS = {'standard': 0.35, 'casual': 0.45, 'professional': 0.25, 'academic': 0.25}   # changes per sentence
-CHAOS_RHYTHM_TARGET, CHAOS_RHYTHM_OPS = 0.6, 0.6
+RHYTHM_TARGET = {'standard': 0.55, 'casual': 0.6, 'professional': 0.45, 'academic': 0.45}
+RHYTHM_OPS = {'standard': 0.45, 'casual': 0.5, 'professional': 0.3, 'academic': 0.3}   # changes per sentence
+CHAOS_RHYTHM_TARGET, CHAOS_RHYTHM_OPS = 0.65, 0.7
 MERGE_MAX_WORDS = 14
 
 # Openers that become the joining word when two sentences merge ("X. However, Y." -> "X, but Y.")
@@ -993,6 +1110,12 @@ def merge_sentences(a, b, tone):
     right = [list(p) for p in b.pieces]
     conjunction = 'and'
     head = first_piece(right)
+    # "We added caching. This cut latency." -> "We added caching, which cut latency."
+    if head and head[0] is not None and head[1].lower() in ('this', 'that'):
+        token = a.doc[head[0]]
+        following = a.doc[token.i + 1] if token.i + 1 < len(a.doc) else None
+        if token.dep_ == 'nsubj' and following is not None and following.pos_ in ('VERB', 'AUX'):
+            return Sentence(left + [[None, ','], [None, 'which']] + right[right.index(head) + 1:], a.doc)
     opener = head[1].lower().rstrip(',') if head else ''
     if opener in JOINING_OPENERS:
         conjunction = JOINING_OPENERS[opener]
@@ -1086,6 +1209,9 @@ def rewrite_block(doc, tone, deep_mode, prose):
             continue
         sentence = Sentence(pieces, doc, sent)
         if restructurable(sent):
+            if random.random() < NOMINAL_RATE[tone] + (CHAOS_STRUCTURE_BOOST if deep_mode else 0.0):
+                pieces = denominalize(sent, pieces) or pieces
+                sentence.pieces = pieces
             new = restructure(sent, pieces, tone, deep_mode, after_move=bool(sentences and sentences[-1].reordered))
             if new:
                 sentence.pieces, sentence.reordered = new, True

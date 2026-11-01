@@ -15,13 +15,14 @@ Razorpay, priced by region so it stays affordable everywhere.
 
 **Rewriting engine** (rule-based, no external AI service)
 - Six layers: stock AI phrases and transitions; contractions by tone; word choice; sentence
-  structure (passive to active, moving adverbial phrases and clauses, "allow you to" → "with X, you
-  can"); rhythm (splitting and joining sentences so their lengths vary like human writing, with
+  structure (passive to active, "the integration of X" → "integrating X", "there are X that" → "X",
+  "it is important to do X" → "doing X is important", moving adverbial phrases and clauses); rhythm (splitting and joining sentences so their lengths vary like human writing, with
   varied openings); punctuation.
 - spaCy (`en_core_web_sm`) for tags, entities and the dependency parse; lemminflect for word forms.
 - Data built offline with NLTK: a WordNet synonym table that keeps only senses both words are
   mainly used in (SemCor counts, `scripts/build_synonyms.py`), and Brown corpus word pairs that
-  check a synonym fits its neighbours (`scripts/build_collocations.py`). Together about 10 MB in
+  check a synonym fits its neighbours (`scripts/build_collocations.py`), plus action nouns and
+  their verbs (`scripts/build_nominalizations.py`). Together about 10 MB in
   memory, so the app fits Render's 512 MB free tier.
 - Names, numbers, dates, acronyms, quotes and citations are never changed; headings and list items
   only get word-level edits.
@@ -74,8 +75,8 @@ mailer.py            Transactional email over SMTP
 db.py                SQLite / PostgreSQL access layer
 templates/           Pages, partials and email templates
 static/              CSS, JavaScript and images
-data/                Synonym table, word-pair table, WordNet licence (GeoIP is downloaded at build time)
-scripts/             build_synonyms.py, build_collocations.py, fetch_geoip.py
+data/                Synonym, word-pair and action-noun tables, WordNet licence (GeoIP is downloaded at build)
+scripts/             build_synonyms.py, build_collocations.py, build_nominalizations.py, fetch_geoip.py
 .github/workflows/   Daily job that sends plan-expiry reminders
 render.yaml          Render Blueprint
 gunicorn.conf.py     Server settings tuned for small instances
