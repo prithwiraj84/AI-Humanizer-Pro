@@ -10,6 +10,8 @@ Razorpay, priced by region so it stays affordable everywhere.
 
 **Editor**
 - Four tones: standard, professional, casual and academic, plus Chaos Mode for a deeper rewrite.
+- Deep Rewrite (beta, optional): a small paraphrasing model on the server rewords whole sentences
+  before the rule-based layers run. Offered only when the model is installed.
 - A change map: new words in red, moved words (restructured sentences) underlined in yellow, and the
   longest unchanged run in blue, with counts of changed and moved words and restructured sentences.
 - The six most recent results are kept in the browser's local storage (never on the server).
@@ -27,6 +29,12 @@ Razorpay, priced by region so it stays affordable everywhere.
   memory, so the app fits Render's 512 MB free tier.
 - Names, numbers, dates, acronyms, quotes and citations are never changed; headings and list items
   only get word-level edits.
+- Deep Rewrite runs a T5 paraphraser in 8-bit with CTranslate2 (`paraphraser.py`). It samples three
+  rewrites per sentence and drops any that loses a name, number or date, invents a name or word,
+  adds punctuation, changes the length too much or loses the topic's nouns. Of the rest, it keeps
+  the one the model can most readily paraphrase back into the original (a round-trip check that
+  catches changed meaning). Sentences it rewrites then only get the curated word swaps; the others
+  go through all the layers. It needs about 250 MB more memory and roughly 7 ms per character.
 - Text is processed in memory and never stored or logged.
 
 **Developer API**
@@ -59,7 +67,7 @@ Razorpay, priced by region so it stays affordable everywhere.
 | Area | Used |
 |---|---|
 | Web | Python 3.11, Flask 3, Jinja templates, plain CSS and JavaScript, gunicorn |
-| NLP | spaCy 3.8, lemminflect; NLTK only for building the synonym table |
+| NLP | spaCy 3.8, lemminflect; NLTK only for building the synonym table; CTranslate2 and sentencepiece for Deep Rewrite |
 | Data | SQLite locally, PostgreSQL in production (psycopg 3 with a connection pool) |
 | Payments | Razorpay Orders, Subscriptions and Refunds over its REST API |
 | Other | Authlib (OAuth), fpdf2 (invoice PDFs), DB-IP country database (regional pricing), Cloudflare Turnstile |
@@ -69,6 +77,7 @@ Razorpay, priced by region so it stays affordable everywhere.
 ```
 app.py               Routes, auth, API endpoints, security headers, database schema
 humanizer.py         Rewriting engine and diff metrics
+paraphraser.py       Deep Rewrite model runner (optional)
 billing.py           Plans, prices, credits, coupons, referrals, Razorpay orders and subscriptions
 invoices.py          GST calculation, invoice numbering and PDF rendering
 admin.py             Admin panel (Flask blueprint)
@@ -76,11 +85,14 @@ mailer.py            Transactional email over SMTP
 db.py                SQLite / PostgreSQL access layer
 templates/           Pages, partials and email templates
 static/              CSS, JavaScript and images
-data/                Synonym, word-pair and action-noun tables, WordNet licence (GeoIP is downloaded at build)
-scripts/             build_synonyms.py, build_collocations.py, build_nominalizations.py, fetch_geoip.py
+data/                Synonym, word-pair and action-noun tables, WordNet licence (GeoIP and the
+                     Deep Rewrite model are downloaded or uploaded separately)
+scripts/             build_synonyms.py, build_collocations.py, build_nominalizations.py, fetch_geoip.py,
+                     build_paraphraser.py, fetch_paraphraser.py
 .github/workflows/   Daily job that sends plan-expiry reminders
-render.yaml          Render Blueprint
+start.py             Production start file for panels that run a Python file (Botkeep, Pterodactyl)
 gunicorn.conf.py     Server settings tuned for small instances
+render.yaml          Render Blueprint
 ```
 
 ## Run it locally
@@ -136,6 +148,53 @@ production. Leaving an optional value empty turns that feature off.
 | `BUSINESS_GSTIN` | Your GSTIN for tax invoices. Empty: plain receipts. |
 | `GST_SAC_CODE`, `INVOICE_PREFIX`, `GST_LUT_ARN` | Optional invoice details (SAC code, number prefix, LUT for exports). |
 | `GEO_DEFAULT_COUNTRY` | Country used for pricing when the visitor's location is unknown. |
+| `SECURE_COOKIES` | `1` on any HTTPS site (automatic on Render) so login cookies are only sent over HTTPS. |
+| `TRUST_PROXY` | `1` when a proxy such as Cloudflare sits in front (automatic on Render), so the app sees the visitor's IP and HTTPS. |
+| `PARAPHRASER_URL` | Address of `paraphraser.zip`; `start.py` downloads the Deep Rewrite model from it on first start. |
+| `DEEP_REWRITE_MAX_CHARS` | Longest text Deep Rewrite accepts (default 2,500 characters). |
+| `PARAPHRASER_THREADS` | CPU threads for the model (default 2). |
+| `GUNICORN_TIMEOUT` | Seconds before a request is cut off (default 120; Deep Rewrite needs a long one). |
+
+## Deploy on Botkeep (or another Pterodactyl panel)
+
+Botkeep's servers run a Python file from a panel. One slot with 2 GB of RAM fits the app with Deep
+Rewrite (about 470 MB in use), and the packages and model take under 1 GB of the 2 GB disk.
+
+1. **Create a Python server** (Python 3.11 if you can choose) with most of the slot's RAM.
+2. **Get the code on it:** if the panel asks for a Git repository, give it this repo's URL and the
+   `main` branch; otherwise upload a zip of the project without `.env`, `venv` and `humanizer.db`.
+3. **Startup settings:** set the startup file to `start.py` and the requirements file to
+   `requirements.txt`. The panel installs the packages on start; `start.py` downloads the country
+   database, then starts gunicorn on the port the panel assigns (`SERVER_PORT`).
+4. **Settings:** create a `.env` file in the server's file manager with the same values you used on
+   Render (keep the same `DATABASE_URL`, so nothing needs migrating), plus `SITE_URL` set to the new
+   address, `SECURE_COOKIES=1` and `TRUST_PROXY=1`.
+5. **HTTPS and a domain:** sign-in, payments and secure cookies need `https://`. If the panel gives
+   only an IP and port, put your domain on Cloudflare: a proxied DNS record pointing to the IP, and an
+   Origin Rule that sends that hostname's traffic to your port. A Cloudflare Tunnel also works.
+6. **Deep Rewrite (optional):** upload the `data/paraphraser/` folder built by
+   `scripts/build_paraphraser.py` (see below) through the file manager or SFTP, or host
+   `paraphraser.zip` somewhere and add `PARAPHRASER_URL` to `.env`. Restart; the log says
+   `Deep Rewrite: available`.
+7. **Point outside services at the new address:** Google and GitHub sign-in callback URLs, the
+   Razorpay webhook, the Turnstile hostname and the `SITE_URL` secret in GitHub Actions. Then test
+   sign-in, the editor and a payment before switching the old host off.
+
+### Building the Deep Rewrite model
+
+The server only needs the converted model; converting it needs PyTorch, so do it once on your own
+computer (a few GB of free disk):
+
+```bash
+pip install torch --index-url https://download.pytorch.org/whl/cpu
+pip install "transformers<5" ctranslate2 sentencepiece
+python scripts/build_paraphraser.py --zip   # writes data/paraphraser/ (~225 MB) and data/paraphraser.zip
+```
+
+Both are git-ignored. The model is
+[humarin/chatgpt_paraphraser_on_T5_base](https://huggingface.co/humarin/chatgpt_paraphraser_on_T5_base),
+licensed under OpenRAIL: its use restrictions apply to anyone who runs or shares it, and
+`MODEL_LICENSE.txt` in the folder points to them.
 
 ## Deploy on Render
 
@@ -149,7 +208,8 @@ production. Leaving an optional value empty turns that feature off.
    (Settings → Secrets and variables → Actions). The workflow runs daily at 09:00 IST.
 
 The image build installs the spaCy model and downloads the DB-IP country database. Memory use stays
-around 200 MB, within the free tier's 512 MB. The same image runs on any Docker host:
+around 200 MB, within the free tier's 512 MB; that leaves no room for Deep Rewrite, so it stays off
+there. The same image runs on any Docker host:
 
 ```bash
 docker build -t ai-humanizer .
@@ -183,5 +243,6 @@ with error codes and examples in several languages, is at `/docs` on the running
 
 - Synonym data derived from [WordNet](https://wordnet.princeton.edu/) (licence in `data/WORDNET_LICENSE.txt`).
 - IP to country data by [DB-IP](https://db-ip.com), licensed under CC BY 4.0.
+- Deep Rewrite model: [humarin/chatgpt_paraphraser_on_T5_base](https://huggingface.co/humarin/chatgpt_paraphraser_on_T5_base) (OpenRAIL).
 
 Developed by Prithwiraj Das.

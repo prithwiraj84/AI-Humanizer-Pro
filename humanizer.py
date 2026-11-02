@@ -33,6 +33,8 @@ import re
 import threading
 from collections import Counter
 
+import paraphraser
+
 logger = logging.getLogger(__name__)
 
 TONES = ('standard', 'professional', 'casual', 'academic')
@@ -59,7 +61,7 @@ with gzip.open(os.path.join(DATA_DIR, 'nominalizations.json.gz'), 'rt', encoding
 # --- SPACY (optional at runtime) ---
 try:
     import spacy
-    from lemminflect import getInflection
+    from lemminflect import getAllLemmas, getInflection
     NLP = spacy.load('en_core_web_sm')
     NLP('Warm up the pipeline.')
     getInflection('warm', tag='VBZ')  # loads lemminflect's tables before request threads use them
@@ -613,14 +615,17 @@ def fixed_frame(token):
     with a to-infinitive ("struggle to manage" is not "fight to manage")."""
     return takes_preposition(token) or (token.pos_ == 'VERB' and any(c.dep_ == 'xcomp' for c in token.children))
 
-def plan_word_edits(doc, tone, deep_mode):
-    """Layer 3: token index -> replacement text, for curated and WordNet swaps."""
+def plan_word_edits(doc, tone, deep_mode, from_model=frozenset()):
+    """Layer 3: token index -> replacement text, for curated and WordNet swaps. Sentences Deep Rewrite
+    wrote (their start indices in `from_model`) only get the swaps for overused AI words: the model
+    has already chosen their wording."""
     rate = CHAOS_WORD_RATE if deep_mode else WORD_RATE[tone]
     floor = CHAOS_FLOOR if deep_mode else SYNONYM_FLOOR[tone]
     plain_chance = 1.0 if deep_mode and tone != 'academic' else PLAIN_CHANCE[tone]
     edits = {}
     for sent in doc.sents:
         avoid = {t.lower_ for t in sent} | {t.lemma_.lower() for t in sent}
+        model_wrote = sent.start in from_model
         for token in sent:
             if not can_rewrite(token):
                 continue
@@ -629,6 +634,8 @@ def plan_word_edits(doc, tone, deep_mode):
             word = None
             if key in AI_WORDS and curated_fits(token, key):
                 replacement = pick(AI_WORDS[key], tone)
+            elif model_wrote:
+                continue
             elif (key in PLAIN_WORDS and curated_fits(token, key) and random.random() < plain_chance
                   and not (tone == 'academic' and key in ACADEMIC_KEEPS)):
                 replacement = random.choice(PLAIN_WORDS[key])
@@ -1376,8 +1383,15 @@ def is_prose(block):
     """Running text, as opposed to a heading or list item (those only get word-level edits)."""
     return not BULLET.match(block) and bool(PROSE_END.search(block)) and len(block.split()) >= 6
 
-def rewrite_block(doc, tone, deep_mode, prose):
-    edits = plan_word_edits(doc, tone, deep_mode)
+def written_by_model(sent, model_written):
+    """True if Deep Rewrite wrote this sentence (allowing for the small edits the phrase rules made since)."""
+    words = [w.lower() for w in plain_words(sent.text)]
+    return any(abs(len(words) - len(w)) <= 4 and difflib.SequenceMatcher(None, words, w, autojunk=False).ratio() >= 0.75
+               for w in model_written)
+
+def rewrite_block(doc, tone, deep_mode, prose, model_written=()):
+    model_starts = {sent.start for sent in doc.sents if model_written and written_by_model(sent, model_written)}
+    edits = plan_word_edits(doc, tone, deep_mode, model_starts)
     if not prose:
         return ''.join(edits.get(t.i, t.text) + t.whitespace_ for t in doc)
     sentences = []
@@ -1386,8 +1400,12 @@ def rewrite_block(doc, tone, deep_mode, prose):
         if not pieces:
             continue
         sentence = Sentence(pieces, doc, sent)
+        from_model = sent.start in model_starts
         boost = CHAOS_STRUCTURE_BOOST if deep_mode else 0.0
-        if restructurable(sent):
+        if from_model:
+            # Deep Rewrite already restructured it; moving its phrases again risks the meaning
+            sentence.reordered = True
+        elif restructurable(sent):
             if random.random() < NOMINAL_RATE[tone] + boost:
                 pieces = denominalize(sent, pieces) or pieces
             if random.random() < LIST_RATE[tone] + boost:
@@ -1396,16 +1414,16 @@ def rewrite_block(doc, tone, deep_mode, prose):
             new = restructure(sent, pieces, tone, deep_mode, after_move=bool(sentences and sentences[-1].reordered))
             if new:
                 sentence.pieces, sentence.reordered = new, True
-        if untouched(sentence.pieces, doc) and sentence.words() >= COVERAGE_MIN_WORDS:
+        if not from_model and untouched(sentence.pieces, doc) and sentence.words() >= COVERAGE_MIN_WORDS:
             ensure_change(sentence, tone, deep_mode)
-        if restructurable(sent) and not sentence.reordered:
+        if restructurable(sent) and (from_model or not sentence.reordered):
             sentence.splits = split_points(sent, sentence.pieces)
         sentences.append(sentence)
     sentences = vary_rhythm(sentences, tone, deep_mode)
     vary_openings(sentences)
     return ' '.join(soften_dashes(s.text(), tone) for s in sentences)
 
-def rewrite_with_spacy(text, tone, deep_mode):
+def rewrite_with_spacy(text, tone, deep_mode, model_written=()):
     parts = LINE_BREAKS.split(text)      # paragraphs and lines at even positions, the breaks between them at odd ones
     jobs = []
     for k in range(0, len(parts), 2):
@@ -1416,7 +1434,7 @@ def rewrite_with_spacy(text, tone, deep_mode):
     with _NLP_LOCK:
         docs = list(NLP.pipe([core for _, _, core, _ in jobs]))
     for (k, lead, core, trail), doc in zip(jobs, docs):
-        parts[k] = lead + tidy(rewrite_block(doc, tone, deep_mode, is_prose(core))) + trail
+        parts[k] = lead + tidy(rewrite_block(doc, tone, deep_mode, is_prose(core), model_written)) + trail
     return ''.join(parts)
 
 # A word with optional surrounding punctuation, e.g. '"Hello,' -> ('"', 'Hello', ',')
@@ -1461,14 +1479,143 @@ def rewrite_basic(text, tone, deep_mode):
     return ''.join(tokens)
 
 # ==========================================
+#   DEEP REWRITE (OPTIONAL PARAPHRASING MODEL)
+# ==========================================
+# A small local model rewrites whole sentences (see paraphraser.py); the rule-based layers then run
+# on its output, with word-level edits only for the sentences it wrote. Every model rewrite is
+# checked, and a sentence keeps its original wording unless one of the model's attempts passes all
+# the checks.
+
+NUMBER_ENTITIES = {'DATE', 'TIME', 'MONEY', 'PERCENT', 'QUANTITY', 'CARDINAL', 'ORDINAL'}
+DEEP_MIN_WORDS = 5
+
+def deep_rewrite_available():
+    return NLP is not None and paraphraser.available()
+
+def plain_words(text):
+    return re.findall(r"[\w'’-]+", text)
+
+NOUN_RETENTION = 0.6    # share of the sentence's nouns a rewrite must keep (the topic)
+LENGTH_RANGE = (0.7, 1.4)    # rewrite length / original length; longer ones tend to add details
+# Words of four letters or more, leaving out the "isn" of "isn't"
+LONG_WORDS = re.compile(r"(?<!['’])\b[a-z]{4,}\b(?!['’]t\b)")
+
+def odd_marks(text):
+    """Punctuation beyond commas, full stops, apostrophes and hyphens, including "--" and "..."."""
+    marks = {c for c in text if not (c.isalnum() or c.isspace() or c in ",.'’-")}
+    return marks | {seq for seq in ('--', '..') if seq in text}
+
+def paraphrase_score(sent, candidate):
+    """How good `candidate` is as a rewrite of the sentence, or None if it isn't safe. It must keep
+    every name, number, date and acronym, add none, keep most of the nouns, stay a similar length,
+    use only real words and no new punctuation, and not repeat itself. Safe rewrites score by how
+    much they change, balanced against how much of the topic they keep, since the most changed
+    rewrite is often the one that drifted."""
+    source, new = plain_words(sent.text), plain_words(candidate)
+    if not source or not new or not LENGTH_RANGE[0] <= len(new) / len(source) <= LENGTH_RANGE[1]:
+        return None
+    lower_source, lower_new = [w.lower() for w in source], [w.lower() for w in new]
+    if lower_new == lower_source or not odd_marks(candidate) <= odd_marks(sent.text):
+        return None
+    # lemminflect knows content words; spaCy's stop words cover the rest ("than", "upon")
+    source_words = set(LONG_WORDS.findall(sent.text.lower()))
+    stems = {w[:5] for w in source_words if len(w) >= 5}
+    if any(not getAllLemmas(w) and w not in NLP.Defaults.stop_words and w[:5] not in stems
+           for w in set(LONG_WORDS.findall(candidate.lower())) - source_words):
+        return None     # a misspelt or made-up word ("marchs")
+    # Names whole; of dates, amounts and the like, the numbers and month or day names ("on this day"
+    # may become "on this particular day", but "15th August" must stay)
+    protected = ([e.text for e in sent.ents if e.label_ in NAME_ENTITIES]
+                 + [t.text for t in sent if t.like_num or any(c.isdigit() for c in t.text)
+                    or (t.ent_type_ in NUMBER_ENTITIES and t.pos_ == 'PROPN')
+                    or (t.is_upper and t.is_alpha and len(t.text) > 1)])
+    if any(p not in candidate for p in protected):
+        return None
+    if not set(re.findall(r'\d+', candidate)) <= set(re.findall(r'\d+', sent.text)):
+        return None
+    known = set(lower_source)
+    if any(w[0].isupper() and w.lower() not in known and w != 'I' for w in new[1:]):
+        return None     # an invented name
+    if not {w for w in source[1:] if w[0].isupper() and w != 'I'} <= set(new):
+        return None     # a dropped name or title ("Prime Minister" isn't an entity)
+    nouns = {t.lemma_.lower() for t in sent if t.pos_ == 'NOUN' and t.is_alpha}
+    present = set(re.findall(r'[a-z]+', candidate.lower()))    # "time-to-live" counts as "time"
+    retention = (sum(1 for n in nouns if n in present or set(getInflection(n, tag='NNS') or ()) & present) / len(nouns)
+                 if nouns else 1.0)
+    if len(nouns) >= 2 and retention < NOUN_RETENTION:
+        return None     # drifted off topic
+    trigrams = [tuple(lower_new[i:i + 3]) for i in range(len(lower_new) - 2)]
+    if len(trigrams) != len(set(trigrams)):
+        return None
+    change = 1 - difflib.SequenceMatcher(None, lower_source, lower_new, autojunk=False).ratio()
+    return 0.6 * change + 0.4 * retention
+
+def finish_sentence(candidate, original):
+    text = candidate.strip()
+    text = text[0].upper() + text[1:]
+    if text[-1] not in '.!?':
+        text += original.strip()[-1] if original.strip()[-1] in '.!?' else '.'
+    return text
+
+# The round trip: how readily the model paraphrases a rewrite back into the original, measured against
+# how readily it reproduces the original from the original itself. A rewrite that shifted the meaning,
+# dropped a detail or added one falls well short, even when it passes every check above.
+FIDELITY_DROP = 0.5     # the most a usable rewrite may fall short (average log-probability per token)
+FIDELITY_MARGIN = 0.15  # rewrites this close to the most faithful one count as equally faithful
+
+def deep_paraphrase(text):
+    """Replace each sentence of running text with the model's most faithful safe rewrite. Returns the
+    new text and the sentences the model wrote, as word lists, so the later layers can recognise them."""
+    parts = LINE_BREAKS.split(text)
+    blocks = [k for k in range(0, len(parts), 2) if parts[k].strip() and is_prose(parts[k].strip())]
+    if not blocks:
+        return text, []
+    with _NLP_LOCK:
+        docs = list(NLP.pipe([parts[k].strip() for k in blocks]))
+    eligible = [sent for doc in docs for sent in doc.sents
+                if len(plain_words(sent.text)) >= DEEP_MIN_WORDS and sent.text.strip()[-1:] in '.!?'
+                and not set(sent.text) & set('"“”()[]:')]
+    sources = [sent.text.strip() for sent in eligible]
+    safe = []       # (sentence number, rewrite, change score) for every rewrite that passes the checks
+    for n, options in enumerate(paraphraser.generate(sources)):
+        for candidate in dict.fromkeys(o for o in options if o):
+            score = paraphrase_score(eligible[n], candidate)
+            if score is not None:
+                safe.append((n, candidate, score))
+    if not safe:
+        return text, []
+    numbers = sorted({n for n, _, _ in safe})
+    scores = paraphraser.fidelity([(c, sources[n]) for n, c, _ in safe] + [(sources[n], sources[n]) for n in numbers])
+    baseline = dict(zip(numbers, scores[len(safe):]))
+    faithful = {}
+    for (n, candidate, change), fidelity in zip(safe, scores):
+        if fidelity >= baseline[n] - FIDELITY_DROP:
+            faithful.setdefault(n, []).append((fidelity, change, candidate))
+    chosen, written = {}, []
+    for n, options in faithful.items():
+        best = max(fidelity for fidelity, _, _ in options)
+        candidate = max((o for o in options if o[0] >= best - FIDELITY_MARGIN), key=lambda o: o[1])[2]
+        sent = eligible[n]
+        chosen[(id(sent.doc), sent.start)] = finish_sentence(candidate, sent.text)
+        written += [[w.lower() for w in plain_words(s)] for s in re.split(r'(?<=[.!?])\s+', candidate)]
+    for k, doc in zip(blocks, docs):
+        rebuilt = ''.join(chosen.get((id(doc), sent.start), sent.text) + sent[-1].whitespace_ for sent in doc.sents)
+        block = parts[k]
+        parts[k] = block[:len(block) - len(block.lstrip())] + rebuilt.rstrip() + block[len(block.rstrip()):]
+    return ''.join(parts), written
+
+# ==========================================
 #   ENTRY POINTS
 # ==========================================
 
-def perform_nuclear_chaos(text, tone, deep_mode):
+def perform_nuclear_chaos(text, tone, deep_mode, deep_rewrite=False):
+    model_written = []
+    if deep_rewrite and deep_rewrite_available():
+        text, model_written = deep_paraphrase(text)
     text = apply_phrase_rules(text, tone)
     text = apply_tone_contractions(text, tone)
     if NLP is not None:
-        return rewrite_with_spacy(text, tone, deep_mode)
+        return rewrite_with_spacy(text, tone, deep_mode, model_written)
     return rewrite_basic(text, tone, deep_mode)
 
 def comparable(word):

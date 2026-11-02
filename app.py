@@ -28,6 +28,7 @@ import invoices
 import mailer
 import admin
 import humanizer
+import paraphraser
 from humanizer import TONES, perform_nuclear_chaos, calculate_diff_metrics
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -63,7 +64,8 @@ app.template_folder = 'templates'
 # 4. Request Size & Cookies: Reject oversized bodies, keep the session cookie same-site
 app.config['MAX_CONTENT_LENGTH'] = 1024 * 1024
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
-app.config['SESSION_COOKIE_SECURE'] = ON_RENDER
+# Secure cookies need HTTPS: on by default on Render; set SECURE_COOKIES=1 on any other HTTPS host (e.g. Botkeep)
+app.config['SESSION_COOKIE_SECURE'] = os.environ.get("SECURE_COOKIES", "1" if ON_RENDER else "0") == "1"
 
 # 5. Static files are fingerprinted (?v=hash), so browsers may cache them for a year
 app.config['SEND_FILE_MAX_AGE_DEFAULT'] = timedelta(days=365)
@@ -114,6 +116,7 @@ RATE_LIMITS = {
     'send_otp': (5, 3600),
     'reset_password': (20, 3600),
     'humanize': (30, 60),
+    'deep_rewrite': (10, 60),
     'billing': (20, 3600),
     'coupon': (30, 3600),
     'verify_email': (5, 3600),
@@ -405,6 +408,8 @@ def init_db():
 # Initialize DB on startup
 init_db()
 logger.info('Humanizer engine: %s', 'spaCy' if humanizer.NLP is not None else 'basic fallback (spaCy not installed)')
+logger.info('Deep Rewrite: %s', 'available' if humanizer.deep_rewrite_available() else 'not installed (no model in data/paraphraser)')
+paraphraser.preload()
 
 # --- HELPER FUNCTIONS ---
 utcnow = db.utcnow   # naive UTC, matching how the database stores timestamps
@@ -735,6 +740,8 @@ def template_globals():
         'jurisdiction_city': JURISDICTION_CITY,
         'api_trial_requests': billing.trial_requests(),
         'api_plans': billing.PLANS,
+        'deep_rewrite_available': humanizer.deep_rewrite_available(),
+        'deep_rewrite_max_chars': paraphraser.MAX_CHARS,
         'current_year': utcnow().year,
     }
 
@@ -1727,6 +1734,7 @@ def humanize():
     text = data.get('text', '')
     tone = data.get('tone', 'standard')
     deep_mode = data.get('deep_mode', False)
+    deep_rewrite = data.get('deep_rewrite', False)
 
     if not isinstance(text, str) or not text.strip():
         return jsonify({"error": "No text provided"}), 400
@@ -1736,6 +1744,17 @@ def humanize():
         return jsonify({"error": f"Invalid tone. Use one of: {', '.join(TONES)}"}), 400
     if not isinstance(deep_mode, bool):
         return jsonify({"error": "deep_mode must be true or false"}), 400
+    if not isinstance(deep_rewrite, bool):
+        return jsonify({"error": "deep_rewrite must be true or false"}), 400
+    if deep_rewrite:
+        if not humanizer.deep_rewrite_available():
+            return jsonify({"error": "Deep Rewrite isn't available on this server"}), 400
+        if len(text) > paraphraser.MAX_CHARS:
+            return jsonify({"error": f"Deep Rewrite handles up to {paraphraser.MAX_CHARS:,} characters at a time"}), 400
+        # The model is far heavier than the rule-based layers, so it has its own, lower limit
+        retry_after = limiter.hit(f'deep_rewrite:{identity}', *RATE_LIMITS['deep_rewrite'])
+        if retry_after:
+            return too_many_requests(retry_after)
 
     # The REST API is paid: each valid API request uses one request from the account's plan
     # (then its top-up credits). The web editor (signed-in session, no API key) stays free.
@@ -1747,8 +1766,16 @@ def humanize():
         if charge.warn:
             send_quota_warning(api_user_id, charge.row)
 
+    if deep_rewrite and not paraphraser.reserve():
+        if charge:
+            billing.refund_request(api_user_id, charge)
+        response = jsonify({"error": "Deep Rewrite is busy with other texts. Please try again in a minute, or turn it off."})
+        response.status_code = 503
+        response.headers['Retry-After'] = '30'
+        return response
+
     try:
-        humanized_text = perform_nuclear_chaos(text, tone, deep_mode)
+        humanized_text = perform_nuclear_chaos(text, tone, deep_mode, deep_rewrite)
         metrics = calculate_diff_metrics(text, humanized_text)
 
         response_time = (time.perf_counter() - start_time) * 1000
@@ -1778,6 +1805,9 @@ def humanize():
             response_time = (time.perf_counter() - start_time) * 1000
             log_api_usage(api_key_id, '/humanize', 'error', response_time, type(e).__name__)
         return jsonify({"error": "Processing failed."}), 500
+    finally:
+        if deep_rewrite:
+            paraphraser.release()
 
 @app.route('/humanize/batch', methods=['POST'])
 def humanize_batch():
@@ -1797,6 +1827,8 @@ def humanize_batch():
     default_tone = data.get('tone', 'standard')
     default_deep = data.get('deep_mode', False)
     raw_items = data.get('items')
+    if data.get('deep_rewrite') or (isinstance(raw_items, list) and any(isinstance(i, dict) and i.get('deep_rewrite') for i in raw_items)):
+        return jsonify({"error": "Deep Rewrite isn't available for batch requests; send those texts to /humanize one at a time"}), 400
     if not isinstance(raw_items, list) or not raw_items:
         return jsonify({"error": 'Send "items": a list of texts, or of objects with "text" (and optional "tone", "deep_mode", "id")'}), 400
     if len(raw_items) > MAX_BATCH_ITEMS:

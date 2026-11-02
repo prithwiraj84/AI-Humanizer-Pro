@@ -61,6 +61,8 @@ PROTECTED_WORDS = {'cultural', 'ethnic', 'racial', 'religious', 'spiritual', 'na
 AWKWARD_PAIRS = {
     'organize': {'form'}, 'organise': {'form'}, 'implement': {'enforce'}, 'provide': {'render', 'furnish'},
     'demonstrate': {'present'}, 'render': {'provide', 'furnish'},
+    # "observe a holiday" is not "notice a holiday"; SemCor rarely tags that sense, so it isn't caught above
+    'observe': {'notice', 'find', 'detect', 'discover'},
 }
 # Very common nouns and verbs have many meanings ("improve their results" is not "...their effects"),
 # so words used at least this often in Brown are never swapped through WordNet

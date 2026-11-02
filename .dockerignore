@@ -10,3 +10,6 @@ venv/
 .venv/
 .vscode/
 .idea/
+# The Deep Rewrite model needs more memory than the Render free tier has (mount it and set PARAPHRASER_DIR elsewhere)
+data/paraphraser/
+data/paraphraser.zip

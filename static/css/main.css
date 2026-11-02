@@ -564,6 +564,20 @@ kbd {
     border-bottom: 1px solid var(--line);
 }
 .toolbar-group { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.toolbar-switches { display: flex; align-items: center; gap: 14px 24px; flex-wrap: wrap; }
+.beta-tag {
+    display: inline-block;
+    margin-left: 4px;
+    padding: 1px 6px;
+    border-radius: 999px;
+    background: var(--bg-subtle);
+    color: var(--ink-2);
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    vertical-align: 1px;
+}
 .toolbar-label { font-size: 12px; font-weight: 500; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3); }
 
 .editor-panes { display: grid; grid-template-columns: 1fr 1fr; }

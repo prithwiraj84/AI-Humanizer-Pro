@@ -31,17 +31,32 @@
                 </div>
             </div>
 
-            <label class="switch-field">
-                <span class="switch">
-                    <input type="checkbox" id="deepMode">
-                    <span class="switch-track"></span>
-                    <span class="switch-thumb"></span>
-                </span>
-                <span class="switch-text">
-                    <strong>Chaos Mode</strong>
-                    <small>Deeper rewrite, splits long sentences</small>
-                </span>
-            </label>
+            <div class="toolbar-switches">
+                {% if deep_rewrite_available %}
+                <label class="switch-field">
+                    <span class="switch">
+                        <input type="checkbox" id="deepRewrite">
+                        <span class="switch-track"></span>
+                        <span class="switch-thumb"></span>
+                    </span>
+                    <span class="switch-text">
+                        <strong>Deep Rewrite <span class="beta-tag">Beta</span></strong>
+                        <small>Rewords whole sentences · up to {{ '{:,}'.format(deep_rewrite_max_chars) }} characters</small>
+                    </span>
+                </label>
+                {% endif %}
+                <label class="switch-field">
+                    <span class="switch">
+                        <input type="checkbox" id="deepMode">
+                        <span class="switch-track"></span>
+                        <span class="switch-thumb"></span>
+                    </span>
+                    <span class="switch-text">
+                        <strong>Chaos Mode</strong>
+                        <small>Deeper rewrite, splits long sentences</small>
+                    </span>
+                </label>
+            </div>
         </div>
 
         <div class="editor-panes">
@@ -137,6 +152,10 @@
 {% block scripts %}
 <script>
     const MAX_CHARS = 20000;
+    // Deep Rewrite runs a model on the server's CPU, so it takes shorter texts (absent if it isn't installed)
+    const deepRewriteEl = document.getElementById('deepRewrite');
+    const DEEP_REWRITE_MAX_CHARS = {{ deep_rewrite_max_chars | tojson }};
+    const charLimit = () => deepRewriteEl && deepRewriteEl.checked ? DEEP_REWRITE_MAX_CHARS : MAX_CHARS;
     // Each account keeps its own history in this browser, so people sharing a device don't see each other's work
     const HISTORY_KEY = 'ai_humanizer_history:' + {{ session.get('user_id') | tojson }};
     try {
@@ -163,11 +182,12 @@
         const words = countWords(text);
         document.getElementById('inputWordCount').textContent = `${words.toLocaleString()} ${words === 1 ? 'word' : 'words'}`;
         const chars = document.getElementById('charCount');
-        chars.textContent = `${text.length.toLocaleString()} / ${MAX_CHARS.toLocaleString()}`;
-        chars.classList.toggle('is-over', text.length > MAX_CHARS);
+        chars.textContent = `${text.length.toLocaleString()} / ${charLimit().toLocaleString()}`;
+        chars.classList.toggle('is-over', text.length > charLimit());
     }
 
     inputEl.addEventListener('input', updateCounts);
+    if (deepRewriteEl) deepRewriteEl.addEventListener('change', updateCounts);
 
     function clearInput() {
         inputEl.value = '';
@@ -285,22 +305,28 @@
             inputEl.focus();
             return;
         }
-        if (input.length > MAX_CHARS) {
-            toast(`Text is too long. The limit is ${MAX_CHARS.toLocaleString()} characters.`, 'error');
+        const deepRewrite = Boolean(deepRewriteEl && deepRewriteEl.checked);
+        if (input.length > charLimit()) {
+            toast(deepRewrite
+                ? `Deep Rewrite takes up to ${DEEP_REWRITE_MAX_CHARS.toLocaleString()} characters at a time. Shorten the text or turn Deep Rewrite off.`
+                : `Text is too long. The limit is ${MAX_CHARS.toLocaleString()} characters.`, 'error');
             return;
         }
 
         const previousOutput = outputEl.innerHTML;
         actionBtn.disabled = true;
         actionBtn.innerHTML = '<span class="spinner"></span><span>Humanizing…</span>';
-        setStatus('working', 'Rewriting');
+        setStatus('working', deepRewrite ? 'Deep rewriting · may take a minute' : 'Rewriting');
         showSkeleton();
 
         try {
             const response = await fetch('/humanize', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ text: input, tone: getTone(), deep_mode: document.getElementById('deepMode').checked })
+                body: JSON.stringify({
+                    text: input, tone: getTone(), deep_mode: document.getElementById('deepMode').checked,
+                    deep_rewrite: deepRewrite
+                })
             });
             const data = await response.json().catch(() => ({}));
             if (!response.ok) throw new Error(data.error || 'Something went wrong. Please try again.');

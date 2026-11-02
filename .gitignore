@@ -4,3 +4,5 @@ __pycache__/
 data/geoip/
 venv/
 .venv/
+data/paraphraser/
+data/paraphraser.zip

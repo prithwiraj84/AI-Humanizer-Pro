@@ -158,6 +158,11 @@ X-Credits-Remaining: 2000</pre>
                                 <td>Chaos Mode: a deeper rewrite that swaps far more words and splits long compound sentences. Default: false.</td>
                                 <td><span class="req req-optional">Optional</span></td>
                             </tr>
+                            <tr>
+                                <td><span class="param">deep_rewrite</span><br><span class="type">boolean</span></td>
+                                <td>Deep Rewrite (beta): a paraphrasing model running on our server rewords whole sentences before the other layers run. A rewrite is used only if it keeps every name, number and date and still reads as the same sentence; otherwise that sentence keeps its wording. Slower (often 10 to 40 seconds, so allow a long client timeout), up to {{ '{:,}'.format(deep_rewrite_max_chars) }} characters, 10 requests a minute, and not available for batch requests. {% if not deep_rewrite_available %}Not installed on this server at the moment, so requests with it return 400. {% endif %}Default: false.</td>
+                                <td><span class="req req-optional">Optional</span></td>
+                            </tr>
                         </tbody>
                     </table>
                 </div>
@@ -247,7 +252,7 @@ X-Credits-Remaining: 2000</pre>
   ]
 }</pre>
             </div>
-            <p>A batch is checked as a whole before anything is charged: if any item is invalid, the response is a <code class="inline">400</code> naming the item (for example <span class="type">Item 3: text too long</span>) and nothing is used. Limits: 25 items and 50,000 characters per batch, each item up to 20,000 characters. Each item counts toward the per-key rate limit.</p>
+            <p>A batch is checked as a whole before anything is charged: if any item is invalid, the response is a <code class="inline">400</code> naming the item (for example <span class="type">Item 3: text too long</span>) and nothing is used. Limits: 25 items and 50,000 characters per batch, each item up to 20,000 characters. Each item counts toward the per-key rate limit. Deep Rewrite is too slow for batches, so <code class="inline">deep_rewrite</code> is refused here; send those texts to <code class="inline">/humanize</code> one at a time.</p>
         </section>
 
         <section id="errors" class="doc-section">
@@ -258,13 +263,14 @@ X-Credits-Remaining: 2000</pre>
                     <table class="table">
                         <thead><tr><th>Status</th><th>Meaning</th><th>Example message</th></tr></thead>
                         <tbody>
-                            <tr><td><span class="pill pill-danger">400</span></td><td>Missing or invalid parameters</td><td><span class="type">No text provided · Text too long (max 20000 characters) · Invalid tone</span></td></tr>
+                            <tr><td><span class="pill pill-danger">400</span></td><td>Missing or invalid parameters</td><td><span class="type">No text provided · Text too long (max 20000 characters) · Invalid tone · Deep Rewrite handles up to {{ '{:,}'.format(deep_rewrite_max_chars) }} characters at a time</span></td></tr>
                             <tr><td><span class="pill pill-danger">401</span></td><td>Missing, wrong or revoked API key</td><td><span class="type">Invalid or inactive API key</span></td></tr>
                             <tr><td><span class="pill pill-danger">402</span></td><td>No API plan or top-up requests left: none bought, the plan expired, or everything is used</td><td><span class="type">Your API plan has used all its requests. Buy a top-up or upgrade at …/pricing</span></td></tr>
                             <tr><td><span class="pill pill-danger">403</span></td><td>The account's email address hasn't been confirmed yet</td><td><span class="type">Verify your email address first. …</span></td></tr>
                             <tr><td><span class="pill pill-danger">413</span></td><td>Request body over 1 MB</td><td><span class="type">Request too large (max 1 MB).</span></td></tr>
                             <tr><td><span class="pill pill-danger">429</span></td><td>Rate limit reached; wait for the number of seconds in the <code class="inline">Retry-After</code> header</td><td><span class="type">Too many requests. Please try again in 20 seconds.</span></td></tr>
                             <tr><td><span class="pill pill-danger">500</span></td><td>Unexpected server error</td><td><span class="type">Processing failed.</span></td></tr>
+                            <tr><td><span class="pill pill-danger">503</span></td><td>Deep Rewrite is busy with other texts (not charged); retry after the <code class="inline">Retry-After</code> seconds or send it without <code class="inline">deep_rewrite</code></td><td><span class="type">Deep Rewrite is busy with other texts. …</span></td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -287,6 +293,7 @@ X-Credits-Remaining: 2000</pre>
                             <tr><td>Maximum request size</td><td class="num">1 MB</td></tr>
                             <tr><td>Monthly requests</td><td class="num">Set by your plan</td></tr>
                             <tr><td>Rate limit</td><td class="num">30 requests per minute per API key</td></tr>
+                            <tr><td>Deep Rewrite</td><td class="num">{{ '{:,}'.format(deep_rewrite_max_chars) }} characters, 10 requests per minute per API key</td></tr>
                         </tbody>
                     </table>
                 </div>
