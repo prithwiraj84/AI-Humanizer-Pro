@@ -32,6 +32,13 @@
     --warning: #B7791F;
     --warning-soft: #FDF4DF;
 
+    /* Editor change map */
+    --change-new: #C2401C;
+    --change-new-bg: rgba(240, 84, 44, .09);
+    --change-moved: #E3A008;
+    --change-kept: #1C4F95;
+    --change-kept-bg: rgba(42, 120, 214, .12);
+
     /* Shape & depth */
     --radius-sm: 8px;
     --radius: 12px;
@@ -581,8 +588,10 @@ kbd {
 .pane textarea::placeholder { color: #A9ACB3; }
 .output { overflow-y: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
 .output.is-revealed { animation: fadeIn .35s ease backwards; }
+/* Change map: red = new words, yellow underline = moved (restructured), blue = longest unchanged run */
 .output .added {
-    background-image: linear-gradient(to right, rgba(255, 214, 92, .75), rgba(255, 224, 122, .9));
+    color: var(--change-new);
+    background-image: linear-gradient(var(--change-new-bg), var(--change-new-bg));   /* an image, so it can sweep in */
     background-repeat: no-repeat;
     background-size: 100% 100%;
     border-radius: 4px;
@@ -592,6 +601,19 @@ kbd {
     -webkit-box-decoration-break: clone;
     animation: mark .55s var(--ease) backwards;
     animation-delay: var(--d, 0ms);
+}
+.output .moved {
+    text-decoration: underline;
+    text-decoration-color: var(--change-moved);
+    text-decoration-thickness: 2px;
+    text-underline-offset: 4px;
+}
+.output .longest {
+    color: var(--change-kept);
+    background: var(--change-kept-bg);
+    border-radius: 3px;
+    box-decoration-break: clone;
+    -webkit-box-decoration-break: clone;
 }
 
 .output-empty {
@@ -641,8 +663,11 @@ kbd {
 .pane-actions { display: flex; gap: 2px; }
 .char-count { font-family: var(--font-mono); font-size: 12px; color: var(--ink-3); transition: color .2s; }
 .char-count.is-over { color: var(--danger); font-weight: 500; }
-.legend { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--ink-3); }
-.legend-swatch { width: 18px; height: 10px; border-radius: 3px; background: var(--highlight); }
+.legend { display: flex; align-items: center; gap: 6px 14px; flex-wrap: wrap; font-size: 12.5px; color: var(--ink-3); }
+.legend-item { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.legend-swatch { width: 14px; height: 10px; border-radius: 3px; background: var(--change-new-bg); box-shadow: inset 0 0 0 1px var(--change-new); }
+.legend-swatch.is-moved { height: 0; border-radius: 0; background: none; box-shadow: none; border-bottom: 2px solid var(--change-moved); }
+.legend-swatch.is-kept { background: var(--change-kept-bg); box-shadow: inset 0 0 0 1px var(--change-kept); }
 
 .editor-cta {
     display: flex;

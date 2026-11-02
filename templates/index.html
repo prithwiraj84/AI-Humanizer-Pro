@@ -72,7 +72,11 @@
                     </div>
                 </div>
                 <div class="pane-foot">
-                    <span class="legend"><span class="legend-swatch"></span>Changed words</span>
+                    <span class="legend">
+                        <span class="legend-item"><span class="legend-swatch"></span>Changed</span>
+                        <span class="legend-item"><span class="legend-swatch is-moved"></span>Moved</span>
+                        <span class="legend-item"><span class="legend-swatch is-kept"></span>Longest unchanged</span>
+                    </span>
                     <div class="pane-actions">
                         <button class="btn btn-ghost btn-sm" type="button" onclick="copyResult(this)">{{ icon('copy') }}<span>Copy</span></button>
                         <button class="btn btn-ghost btn-sm" type="button" onclick="downloadText()">{{ icon('download') }}<span>Download</span></button>
@@ -108,7 +112,7 @@
             </div>
             <div>
                 <div class="stat-title">Structural shift</div>
-                <div class="stat-desc">How much the word sequence differs</div>
+                <div class="stat-desc" id="structDesc">How much the word sequence differs</div>
             </div>
         </div>
 
@@ -262,6 +266,10 @@
 
         document.getElementById('changedCount').textContent =
             `${data.changed_words.toLocaleString()} of ${totalWords.toLocaleString()} words rewritten`;
+        const plural = (n, word) => `${n.toLocaleString()} ${word}${n === 1 ? '' : 's'}`;
+        document.getElementById('structDesc').textContent = data.restructured_sentences
+            ? `${plural(data.restructured_sentences, 'sentence')} restructured · ${plural(data.moved_words, 'word')} moved`
+            : 'No sentence was restructured';
         document.getElementById('longestUnchanged').textContent =
             data.longest_unchanged === 'None' ? 'Every passage was rewritten.' : `“${data.longest_unchanged}”`;
         document.getElementById('statsSection').classList.add('has-data');

@@ -1762,7 +1762,10 @@ def humanize():
             "diff_html": metrics['diff_html'],
             "longest_unchanged": metrics['longest_unchanged'],
             "structural_changes": f"{metrics['structural_score']}%",
-            "changed_words": metrics['changed_words_count']
+            "changed_words": metrics['changed_words_count'],
+            "new_words": metrics['new_words_count'],
+            "moved_words": metrics['moved_words_count'],
+            "restructured_sentences": metrics['restructured_sentences'],
         })
         return quota_headers(response, charge) if charge else response
 
@@ -1840,7 +1843,9 @@ def humanize_batch():
             humanized_text = perform_nuclear_chaos(item['text'], item['tone'], item['deep_mode'])
             metrics = calculate_diff_metrics(item['text'], humanized_text)
             result.update({"humanized": humanized_text, "longest_unchanged": metrics['longest_unchanged'],
-                           "structural_changes": f"{metrics['structural_score']}%", "changed_words": metrics['changed_words_count']})
+                           "structural_changes": f"{metrics['structural_score']}%", "changed_words": metrics['changed_words_count'],
+                           "new_words": metrics['new_words_count'], "moved_words": metrics['moved_words_count'],
+                           "restructured_sentences": metrics['restructured_sentences']})
             usage_rows.append((key_data['id'], '/humanize/batch', 'success', (time.perf_counter() - item_start) * 1000, None))
         except Exception as e:
             logger.error('Batch item failed: %s at %s', type(e).__name__, error_location(e))

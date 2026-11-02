@@ -188,10 +188,13 @@ X-Credits-Remaining: 2000</pre>
                 <pre data-lang="json">{
   "original": "The quick brown fox jumps over the lazy dog.",
   "humanized": "The speedy brown fox jumps over the lazy dog.",
-  "diff_html": "&lt;span class=\"unchanged\"&gt;The&lt;/span&gt; &lt;span class=\"added\"&gt;speedy&lt;/span&gt; ...",
+  "diff_html": "&lt;span class=\"unchanged longest\"&gt;The&lt;/span&gt; &lt;span class=\"added\"&gt;speedy&lt;/span&gt; ...",
   "longest_unchanged": "brown fox jumps over the lazy dog.",
   "structural_changes": "11.1%",
-  "changed_words": 1
+  "changed_words": 1,
+  "new_words": 1,
+  "moved_words": 0,
+  "restructured_sentences": 0
 }</pre>
             </div>
 
@@ -203,10 +206,13 @@ X-Credits-Remaining: 2000</pre>
                         <tbody>
                             <tr><td><span class="param">original</span><br><span class="type">string</span></td><td>The text you sent.</td></tr>
                             <tr><td><span class="param">humanized</span><br><span class="type">string</span></td><td>The rewritten text, with line breaks preserved.</td></tr>
-                            <tr><td><span class="param">diff_html</span><br><span class="type">string</span></td><td>HTML-escaped output with each word wrapped in a <code class="inline">span</code> of class <code class="inline">added</code> (changed) or <code class="inline">unchanged</code>.</td></tr>
+                            <tr><td><span class="param">diff_html</span><br><span class="type">string</span></td><td>HTML-escaped output in which each run of words is wrapped in a <code class="inline">span</code> of class <code class="inline">added</code> (new words), <code class="inline">moved</code> (original words in a new place, from a restructured sentence) or <code class="inline">unchanged</code>; the longest unchanged run also has class <code class="inline">longest</code>. Case and punctuation differences don't count as changes.</td></tr>
                             <tr><td><span class="param">longest_unchanged</span><br><span class="type">string</span></td><td>The longest run of words left exactly as in the input, or "None".</td></tr>
                             <tr><td><span class="param">structural_changes</span><br><span class="type">string</span></td><td>How different the word sequence is, as a percentage.</td></tr>
                             <tr><td><span class="param">changed_words</span><br><span class="type">integer</span></td><td>Number of words that were rewritten.</td></tr>
+                            <tr><td><span class="param">new_words</span><br><span class="type">integer</span></td><td>Words in the output that aren't in the original.</td></tr>
+                            <tr><td><span class="param">moved_words</span><br><span class="type">integer</span></td><td>Original words that now sit in a different place.</td></tr>
+                            <tr><td><span class="param">restructured_sentences</span><br><span class="type">integer</span></td><td>Sentences of the output whose structure changed.</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -228,7 +234,7 @@ X-Credits-Remaining: 2000</pre>
   ]
 }</pre>
             </div>
-            <p>Results come back in the same order. Each has the item's <code class="inline">index</code> (and <code class="inline">id</code> if you sent one), plus either the rewrite (<code class="inline">humanized</code>, <code class="inline">longest_unchanged</code>, <code class="inline">structural_changes</code>, <code class="inline">changed_words</code>) or an <code class="inline">error</code>. The diff HTML is left out to keep responses small.</p>
+            <p>Results come back in the same order. Each has the item's <code class="inline">index</code> (and <code class="inline">id</code> if you sent one), plus either the rewrite (<code class="inline">humanized</code>, <code class="inline">longest_unchanged</code>, <code class="inline">structural_changes</code>, <code class="inline">changed_words</code>, <code class="inline">new_words</code>, <code class="inline">moved_words</code>, <code class="inline">restructured_sentences</code>) or an <code class="inline">error</code>. The diff HTML is left out to keep responses small.</p>
             <div class="code">
                 <div class="code-head"><span class="code-lang">200 OK</span></div>
                 <pre data-lang="json">{

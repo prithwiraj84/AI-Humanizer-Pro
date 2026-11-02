@@ -31,6 +31,7 @@ import os
 import random
 import re
 import threading
+from collections import Counter
 
 logger = logging.getLogger(__name__)
 
@@ -239,9 +240,9 @@ def rewrite_phrase(match, options, tone):
     wanted = 'an' if starts_with_vowel_sound(new) else 'a'
     return match_case(article.strip(), wanted) + article[len(article.rstrip()):] + new
 
-# "is not only fast but also cheap" -> "is fast and cheap". Lowercase "not" only: a sentence that opens
-# with "Not only ..." uses inverted word order and is left alone.
-NOT_ONLY = re.compile(r"\bnot only\s+(?P<a>[^,.;:!?\"“”()]{1,80}?)\s+but(?:\s+also)?\s+")
+# "is not only fast but also cheap" -> "is fast and cheap" (also "not just/merely/simply"). Lowercase "not"
+# only: a sentence that opens with "Not only ..." uses inverted word order and is left alone.
+NOT_ONLY = re.compile(r"\bnot (?:only|just|merely|simply)\s+(?P<a>[^,.;:!?\"“”()]{1,80}?)\s+but(?:\s+also)?\s+")
 
 def pick_fresh(options, tone, used):
     """Like pick(), but avoids repeating a replacement already used in this text ("Also, ... Also, ...")."""
@@ -484,7 +485,7 @@ PLAIN_WORDS = {
     'reduce|VERB': ['cut', 'lower'],
     'pose|VERB': ['present', 'raise'],
     'provide|VERB': ['give', 'offer'],
-    'organize|VERB': ['arrange', 'sort out'],
+    'organize|VERB': ['arrange', 'plan'],
     'implement|VERB': ['apply', 'use'],
     'establish|VERB': ['build', 'set up'],
     'maintain|VERB': ['keep'],
@@ -709,6 +710,7 @@ class Sentence:
         self.splits = []        # (piece position of the "," or ";", kind) while the sentence is in its original order
         self.reordered = False
         self.origin = origin    # halves of one split share it, so they aren't simply joined back
+        self.must_split = False  # set by the coverage pass when a split is the only safe change
 
     def words(self):
         return sum(1 for _, text in self.pieces if text and text[0].isalnum())
@@ -747,15 +749,33 @@ DISCOURSE_PHRASES = {
     'in that case', 'in this way', 'with this in mind', 'as such', 'by comparison', 'in comparison',
 }
 PRONOUN_SUBJECTS = {'it', 'they', 'he', 'she', 'this', 'these', 'those', 'that', 'them', 'its', 'their'}
+# Verbs whose "to ..." is part of their meaning, not a purpose ("ask someone to help", "want to go")
+TO_COMPLEMENT_VERBS = {
+    'ask', 'tell', 'allow', 'enable', 'encourage', 'help', 'want', 'expect', 'require', 'force', 'persuade', 'invite',
+    'urge', 'remind', 'teach', 'cause', 'get', 'lead', 'permit', 'advise', 'instruct', 'order', 'warn', 'need',
+    'try', 'plan', 'hope', 'decide', 'seem', 'tend', 'begin', 'start', 'continue', 'fail', 'manage', 'struggle',
+    'attempt', 'aim', 'intend', 'agree', 'refuse', 'promise', 'prefer', 'like', 'love', 'hate', 'choose', 'learn',
+    'forget', 'remember', 'offer', 'wish', 'appear', 'happen', 'have', 'use', 'go', 'used', 'train', 'prepare',
+}
 
 def adjunct_span(child):
     span = child.doc[child.left_edge.i: child.right_edge.i + 1]
     if span.text.lower() in DISCOURSE_PHRASES or not 2 <= len(span) <= 14:
         return None
-    if child.dep_ == 'advcl':
+    first = span[0]
+    if child.dep_ == 'advcl' and first.dep_ in ('mark', 'advmod') and first.head == child and first.lower_ in MOVABLE_MARKS:
         # "because"/"although" are tagged as markers, "when"/"while" as adverbs of the clause's verb
-        first = span[0]
-        return span if first.dep_ in ('mark', 'advmod') and first.head == child and first.lower_ in MOVABLE_MARKS else None
+        return span
+    if child.dep_ in ('advcl', 'xcomp'):
+        # A purpose clause: "... every year to mark the end of British rule". spaCy often labels it
+        # xcomp; it is only a purpose clause if the verb doesn't take "to ..." itself ("want to go",
+        # "asked the team to review") and already has its object
+        purpose = first.lower_ == 'to' and first.dep_ == 'aux' and first.head == child and child.tag_ == 'VB'
+        if purpose and child.dep_ == 'xcomp':
+            verb = child.head
+            purpose = (verb.lemma_.lower() not in TO_COMPLEMENT_VERBS
+                       and any(c.dep_ == 'dobj' and c.i < child.i for c in verb.children))
+        return span if purpose else None
     return span if child.dep_ == 'prep' else None
 
 def front_trailing_adjunct(sent, pieces):
@@ -1008,6 +1028,140 @@ def extraposed_to_gerund(sent, pieces):
     return (head + subject + [[None, verb]] + take(pieces, adjective.left_edge.i, adjective.i)
             + take(pieces, stop, stop))
 
+# --- "unity, peace, and progress" -> "peace, unity, and progress" ---
+# Plain nouns or adjectives only: names, numbers and verbs (steps in a procedure) keep their order.
+
+LIST_RATE = {'standard': 0.5, 'casual': 0.6, 'professional': 0.35, 'academic': 0.25}
+
+def list_items(token):
+    """The items of a list headed by `token` as (start, end) token ranges, or None."""
+    doc = token.doc
+    conjuncts = [token] + sorted(token.conjuncts, key=lambda t: t.i)
+    if token.dep_ == 'conj' or len(conjuncts) < 3 or any(c.i < token.i for c in token.conjuncts):
+        return None
+    if token.pos_ not in ('NOUN', 'ADJ') or any(c.pos_ != token.pos_ for c in conjuncts):
+        return None
+    items = []
+    for c in conjuncts:
+        if any(t.dep_ not in ('conj', 'cc', 'punct') for t in c.rights) or c.like_num or c.ent_type_:
+            return None     # items with trailing modifiers ("tools for X"), numbers or names
+        start = min([c.i] + [t.left_edge.i for t in c.lefts if t.dep_ not in ('cc', 'punct')])
+        if c.i - start > 3:
+            return None
+        items.append((start, c.i))
+    for (_, end), (start, _) in zip(items, items[1:]):
+        if any(t.lower_ not in (',', 'and', 'or') for t in doc[end + 1: start]):
+            return None
+    if items[0][0] > 0 and doc[items[0][0] - 1].lower_ in ('a', 'an'):
+        return None     # a shared "a"/"an" would have to agree with whichever item comes first
+    return items
+
+def reorder_list(sent, pieces):
+    doc = sent.doc
+    for token in sent:
+        items = list_items(token)
+        if not items:
+            continue
+        k, m = random.sample(range(len(items)), 2)
+        order = list(range(len(items)))
+        order[k], order[m] = order[m], order[k]
+        groups = [take(pieces, start, end) for start, end in items]
+        region = range(items[0][0], items[-1][1] + 1)
+        item_tokens = {i for start, end in items for i in range(start, end + 1)}
+        new, placed = [], 0
+        for piece in pieces:
+            if piece[0] is not None and piece[0] in region and piece[0] in item_tokens:
+                # The first token of each item slot receives a whole item; the item's other tokens are skipped
+                slot = next((n for n, (start, _) in enumerate(items) if piece[0] == start), None)
+                if slot is not None:
+                    new.extend(groups[order[slot]])
+                    placed += 1
+                continue
+            new.append(list(piece))
+        if placed != len(items):
+            return None
+        if items[0][0] == sent.start:
+            moved_first = groups[order[0]]
+            for group in groups:
+                lowercase_first(group, doc)
+            capitalize_first(moved_first)
+        return new
+    return None
+
+# --- "People across the country celebrate ..." -> "Across the country, people celebrate ..." ---
+
+SPREAD_PREPOSITIONS = {'across', 'around', 'throughout'}
+
+def front_subject_place(sent, pieces):
+    doc, root, stop = sent.doc, sent.root, sent[-1].i
+    subject = next((c for c in root.children if c.dep_ == 'nsubj' and c.i < root.i), None)
+    if subject is None or subject.left_edge.i != sent.start or subject.pos_ == 'PRON':
+        return None
+    place = next((c for c in subject.rights if c.dep_ == 'prep' and c.lower_ in SPREAD_PREPOSITIONS), None)
+    if place is None or place.right_edge.i != subject.right_edge.i or subject.right_edge.i + 1 != root.i:
+        return None
+    moved = take(pieces, place.i, place.right_edge.i)
+    main = take(pieces, sent.start, place.i - 1) + take(pieces, root.i, stop - 1)
+    capitalize_first(moved)
+    lowercase_first(main, doc)
+    return moved + [[None, ',']] + main + take(pieces, stop, stop)
+
+# --- Coverage: no longer sentence is left exactly as the AI wrote it ---
+
+COVERAGE_MIN_WORDS = 8
+REORDERING = (existential_to_direct, extraposed_to_gerund, passive_to_active, front_trailing_adjunct,
+              back_fronted_adjunct, enabling_to_with, front_subject_place)
+
+def untouched(pieces, doc):
+    indices = [p[0] for p in pieces]
+    return None not in indices and indices == sorted(indices) and all(p[1] == doc[p[0]].text for p in pieces)
+
+def force_word_edit(sent, pieces, tone, deep_mode):
+    """One safe word swap: the same rules as plan_word_edits, without the dice."""
+    doc = sent.doc
+    floor = CHAOS_FLOOR if deep_mode else SYNONYM_FLOOR[tone]
+    avoid = {t.lower_ for t in sent} | {t.lemma_.lower() for t in sent}
+    candidates = [t for t in sent if can_rewrite(t) and not t.ent_type_ and not fixed_frame(t)]
+    random.shuffle(candidates)
+    for token in candidates:
+        key = f'{token.lemma_.lower()}|{token.pos_}'
+        word = None
+        if key in AI_WORDS or key in PLAIN_WORDS:
+            if not curated_fits(token, key) or (tone == 'academic' and key in ACADEMIC_KEEPS):
+                continue
+            choice = pick(AI_WORDS[key], tone) if key in AI_WORDS else random.choice(PLAIN_WORDS[key])
+            word = inflect(choice, token.tag_)
+        elif token.pos_ != 'NOUN' or deep_mode:
+            entry = SYNONYMS.get(f'{token.lemma_.lower()}|{UPOS_TO_WORDNET[token.pos_]}')
+            if entry:
+                _, word = choose_synonym(token, entry, tone, floor, avoid, token.pos_ == 'NOUN')
+        if not word or word.lower() == token.lower_:
+            continue
+        new = [list(p) for p in pieces]
+        for piece in new:
+            if piece[0] == token.i:
+                piece[1] = match_case(token.text, word)
+            elif piece[0] == token.i - 1 and doc[token.i - 1].lower_ in ('a', 'an'):
+                piece[1] = match_case(piece[1], 'an' if starts_with_vowel_sound(word) else 'a')
+        return new
+    return None
+
+def ensure_change(sentence, tone, deep_mode):
+    """Give an untouched sentence one change: a structural one where possible, else a word swap."""
+    sent, pieces = sentence.span, sentence.pieces
+    options = [force_word_edit]
+    if restructurable(sent):
+        options += [denominalize, reorder_list, *REORDERING]
+    random.shuffle(options)
+    for option in options:
+        new = (option(sent, pieces, tone, deep_mode) if option is force_word_edit else option(sent, pieces))
+        if new:
+            sentence.pieces = new
+            sentence.reordered = option in REORDERING
+            return
+    # Nothing else fits: split it at a safe point, if it has one (done in the rhythm layer)
+    sentence.must_split = True
+
 # Chance of changing a sentence's structure, by tone (Academic keeps more of its passive voice)
 PASSIVE_RATE = {'standard': 0.7, 'casual': 0.85, 'professional': 0.55, 'academic': 0.2}
 MOVE_RATE = {'standard': 0.4, 'casual': 0.45, 'professional': 0.3, 'academic': 0.25}
@@ -1026,7 +1180,7 @@ def restructure(sent, pieces, tone, deep_mode, after_move):
         if new:
             return new
     if not after_move and random.random() < MOVE_RATE[tone] + boost:
-        moves = [front_trailing_adjunct, back_fronted_adjunct, enabling_to_with]
+        moves = [front_trailing_adjunct, back_fronted_adjunct, enabling_to_with, front_subject_place]
         random.shuffle(moves)
         for move in moves:
             new = move(sent, pieces)
@@ -1059,6 +1213,16 @@ def split_points(sent, pieces):
             verb = token.head
             plural = verb.tag_ == 'VBP' or any(c.lower_ in ('are', 'were', 'have') for c in verb.children)
             points.append((position[i - 1], 'which-plural' if plural else 'which'))
+        elif (token.lower_ in ('as', 'because') and token.dep_ == 'mark' and before.text == ','
+              and token.head.dep_ == 'advcl' and token.head.head.dep_ == 'ROOT' and token.head.right_edge.i == stop - 1
+              and any(c.dep_ in ('nsubj', 'nsubjpass', 'expl') for c in token.head.children)):
+            # "..., as the country gained freedom" -> ". The country gained freedom"
+            points.append((position[i - 1], token.lower_))
+        elif (token.lower_ == 'who' and token.dep_ == 'nsubj' and token.head.dep_ == 'relcl'
+              and token.head.right_edge.i == stop - 1 and stop - i >= 5
+              and (token.head.head.tag_ in ('NNS', 'NNPS') or token.head.head.lower_ in ('others', 'people'))):
+            # "... and many others who fought bravely" -> "... and many others. They fought bravely"
+            points.append((position[i - 1] if before.text == ',' else position[i], 'who'))
     return points
 
 def split_sentence(sentence, point, tone):
@@ -1073,6 +1237,15 @@ def split_sentence(sentence, point, tone):
         rest = [[None, random.choice(['This', 'That'])]] + rest[1:]
     elif kind == 'which-plural':
         rest = [[None, 'They']] + rest[1:]
+    elif kind == 'as':
+        rest = rest[1:]
+    elif kind == 'because':
+        opener = "That's because" if tone in ('standard', 'casual') else 'This is because'
+        rest = [[None, opener]] + rest[1:]
+    elif kind == 'who':
+        if rest and rest[0][1].lower() == 'who':
+            rest = rest[1:]
+        rest = [[None, 'They']] + rest
     capitalize_first(rest)
     origin = object()
     return [Sentence(left, sentence.doc, origin=origin), Sentence(rest, sentence.doc, origin=origin)]
@@ -1127,6 +1300,10 @@ def merge_sentences(a, b, tone):
     return Sentence(left + joiner + right, a.doc)
 
 def vary_rhythm(sentences, tone, deep_mode):
+    for k in range(len(sentences) - 1, -1, -1):
+        s = sentences[k]
+        if s.must_split and s.splits:
+            sentences[k:k + 1] = split_sentence(s, random.choice(s.splits), tone)
     target = CHAOS_RHYTHM_TARGET if deep_mode else RHYTHM_TARGET[tone]
     budget = max(1, round(len(sentences) * (CHAOS_RHYTHM_OPS if deep_mode else RHYTHM_OPS[tone])))
     for _ in range(budget):
@@ -1161,7 +1338,8 @@ def vary_openings(sentences):
         s = sentences[k]
         if s.opener() != sentences[k - 1].opener() or s.span is None or s.reordered:
             continue
-        for transform in (front_trailing_adjunct, passive_to_active, back_fronted_adjunct, enabling_to_with):
+        for transform in (front_trailing_adjunct, passive_to_active, back_fronted_adjunct, enabling_to_with,
+                          front_subject_place):
             new = transform(s.span, s.pieces)
             if new:
                 s.pieces, s.reordered, s.splits = new, True, []
@@ -1208,15 +1386,20 @@ def rewrite_block(doc, tone, deep_mode, prose):
         if not pieces:
             continue
         sentence = Sentence(pieces, doc, sent)
+        boost = CHAOS_STRUCTURE_BOOST if deep_mode else 0.0
         if restructurable(sent):
-            if random.random() < NOMINAL_RATE[tone] + (CHAOS_STRUCTURE_BOOST if deep_mode else 0.0):
+            if random.random() < NOMINAL_RATE[tone] + boost:
                 pieces = denominalize(sent, pieces) or pieces
-                sentence.pieces = pieces
+            if random.random() < LIST_RATE[tone] + boost:
+                pieces = reorder_list(sent, pieces) or pieces
+            sentence.pieces = pieces
             new = restructure(sent, pieces, tone, deep_mode, after_move=bool(sentences and sentences[-1].reordered))
             if new:
                 sentence.pieces, sentence.reordered = new, True
-            else:
-                sentence.splits = split_points(sent, pieces)
+        if untouched(sentence.pieces, doc) and sentence.words() >= COVERAGE_MIN_WORDS:
+            ensure_change(sentence, tone, deep_mode)
+        if restructurable(sent) and not sentence.reordered:
+            sentence.splits = split_points(sent, sentence.pieces)
         sentences.append(sentence)
     sentences = vary_rhythm(sentences, tone, deep_mode)
     vary_openings(sentences)
@@ -1288,40 +1471,82 @@ def perform_nuclear_chaos(text, tone, deep_mode):
         return rewrite_with_spacy(text, tone, deep_mode)
     return rewrite_basic(text, tone, deep_mode)
 
+def comparable(word):
+    """A word without case or surrounding punctuation, so "Indian," and "Indian." are the same word."""
+    return re.sub(r'^\W+|\W+$', '', word.lower())
+
 def calculate_diff_metrics(original, humanized):
-    original_words = original.split()
-    new_words = humanized.split()
+    """Compare the rewrite with the original, word by word. Each output word is one of:
+      added      - not in the original (shown in red)
+      moved      - an original word in a new place, i.e. part of a restructured sentence (yellow underline)
+      unchanged  - same word in the same place; the longest such run is also "longest" (blue)
+    Case and surrounding punctuation are ignored, so splitting a sentence doesn't mark its words as new."""
+    original_words, new_words = original.split(), humanized.split()
+    before, after = [comparable(w) for w in original_words], [comparable(w) for w in new_words]
 
-    matcher = difflib.SequenceMatcher(None, original_words, new_words, autojunk=False)
-    match = matcher.find_longest_match(0, len(original_words), 0, len(new_words))
+    matcher = difflib.SequenceMatcher(None, before, after, autojunk=False)
+    match = matcher.find_longest_match(0, len(before), 0, len(after))
     longest_unchanged = " ".join(original_words[match.a: match.a + match.size])
-    similarity = matcher.ratio()
-    structural_change_score = (1 - similarity) * 100
+    structural_change_score = (1 - matcher.ratio()) * 100
 
-    added_indexes = set()
-    changes_count = 0
+    kept_before, kept_after, changes_count = set(), set(), 0
     for tag, i1, i2, j1, j2 in matcher.get_opcodes():
         if tag == 'equal':
-            continue
-        added_indexes.update(range(j1, j2))
-        changes_count += max(i2 - i1, j2 - j1)
+            kept_before.update(range(i1, i2))
+            kept_after.update(range(j1, j2))
+        else:
+            changes_count += max(i2 - i1, j2 - j1)
 
-    # Rebuild the output with its original whitespace, escaping the text for safe HTML
-    diff_parts = []
-    word_index = 0
+    # Original words that left their place, available to be recognised elsewhere as "moved"
+    leftover = Counter(word for i, word in enumerate(before) if i not in kept_before and word)
+    kinds = []
+    for j, word in enumerate(after):
+        if j in kept_after:
+            kinds.append('unchanged longest' if match.b <= j < match.b + match.size else 'unchanged')
+        elif word and leftover[word] > 0:
+            leftover[word] -= 1
+            kinds.append('moved')
+        else:
+            kinds.append('added')
+
+    # Sentences of the output that contain moved words were restructured
+    restructured, sentence = set(), 0
+    for word, kind in zip(new_words, kinds):
+        if kind == 'moved':
+            restructured.add(sentence)
+        if re.search(r'[.!?]["”’)\]]?$', word):
+            sentence += 1
+
+    # Rebuild the output with its original whitespace, escaping the text for safe HTML. Neighbouring
+    # words of the same kind share one span, so a highlighted run includes the spaces inside it.
+    diff_parts, open_kind, spacing, word_index = [], None, '', 0
     for token in re.split(r'(\s+)', humanized):
         if not token:
             continue
         if token.isspace():
-            diff_parts.append(token)
+            spacing += token
             continue
-        css_class = "added" if word_index in added_indexes else "unchanged"
-        diff_parts.append(f'<span class="{css_class}">{html.escape(token)}</span>')
+        kind = kinds[word_index]
         word_index += 1
+        if kind != open_kind:
+            if open_kind is not None:
+                diff_parts.append('</span>')
+            diff_parts.append(spacing + f'<span class="{kind}">')
+            open_kind = kind
+        else:
+            diff_parts.append(spacing)
+        diff_parts.append(html.escape(token))
+        spacing = ''
+    if open_kind is not None:
+        diff_parts.append('</span>')
+    diff_parts.append(spacing)
 
     return {
         "diff_html": "".join(diff_parts),
         "longest_unchanged": longest_unchanged if longest_unchanged else "None",
         "structural_score": round(structural_change_score, 1),
-        "changed_words_count": changes_count
+        "changed_words_count": changes_count,
+        "new_words_count": kinds.count('added'),
+        "moved_words_count": kinds.count('moved'),
+        "restructured_sentences": len(restructured),
     }

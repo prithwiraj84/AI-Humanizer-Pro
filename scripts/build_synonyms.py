@@ -52,6 +52,11 @@ EXCLUDED_USAGE_DOMAINS = ('vulgarism.n.01', 'obscenity.n.01', 'disparagement.n.0
 EXTRA_BLOCKLIST = {'arse', 'bastard', 'bitch', 'bugger', 'crap', 'damn', 'piss', 'prick', 'screw', 'shit', 'whore'}
 # Real synonyms whose connotation changes the message ("strategy" -> "scheme" sounds shady)
 AWKWARD_SYNONYMS = {'scheme', 'grapevine', 'plot', 'racket', 'ploy', 'someone', 'somebody', 'soul', 'mortal'}
+# Identity, culture and belief words: swapping them changes what is said ("cultural events" are not
+# "ethnic events", "religious" is not "spiritual"), so they are never swapped in or out
+PROTECTED_WORDS = {'cultural', 'ethnic', 'racial', 'religious', 'spiritual', 'national', 'tribal', 'political',
+                   'historic', 'historical', 'native', 'foreign', 'domestic', 'civil', 'patriotic', 'sacred', 'holy',
+                   'secular', 'sexual', 'brave'}
 # Pairs that share a WordNet sense but not everyday usage ("organize your work" is not "form your work")
 AWKWARD_PAIRS = {
     'organize': {'form'}, 'organise': {'form'}, 'implement': {'enforce'}, 'provide': {'render', 'furnish'},
@@ -76,7 +81,7 @@ def flagged_words():
 
 def main():
     counts = Counter(w.lower() for w in brown.words() if w.isalpha())
-    blocked = flagged_words() | GENERIC_WORDS | AWKWARD_SYNONYMS
+    blocked = flagged_words() | GENERIC_WORDS | AWKWARD_SYNONYMS | PROTECTED_WORDS
 
     @lru_cache(maxsize=None)
     def main_senses(word, pos):

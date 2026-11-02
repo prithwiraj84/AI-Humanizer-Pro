@@ -10,7 +10,8 @@ Razorpay, priced by region so it stays affordable everywhere.
 
 **Editor**
 - Four tones: standard, professional, casual and academic, plus Chaos Mode for a deeper rewrite.
-- Word-level diff highlighting, change statistics and the longest unchanged phrase.
+- A change map: new words in red, moved words (restructured sentences) underlined in yellow, and the
+  longest unchanged run in blue, with counts of changed and moved words and restructured sentences.
 - The six most recent results are kept in the browser's local storage (never on the server).
 
 **Rewriting engine** (rule-based, no external AI service)
