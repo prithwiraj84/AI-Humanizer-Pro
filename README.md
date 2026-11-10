@@ -90,7 +90,7 @@ data/                Synonym, word-pair and action-noun tables, WordNet licence 
 scripts/             build_synonyms.py, build_collocations.py, build_nominalizations.py, fetch_geoip.py,
                      build_paraphraser.py, fetch_paraphraser.py
 .github/workflows/   Daily job that sends plan-expiry reminders
-start.py             Production start file for panels that run a Python file (Botkeep, Pterodactyl)
+start.py             Production start command for hosts such as Botkeep (python start.py)
 gunicorn.conf.py     Server settings tuned for small instances
 render.yaml          Render Blueprint
 ```
@@ -150,35 +150,33 @@ production. Leaving an optional value empty turns that feature off.
 | `GEO_DEFAULT_COUNTRY` | Country used for pricing when the visitor's location is unknown. |
 | `SECURE_COOKIES` | `1` on any HTTPS site (automatic on Render) so login cookies are only sent over HTTPS. |
 | `TRUST_PROXY` | `1` when a proxy such as Cloudflare sits in front (automatic on Render), so the app sees the visitor's IP and HTTPS. |
-| `PARAPHRASER_URL` | Address of `paraphraser.zip`; `start.py` downloads the Deep Rewrite model from it on first start. |
+| `PARAPHRASER_URL` | Download link for `paraphraser.zip`; `start.py` installs the Deep Rewrite model from it when it's missing. |
 | `DEEP_REWRITE_MAX_CHARS` | Longest text Deep Rewrite accepts (default 2,500 characters). |
 | `PARAPHRASER_THREADS` | CPU threads for the model (default 2). |
 | `GUNICORN_TIMEOUT` | Seconds before a request is cut off (default 120; Deep Rewrite needs a long one). |
 
-## Deploy on Botkeep (or another Pterodactyl panel)
+## Deploy on Botkeep
 
-Botkeep's servers run a Python file from a panel. One slot with 2 GB of RAM fits the app with Deep
-Rewrite (about 470 MB in use), and the packages and model take under 1 GB of the 2 GB disk.
+One Botkeep server with 1.5–2 GB of RAM fits the app with Deep Rewrite (about 470 MB in use), and
+the packages and model take about 1 GB of disk.
 
-1. **Create a Python server** (Python 3.11 if you can choose) with most of the slot's RAM.
-2. **Get the code on it:** if the panel asks for a Git repository, give it this repo's URL and the
-   `main` branch; otherwise upload a zip of the project without `.env`, `venv` and `humanizer.db`.
-3. **Startup settings:** set the startup file to `start.py` and the requirements file to
-   `requirements.txt`. The panel installs the packages on start; `start.py` downloads the country
-   database, then starts gunicorn on the port the panel assigns (`SERVER_PORT`).
-4. **Settings:** create a `.env` file in the server's file manager with the same values you used on
-   Render (keep the same `DATABASE_URL`, so nothing needs migrating), plus `SITE_URL` set to the new
-   address, `SECURE_COOKIES=1` and `TRUST_PROXY=1`.
-5. **HTTPS and a domain:** sign-in, payments and secure cookies need `https://`. If the panel gives
-   only an IP and port, put your domain on Cloudflare: a proxied DNS record pointing to the IP, and an
-   Origin Rule that sends that hostname's traffic to your port. A Cloudflare Tunnel also works.
-6. **Deep Rewrite (optional):** upload the `data/paraphraser/` folder built by
-   `scripts/build_paraphraser.py` (see below) through the file manager or SFTP, or host
-   `paraphraser.zip` somewhere and add `PARAPHRASER_URL` to `.env`. Restart; the log says
-   `Deep Rewrite: available`.
-7. **Point outside services at the new address:** Google and GitHub sign-in callback URLs, the
-   Razorpay webhook, the Turnstile hostname and the `SITE_URL` secret in GitHub Actions. Then test
-   sign-in, the editor and a payment before switching the old host off.
+1. **Create the server** from GitHub (this repo, branch `main`) with Python 3.12, and give it most
+   of your plan's RAM, CPU and storage.
+2. **Start command:** `python start.py`, not `python app.py` (that's the development server).
+   `start.py` downloads the country database, installs the Deep Rewrite model if it was uploaded,
+   then starts gunicorn on `0.0.0.0` and the port Botkeep assigns (`SERVER_PORT`).
+3. **Environment:** the same values as on Render (keep `DATABASE_URL`, so nothing needs migrating),
+   plus `SITE_URL=https://your-domain`, `SECURE_COOKIES=1` and `TRUST_PROXY=1`. Botkeep writes these
+   to `.env`, which the app loads.
+4. **Domains:** add your domain, create the DNS records the panel shows, and wait for it to verify
+   and issue the HTTPS certificate. With Cloudflare DNS, keep the records "DNS only" (grey cloud).
+5. **Deep Rewrite (optional):** upload `paraphraser.zip` (built below) into the `data` folder and
+   restart: it's unpacked into `data/paraphraser/` and the zip is deleted. Alternatively, set
+   `PARAPHRASER_URL` to a download link for the zip. The Console then shows `Deep Rewrite: available`.
+6. **Point outside services at the new address:** Google and GitHub sign-in callback URLs
+   (`/login/google/callback`, `/login/github/callback`), the Razorpay webhook, the Turnstile
+   hostname and the `SITE_URL` secret in GitHub Actions. Then test sign-in, the editor and a payment
+   before switching the old host off.
 
 ### Building the Deep Rewrite model
 

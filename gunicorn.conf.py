@@ -4,7 +4,7 @@
 # blocking other requests. Raise WEB_CONCURRENCY only if the server has RAM for another full copy.
 import os
 
-# Render sets PORT; Pterodactyl-style panels (e.g. Botkeep) set SERVER_PORT
+# Render sets PORT; Botkeep sets SERVER_PORT
 bind = f"0.0.0.0:{os.environ.get('PORT') or os.environ.get('SERVER_PORT') or '10000'}"
 workers = int(os.environ.get('WEB_CONCURRENCY', 1))
 worker_class = 'gthread'

@@ -6,10 +6,10 @@ the server only needs the result (~225 MB) plus the small ctranslate2 and senten
     pip install torch --index-url https://download.pytorch.org/whl/cpu
     pip install "transformers<5" ctranslate2 sentencepiece
     python scripts/build_paraphraser.py            # writes data/paraphraser/
-    python scripts/build_paraphraser.py --zip      # also writes paraphraser.zip for PARAPHRASER_URL
+    python scripts/build_paraphraser.py --zip      # also writes data/paraphraser.zip
 
-Then either copy data/paraphraser/ to the server, or host paraphraser.zip somewhere (e.g. a GitHub
-release) and set PARAPHRASER_URL so start.py downloads it on first start.
+Then copy data/paraphraser/ to the server, or upload paraphraser.zip to the server's data folder
+(start.py unpacks it), or host the zip somewhere and set PARAPHRASER_URL so start.py downloads it.
 
 Model: humarin/chatgpt_paraphraser_on_T5_base, a T5-base model fine-tuned for paraphrasing,
 licensed under OpenRAIL. Its use restrictions apply to everyone who uses it; MODEL_LICENSE.txt in

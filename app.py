@@ -1118,7 +1118,8 @@ def oauth_login(provider):
         return redirect('/login')
 
     session['login_next'] = safe_next(request.args.get('next'))
-    redirect_uri = url_for('oauth_callback', provider=provider, _external=True)
+    # From SITE_URL when set, so it stays https:// even if the host's proxy doesn't say the visit was HTTPS
+    redirect_uri = public_base_url() + url_for('oauth_callback', provider=provider)
     return oauth.create_client(provider).authorize_redirect(redirect_uri)
 
 @app.route('/login/<any(google, github):provider>/callback')

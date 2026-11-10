@@ -1,13 +1,13 @@
 """
 Starts the app in production with gunicorn (settings in gunicorn.conf.py).
 
-For hosts whose panel runs a Python file rather than a command, such as Botkeep and other
-Pterodactyl-style panels: set the startup file to start.py. Elsewhere `gunicorn app:app` does the
-same. On the first start it also downloads the country database used for regional pricing and,
-if PARAPHRASER_URL is set, the Deep Rewrite model.
+For hosts whose panel runs a start command, such as Botkeep: use `python start.py`. Elsewhere
+`gunicorn app:app` does the same. On start it also downloads the country database used for
+regional pricing if it's missing, and installs the Deep Rewrite model if data/paraphraser.zip has
+been uploaded or PARAPHRASER_URL is set.
 
-Settings come from the host's environment variables or a .env file next to this one (panels often
-allow only their own variables, so .env is the usual place there).
+Settings come from the host's environment variables or a .env file next to this one (Botkeep
+writes its Environment tab to .env).
 """
 import os
 import sys
@@ -23,9 +23,9 @@ def main():
     if not os.path.exists(os.path.join(BASE_DIR, 'data', 'geoip', 'dbip-country-lite.mmdb')):
         from scripts.fetch_geoip import main as fetch_geoip
         fetch_geoip()
-    if os.environ.get('PARAPHRASER_URL') and not os.path.exists(os.path.join(BASE_DIR, 'data', 'paraphraser', 'model.bin')):
+    if not os.path.exists(os.path.join(BASE_DIR, 'data', 'paraphraser', 'model.bin')):
         from scripts.fetch_paraphraser import main as fetch_paraphraser
-        fetch_paraphraser()
+        fetch_paraphraser()    # does nothing (and says so) without an uploaded zip or PARAPHRASER_URL
     from gunicorn.app.wsgiapp import run
     sys.argv = ['gunicorn', 'app:app']
     run()
