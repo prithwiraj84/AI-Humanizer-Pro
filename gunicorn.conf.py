@@ -9,7 +9,8 @@ bind = f"0.0.0.0:{os.environ.get('PORT') or os.environ.get('SERVER_PORT') or '10
 workers = int(os.environ.get('WEB_CONCURRENCY', 1))
 worker_class = 'gthread'
 threads = int(os.environ.get('GUNICORN_THREADS', 4))
-# Deep Rewrite can take tens of seconds on a long text with a shared CPU
+# How long a worker may go silent before gunicorn restarts it. With gthread workers this is not a limit on
+# a request: a long Deep Rewrite keeps running, and only the proxy's or the client's own timeout cuts it off.
 timeout = int(os.environ.get('GUNICORN_TIMEOUT', 120))
 graceful_timeout = 20
 keepalive = 5

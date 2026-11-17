@@ -155,12 +155,12 @@ X-Credits-Remaining: 2000</pre>
                             </tr>
                             <tr>
                                 <td><span class="param">deep_mode</span><br><span class="type">boolean</span></td>
-                                <td>Chaos Mode: a deeper rewrite that swaps far more words and splits long compound sentences. Default: false.</td>
+                                <td>Chaos Mode: a much stronger rewrite: more word choices and restructuring, more varied sentence lengths, and some filler openers ("Moreover,", "In conclusion,") left out. Combine it with <code class="inline">deep_rewrite</code> for the strongest rewrite. Default: false.</td>
                                 <td><span class="req req-optional">Optional</span></td>
                             </tr>
                             <tr>
                                 <td><span class="param">deep_rewrite</span><br><span class="type">boolean</span></td>
-                                <td>Deep Rewrite (beta): a paraphrasing model running on our server rewords whole sentences before the other layers run. A rewrite is used only if it keeps every name, number and date and still reads as the same sentence; otherwise that sentence keeps its wording. Slower (often 10 to 40 seconds, so allow a long client timeout), up to {{ '{:,}'.format(deep_rewrite_max_chars) }} characters, 10 requests a minute, and not available for batch requests. {% if not deep_rewrite_available %}Not installed on this server at the moment, so requests with it return 400. {% endif %}Default: false.</td>
+                                <td>Deep Rewrite (beta): small models running on our server reword whole sentences before the other layers run: a paraphrasing model and, where installed, translation into French and back with OPUS-MT models (University of Helsinki, CC BY 4.0). A rewrite is used only if it keeps every name, number and date, the claims and negations, and still reads as the same sentence; otherwise that sentence keeps its wording. Slower (often 10 to 40 seconds, so allow a long client timeout), up to {{ '{:,}'.format(deep_rewrite_max_chars) }} characters, 10 requests a minute, and not available for batch requests. {% if not deep_rewrite_available %}Not installed on this server at the moment, so requests with it return 400. {% endif %}Default: false.</td>
                                 <td><span class="req req-optional">Optional</span></td>
                             </tr>
                         </tbody>

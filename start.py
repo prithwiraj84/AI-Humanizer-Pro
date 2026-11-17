@@ -3,8 +3,8 @@ Starts the app in production with gunicorn (settings in gunicorn.conf.py).
 
 For hosts whose panel runs a start command, such as Botkeep: use `python start.py`. Elsewhere
 `gunicorn app:app` does the same. On start it also downloads the country database used for
-regional pricing if it's missing, and installs the Deep Rewrite model if data/paraphraser.zip has
-been uploaded or PARAPHRASER_URL is set.
+regional pricing if it's missing, and installs the Deep Rewrite models if data/paraphraser.zip or
+data/backtranslate.zip has been uploaded (or PARAPHRASER_URL / BACKTRANSLATE_URL is set).
 
 Settings come from the host's environment variables or a .env file next to this one (Botkeep
 writes its Environment tab to .env).
@@ -23,9 +23,8 @@ def main():
     if not os.path.exists(os.path.join(BASE_DIR, 'data', 'geoip', 'dbip-country-lite.mmdb')):
         from scripts.fetch_geoip import main as fetch_geoip
         fetch_geoip()
-    if not os.path.exists(os.path.join(BASE_DIR, 'data', 'paraphraser', 'model.bin')):
-        from scripts.fetch_paraphraser import main as fetch_paraphraser
-        fetch_paraphraser()    # does nothing (and says so) without an uploaded zip or PARAPHRASER_URL
+    from scripts.fetch_paraphraser import main as fetch_models
+    fetch_models()      # installs any uploaded or linked model zip; does nothing for models already in place
     from gunicorn.app.wsgiapp import run
     sys.argv = ['gunicorn', 'app:app']
     run()

@@ -9,32 +9,88 @@ Razorpay, priced by region so it stays affordable everywhere.
 ## Features
 
 **Editor**
-- Four tones: standard, professional, casual and academic, plus Chaos Mode for a deeper rewrite.
-- Deep Rewrite (beta, optional): a small paraphrasing model on the server rewords whole sentences
-  before the rule-based layers run. Offered only when the model is installed.
+- Four tones: standard, professional, casual and academic, plus Chaos Mode for a stronger rewrite.
+- Deep Rewrite (beta, optional): small models on the server reword whole sentences before the
+  rule-based layers run. Offered only when the models are installed.
 - A change map: new words in red, moved words (restructured sentences) underlined in yellow, and the
   longest unchanged run in blue, with counts of changed and moved words and restructured sentences.
 - The six most recent results are kept in the browser's local storage (never on the server).
 
 **Rewriting engine** (rule-based, no external AI service)
-- Six layers: stock AI phrases and transitions; contractions by tone; word choice; sentence
-  structure (passive to active, "the integration of X" → "integrating X", "there are X that" → "X",
-  "it is important to do X" → "doing X is important", moving adverbial phrases and clauses); rhythm (splitting and joining sentences so their lengths vary like human writing, with
-  varied openings); punctuation.
+- Six layers: stock AI phrases, openers and transitions ("plays a crucial role in", "In today's
+  fast-paced digital landscape", "cannot be overstated", "questions regarding X" → "questions about
+  X"); contractions by tone; word choice; sentence structure (passive to active, "the integration of
+  X" → "integrating X", "there are X that" → "X", "it is important to do X" → "doing X is
+  important", "it is crucial for X to Y" → "X needs to Y", "this highlights the importance of X" →
+  "this shows why X matters", "X is a technique that does Y" → "X does Y", "the key is to do X" →
+  "doing X is the key", "changed the way we work" → "changed how we work", "is one of the most" →
+  "is among the most", "The authors warn that the sample was small" → "The sample was small, the
+  authors warn", "The museum will reopen next spring" → "Next spring, the museum will reopen", "Not
+  only does X…, but…", moving adverbial phrases and clauses, reordering lists); rhythm (splitting
+  long sentences, including trailing "…, making it …", "…, including …" and "…, although …"
+  clauses, and joining related short ones so lengths vary like human writing, with varied
+  openings); punctuation.
+- Each rule checks that it fits before it fires: a phrase isn't moved where it would describe
+  something else ("its highest level since 2019" keeps "since 2019" in place), lists that run in
+  order ("small, medium and large") keep their order, a joined sentence keeps the capital of a name
+  but not of an ordinary word, and "offered her services" never becomes "had her services".
+- Word choice uses hand-checked swaps for overused AI words and formal words, each with rules for
+  where it fits ("nearly" stays in "not nearly enough", "sufficient" never follows "an", "cultivate"
+  only becomes "build" for things like trust). WordNet synonyms are only tried when the Deep Rewrite
+  model is loaded to check each swap in its sentence: about a quarter of them take another sense of
+  the word ("sunny" → "gay", "employs 4,500 people" → "applies"), which no word statistic catches.
+- Chaos Mode rewrites more of everything: every hand-checked word swap that fits, every optional
+  opener, most filler openers ("Moreover,", "In conclusion,") left out entirely, empty intensifiers
+  always cut, phrases moved and lists reordered wherever they fit, more contractions in the standard
+  tone, and long sentences also split before a closing relative clause ("proposed a new scheme that
+  would offer…" → "proposed a new scheme. The new scheme would offer…"). The sentence templates are
+  also applied to sentences Deep Rewrite wrote. On its own the gain is modest: a rule only fires
+  where it fits, and on most sentences only a few fit, in any mode. Most of Chaos Mode's extra
+  reach comes from Deep Rewrite. Combined with Deep Rewrite, it also asks the model for
+  more rewrites, gives sentences that changed only a little a second round (kept only if it is at least
+  as faithful), and tries more model-checked synonym swaps, nouns included. In the editor, turning
+  Chaos Mode on also turns Deep Rewrite on when it is installed. The API keeps the two separate, so
+  `deep_mode` alone stays fast: it uses the rules that need no model.
+- Input is cleaned first: zero-width and other invisible characters, control characters, odd spaces
+  and look-alike letters from other alphabets (often left by copy-pasting from chat tools) are removed,
+  and old-style line breaks become ordinary ones, so none of them reach the output.
 - spaCy (`en_core_web_sm`) for tags, entities and the dependency parse; lemminflect for word forms.
 - Data built offline with NLTK: a WordNet synonym table that keeps only senses both words are
   mainly used in (SemCor counts, `scripts/build_synonyms.py`), and Brown corpus word pairs that
   check a synonym fits its neighbours (`scripts/build_collocations.py`), plus action nouns and
-  their verbs (`scripts/build_nominalizations.py`). Together about 10 MB in
-  memory, so the app fits Render's 512 MB free tier.
-- Names, numbers, dates, acronyms, quotes and citations are never changed; headings and list items
-  only get word-level edits.
-- Deep Rewrite runs a T5 paraphraser in 8-bit with CTranslate2 (`paraphraser.py`). It samples three
-  rewrites per sentence and drops any that loses a name, number or date, invents a name or word,
-  adds punctuation, changes the length too much or loses the topic's nouns. Of the rest, it keeps
-  the one the model can most readily paraphrase back into the original (a round-trip check that
-  catches changed meaning). Sentences it rewrites then only get the curated word swaps; the others
-  go through all the layers. It needs about 250 MB more memory and roughly 7 ms per character.
+  their verbs (`scripts/build_nominalizations.py`), the main kind of each noun that some swaps
+  depend on, so "reduce the cream" in a recipe never becomes "cut the cream" (also built by
+  `scripts/build_synonyms.py`), and nouns that name a person (`scripts/build_person_nouns.py`).
+  Together about 13 MB in memory, so the app fits Render's 512 MB free tier.
+- Names, numbers, dates, acronyms and citations are never changed, and nothing inside quotation
+  marks is rewritten (someone's exact words), in straight, curly, „low-high“ or «angle» quotes,
+  even when a quotation is wrapped over two lines. Code stays as written too (inline code, ``` and
+  ~~~ fences, indented code blocks), and so do HTML tags, attributes and comments. Headings and list
+  items only get word-level edits, verse gets no contractions, and a paragraph that isn't in English
+  is left as written.
+- Deep Rewrite runs a T5 paraphraser in 8-bit with CTranslate2 (`paraphraser.py`) and, when
+  installed, back-translation through French with OPUS-MT models trained on human translations,
+  whose wording is plainer than the T5's (which learned from ChatGPT paraphrases). Every candidate
+  must keep each name, number and date (and how many of each), the topic's nouns and the sentence's
+  subject, the key describing words ("remote work", "on an empty stomach", "is efficient"), who does
+  what to whom (including who gives and who receives), the negations and what they apply to
+  ("prevents", "unable to" and "avoid" count too), what the sentence claims ("must" vs "should", "can"
+  vs "may", "studies suggest" vs "studies show", "some studies", "tended to", "often", who said it,
+  no new hedges such as "purportedly", the same quantities and bounds such as "most", "up to" or
+  "longer than", the same tense) and its point of view. It may add no new details or definitions, no
+  stronger claims ("completely", "renowned", "optimal", a superlative), no opposites ("began" →
+  "ended", "frequent" → "rare"), no new causes, links or connectives ("resulting in", "As part of a
+  deal", "However,"), and no correlation turned into a cause; it must not turn an expectation into an
+  outcome ("analysts expected higher earnings" → "expectations were met"), must be a whole,
+  grammatical sentence (a main verb, agreeing subject and verb, no dropped article), may not be a
+  near-copy that only swaps one word for another sense, may use no made-up words or punctuation, and
+  must pass three checks with the T5 (a round trip back to the original, the single least likely
+  word, and a forward plausibility check).
+  Of the rewrites that are about as faithful as the best one, the most changed is used, ranked down
+  if it adds AI-style phrasing. Sentences it rewrites then get word-level edits and, in Chaos Mode,
+  the sentence templates; the others go through all the layers. Together the models need about
+  450 MB more memory and take roughly 10–20 ms per character on a server with 1.5 CPUs (a
+  2,400-character Chaos + Deep Rewrite took 20–25 seconds on an 8-core PC).
 - Text is processed in memory and never stored or logged.
 
 **Developer API**
@@ -77,7 +133,7 @@ Razorpay, priced by region so it stays affordable everywhere.
 ```
 app.py               Routes, auth, API endpoints, security headers, database schema
 humanizer.py         Rewriting engine and diff metrics
-paraphraser.py       Deep Rewrite model runner (optional)
+paraphraser.py       Deep Rewrite model runner: T5 paraphraser and back-translation (optional)
 billing.py           Plans, prices, credits, coupons, referrals, Razorpay orders and subscriptions
 invoices.py          GST calculation, invoice numbering and PDF rendering
 admin.py             Admin panel (Flask blueprint)
@@ -85,9 +141,10 @@ mailer.py            Transactional email over SMTP
 db.py                SQLite / PostgreSQL access layer
 templates/           Pages, partials and email templates
 static/              CSS, JavaScript and images
-data/                Synonym, word-pair and action-noun tables, WordNet licence (GeoIP and the
-                     Deep Rewrite model are downloaded or uploaded separately)
-scripts/             build_synonyms.py, build_collocations.py, build_nominalizations.py, fetch_geoip.py,
+data/                Synonym, word-pair, action-noun, noun-kind and person-noun tables, WordNet
+                     licence (GeoIP and the Deep Rewrite models are downloaded or uploaded separately)
+scripts/             build_synonyms.py (also builds the noun kinds), build_collocations.py,
+                     build_nominalizations.py, build_person_nouns.py, fetch_geoip.py,
                      build_paraphraser.py, fetch_paraphraser.py
 .github/workflows/   Daily job that sends plan-expiry reminders
 start.py             Production start command for hosts such as Botkeep (python start.py)
@@ -150,15 +207,22 @@ production. Leaving an optional value empty turns that feature off.
 | `GEO_DEFAULT_COUNTRY` | Country used for pricing when the visitor's location is unknown. |
 | `SECURE_COOKIES` | `1` on any HTTPS site (automatic on Render) so login cookies are only sent over HTTPS. |
 | `TRUST_PROXY` | `1` when a proxy such as Cloudflare sits in front (automatic on Render), so the app sees the visitor's IP and HTTPS. |
-| `PARAPHRASER_URL` | Download link for `paraphraser.zip`; `start.py` installs the Deep Rewrite model from it when it's missing. |
+| `PARAPHRASER_URL`, `BACKTRANSLATE_URL` | Download links for `paraphraser.zip` and `backtranslate.zip`; `start.py` installs a missing model from them. |
+| `PARAPHRASER_DIR`, `BACKTRANSLATE_DIR` | Where the models live, if not in `data/` (the installer uses them too). |
 | `DEEP_REWRITE_MAX_CHARS` | Longest text Deep Rewrite accepts (default 2,500 characters). |
-| `PARAPHRASER_THREADS` | CPU threads for the model (default 2). |
-| `GUNICORN_TIMEOUT` | Seconds before a request is cut off (default 120; Deep Rewrite needs a long one). |
+| `DEEP_REWRITE_SECONDS` | Time a Deep Rewrite aims to stay within (default 45). It is not a hard cap: back-translation is skipped once 40% of it has gone, and Chaos Mode's second round when it wouldn't finish in time; with two Deep Rewrites running at once, both skip these extras. |
+| `DEEP_REWRITE_QUEUE` | Deep Rewrite requests allowed at once, running or waiting (default 2); more get a 503 at once. |
+| `PARAPHRASER_THREADS` | CPU threads for each model (default 2 on a server with at least 2 CPUs, otherwise 1). |
+| `GUNICORN_TIMEOUT` | Seconds a worker may go silent before gunicorn restarts it (default 120). It doesn't cut off a long request; the proxy's or client's timeout does, so give Deep Rewrite clients a long one. |
+
+Empty or malformed numbers in these settings fall back to the default, with a warning in the log.
 
 ## Deploy on Botkeep
 
-One Botkeep server with 1.5–2 GB of RAM fits the app with Deep Rewrite (about 470 MB in use), and
-the packages and model take about 1 GB of disk.
+One Botkeep server with 1.5–2 GB of RAM fits the app with Deep Rewrite (measured: about 650 MB in
+use with both models loaded, about 850 MB at the peak of a 2,500-character Chaos + Deep Rewrite).
+The packages and models take about 0.9 GB of disk, and about 1.2 GB while an uploaded model zip is
+being unpacked.
 
 1. **Create the server** from GitHub (this repo, branch `main`) with Python 3.12, and give it most
    of your plan's RAM, CPU and storage.
@@ -173,26 +237,30 @@ the packages and model take about 1 GB of disk.
 5. **Deep Rewrite (optional):** upload `paraphraser.zip` (built below) into the `data` folder and
    restart: it's unpacked into `data/paraphraser/` and the zip is deleted. Alternatively, set
    `PARAPHRASER_URL` to a download link for the zip. The Console then shows `Deep Rewrite: available`.
+   For the second, back-translation source, upload `backtranslate.zip` the same way (or set
+   `BACKTRANSLATE_URL`); the Console then also shows `Back-translation loaded: fr`.
 6. **Point outside services at the new address:** Google and GitHub sign-in callback URLs
    (`/login/google/callback`, `/login/github/callback`), the Razorpay webhook, the Turnstile
    hostname and the `SITE_URL` secret in GitHub Actions. Then test sign-in, the editor and a payment
    before switching the old host off.
 
-### Building the Deep Rewrite model
+### Building the Deep Rewrite models
 
-The server only needs the converted model; converting it needs PyTorch, so do it once on your own
-computer (a few GB of free disk):
+The server only needs the converted models; converting them needs PyTorch, so do it once on your
+own computer (a few GB of free disk):
 
 ```bash
 pip install torch --index-url https://download.pytorch.org/whl/cpu
 pip install "transformers<5" ctranslate2 sentencepiece
-python scripts/build_paraphraser.py --zip   # writes data/paraphraser/ (~225 MB) and data/paraphraser.zip
+python scripts/build_paraphraser.py --backtranslate --zip
+# writes data/paraphraser/ (~225 MB) + paraphraser.zip and data/backtranslate/ (~160 MB) + backtranslate.zip
 ```
 
-Both are git-ignored. The model is
+All are git-ignored. The T5 model is
 [humarin/chatgpt_paraphraser_on_T5_base](https://huggingface.co/humarin/chatgpt_paraphraser_on_T5_base),
-licensed under OpenRAIL: its use restrictions apply to anyone who runs or shares it, and
-`MODEL_LICENSE.txt` in the folder points to them.
+licensed under OpenRAIL: its use restrictions apply to anyone who runs or shares it. The
+back-translation models are OPUS-MT's `opus-mt-en-fr` and `opus-mt-fr-en`, licensed under CC BY 4.0,
+which requires crediting the authors (see Credits). `MODEL_LICENSE.txt` in each folder has the terms.
 
 ## Deploy on Render
 
@@ -242,5 +310,9 @@ with error codes and examples in several languages, is at `/docs` on the running
 - Synonym data derived from [WordNet](https://wordnet.princeton.edu/) (licence in `data/WORDNET_LICENSE.txt`).
 - IP to country data by [DB-IP](https://db-ip.com), licensed under CC BY 4.0.
 - Deep Rewrite model: [humarin/chatgpt_paraphraser_on_T5_base](https://huggingface.co/humarin/chatgpt_paraphraser_on_T5_base) (OpenRAIL).
+- Back-translation models: [OPUS-MT](https://github.com/Helsinki-NLP/Opus-MT) `opus-mt-en-fr` and
+  `opus-mt-fr-en` by the Language Technology Research Group, University of Helsinki (Tiedemann &
+  Thottingal, EAMT 2020), licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/);
+  converted to CTranslate2 8-bit, otherwise unchanged.
 
 Developed by Prithwiraj Das.

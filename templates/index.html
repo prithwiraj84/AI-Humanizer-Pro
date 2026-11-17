@@ -53,7 +53,7 @@
                     </span>
                     <span class="switch-text">
                         <strong>Chaos Mode</strong>
-                        <small>Deeper rewrite, splits long sentences</small>
+                        <small>{% if deep_rewrite_available %}Strongest rewrite · also turns on Deep Rewrite{% else %}Much stronger rewrite: restructures and varies more{% endif %}</small>
                     </span>
                 </label>
             </div>
@@ -188,6 +188,14 @@
 
     inputEl.addEventListener('input', updateCounts);
     if (deepRewriteEl) deepRewriteEl.addEventListener('change', updateCounts);
+    // The strongest rewrite combines the two: turning Chaos Mode on also turns on Deep Rewrite (it can be
+    // switched off again), unless the text is already too long for it
+    document.getElementById('deepMode').addEventListener('change', (e) => {
+        if (e.target.checked && deepRewriteEl && !deepRewriteEl.checked && inputEl.value.length <= DEEP_REWRITE_MAX_CHARS) {
+            deepRewriteEl.checked = true;
+            updateCounts();
+        }
+    });
 
     function clearInput() {
         inputEl.value = '';

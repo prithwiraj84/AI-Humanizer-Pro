@@ -6,3 +6,5 @@ venv/
 .venv/
 data/paraphraser/
 data/paraphraser.zip
+data/backtranslate/
+data/backtranslate.zip
