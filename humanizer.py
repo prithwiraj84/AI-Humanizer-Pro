@@ -29,6 +29,7 @@ import gzip
 import html
 import json
 import logging
+import math
 import os
 import random
 import re
@@ -2664,6 +2665,34 @@ def opens_question(m):
     return (bool(lead) and ends_in_question(m.string, m.end())
             and not uninverted_question(m, (lead.group('wh') or '').lower()))
 
+def contraction_replacer(table, chance=1.0, check_before=False, curly=False, verse=(), window=None):
+    """A substitution callback that contracts (or expands) a match by `table`, at `chance`, unless it is quoted, in
+    verse, or one of the uses where the short form would read wrong. With `window` (start, end) only matches inside it
+    are touched (the run breaker, break_runs); the dice are only rolled for those."""
+    def replace(match):
+        if window is not None and not (window[0] <= match.start() and match.end() <= window[1]):
+            return match.group(0)
+        if in_quote(match) or random.random() >= chance or any(s <= match.start() < e for s, e in verse):
+            return match.group(0)
+        if check_before and (PREPOSITION_BEFORE.search(match.string[max(0, match.start() - 30):match.start()])
+                             or pronoun_is_object(match)
+                             or (match.group(0).lower().endswith('will') and WILL_NOT_FOLLOWS.match(match.string, match.end()))):
+            return match.group(0)
+        key = re.sub(r'\s+', ' ', match.group(0).lower()).replace('’', "'")
+        if key.endswith("n't") and opens_question(match):
+            return match.group(0)       # an expansion that would read "Is not that the point?"
+        new = match_case(match.group(0), table[key])
+        return new.replace("'", '’') if curly else new
+    return replace
+
+def contract_within(text, start, end):
+    """The text with every contraction that fits made inside text[start:end] (Standard and Casual contract)."""
+    curly, verse = text.count('’') > text.count("'"), verse_ranges(text)
+    new = CONTRACT_PATTERN.sub(contraction_replacer(CONTRACTIONS, curly=curly, verse=verse, window=(start, end)), text)
+    end += len(new) - len(text)
+    return PRONOUN_PATTERN.sub(contraction_replacer(PRONOUN_CONTRACTIONS, check_before=True, curly=curly, verse=verse,
+                                                    window=(start, end)), new)
+
 def apply_tone_contractions(text, tone, deep_mode=False):
     curly = text.count('’') > text.count("'")       # write apostrophes the way the writer does
     verse = verse_ranges(text)
@@ -2672,19 +2701,7 @@ def apply_tone_contractions(text, tone, deep_mode=False):
         return any(s <= match.start() < e for s, e in verse)
 
     def replace_from(table, chance=1.0, check_before=False):
-        def replace(match):
-            if in_quote(match) or random.random() >= chance or in_verse(match):
-                return match.group(0)
-            if check_before and (PREPOSITION_BEFORE.search(match.string[max(0, match.start() - 30):match.start()])
-                                 or pronoun_is_object(match)
-                                 or (match.group(0).lower().endswith('will') and WILL_NOT_FOLLOWS.match(match.string, match.end()))):
-                return match.group(0)
-            key = re.sub(r'\s+', ' ', match.group(0).lower()).replace('’', "'")
-            if key.endswith("n't") and opens_question(match):
-                return match.group(0)       # an expansion that would read "Is not that the point?"
-            new = match_case(match.group(0), table[key])
-            return new.replace("'", '’') if curly else new
-        return replace
+        return contraction_replacer(table, chance, check_before, curly, verse)
 
     def uninvert(m):
         if in_quote(m) or in_verse(m) or not ends_in_question(m.string, m.end()):
@@ -8166,18 +8183,22 @@ def untouched(pieces, doc):
     indices = [p[0] for p in pieces]
     return None not in indices and indices == sorted(indices) and all(p[1] == doc[p[0]].text for p in pieces)
 
-def force_word_edit(sent, pieces, tone, deep_mode, vet=None, nearby=frozenset()):
+def force_word_edit(sent, pieces, tone, deep_mode, vet=None, nearby=frozenset(), within=None):
     """One safe word swap: the same rules as plan_word_edits, without the dice. WordNet guesses are only
     tried when `vet` can check them with the model. `nearby` holds the neighbouring sentences' words as they
     now read, so the swap doesn't echo them. The swaps of AI_FAVOURITES and EVERYDAY_SWAPS read their own frames
     ("benefited the most from", "remained stable") and amounts ("roughly one third"), so those words are tried
-    there too."""
+    there too. With `within` (token indices of a stretch left as written, break_runs) only those words are tried,
+    the ones nearest its middle first: one swap there halves the stretch."""
     doc = sent.doc
     floor = CHAOS_FLOOR_VETTED if deep_mode else SYNONYM_FLOOR[tone]
     avoid = {t.lower_ for t in sent} | {t.lemma_.lower() for t in sent} | set(nearby)
     candidates = [t for t in sent if t.i not in phrase_tokens(doc)
                   and (swap_key(t) or (can_rewrite(t) and not t.ent_type_ and not fixed_frame(t)))]
     random.shuffle(candidates)
+    if within:
+        middle = (min(within) + max(within)) / 2
+        candidates = sorted((t for t in candidates if t.i in within), key=lambda t: abs(t.i - middle) // 3)
     guesses = 0
     for token in candidates:
         key, extra = curated_key(token), swap_key(token)
@@ -12154,6 +12175,23 @@ def unkept_replacement(sent, cand_doc, lower_source, lower_new, change=0.0):
                 return True
     return False
 
+# Words a sentence of a split rewrite may point back to the subject with ("They also ...", "This keeps ...")
+REFERRING_WORDS = {'it', 'they', 'them', 'its', 'their', 'this', 'these', 'that', 'those', 'he', 'she', 'his', 'her',
+                   'we', 'you', 'i', 'such', 'both'}
+
+def split_without_subject(subjects, cand_doc):
+    """True if a rewrite that splits the sentence in two leaves a part saying nothing of who or what does it: each part
+    keeps the subject, or points back to it ("Green spaces also help cool urban areas" -> "Urban areas are also
+    cooled. Green spaces provide habitat ..." loses what cools them)."""
+    parts = [s for s in cand_doc.sents if any(t.is_alpha for t in s)]
+    if not subjects or len(parts) < 2:
+        return False
+    for part in parts:
+        lemmas = {t.lemma_.lower() for t in part} | {t.lower_ for t in part}
+        if not (lemmas & subjects or lemmas & REFERRING_WORDS):
+            return True
+    return False
+
 def paraphrase_score(sent, candidate, cand_doc, why=None):
     """How much `candidate` changes the sentence, or None if it isn't a safe rewrite. A safe rewrite keeps
     every name, number, date and acronym and adds none; keeps the topic's nouns, its subject, the key
@@ -12255,6 +12293,8 @@ def paraphrase_score(sent, candidate, cand_doc, why=None):
                 and t.head.dep_ == 'ROOT'} - LIGHT_NOUNS - TIME_NOUNS - GENERIC_NOUNS
     if any(not kept_word(n, 'n', present, present_lemmas) for n in subjects):
         return refuse(why, 'subject')
+    if split_without_subject(subjects, cand_doc):
+        return refuse(why, 'subject')       # "Green spaces also help cool urban areas" -> "Urban areas are also cooled. ..."
     if plural_made_single(sent, cand_doc):
         return refuse(why, 'number')          # "small contributions add up" -> "a small contribution"
     if swapped_roles(sent, cand_doc) or made_possessor(sent, cand_doc):
@@ -12655,10 +12695,21 @@ FORWARD_DROP = 0.7      # ...and the forward check's average
 # paraphrase. The band is narrow: the scores are noisy at this resolution, and a wide band turns that noise into
 # a preference for the least faithful rewrite.
 FIDELITY_MARGIN = 0.05
+# Of the rewrites in that band, the one keeping the fewest of the sentence's words in a row is used: a rewrite that
+# keeps 12 words of it in a row leaves a stretch the change map shows as unchanged. Below RUN_FLOOR words they count
+# alike (and the most changed wins, as before); in Chaos Mode below CHAOS_RUN_FLOOR. The band stays narrow in every
+# mode: a blind review of a wider one for Chaos (0.15) found rewrites that passed every check yet changed what the
+# sentence said four times as often ("organizations that prioritize mental health" -> "mental health organizations")
+RUN_FLOOR = 7
+CHAOS_RUN_FLOOR = 4
+# An AI-style phrase a rewrite brings in (STOCK_PATTERNS: "landscape", "vital", "plays a key role") counts as this many
+# words kept in a row, so a rewrite that reads more like AI text than the sentence did is used only failing others
+RUN_STOCK_WEIGHT = 6
 
-# Chaos Mode asks the T5 for more rewrites and gives sentences it changed only a little a second round
+# Chaos Mode asks the T5 for more rewrites. Sentences whose rewrite still keeps a long stretch of the writer's words get
+# Deep Rewrite's second pass (LATE_DEEP_SHARE) once the other layers have run, in place of the hotter second round
+# Chaos Mode used to give them here
 CHAOS_CANDIDATES = 4
-SECOND_PASS_CHANGE = 0.25
 # A near-copy that swaps a word or two may take one in another sense ("screen time" -> "screening time", "log in"
 # -> "connect"), which the whole sentence's scores miss. Each swap is scored on its own, as vet_many scores a
 # WordNet swap: how much less likely the T5 finds the rewrite as a paraphrase of the original than the rewrite
@@ -12680,9 +12731,10 @@ def swaps_undone(source, candidate):
     return [candidate[:new[j1].start()] + ' '.join(m.group(0) for m in old[i1:i2]) + candidate[new[j2 - 1].end():]
             for _, i1, i2, j1, j2 in ops]
 
-def pick_rewrites(eligible, sources, pool, margin=FIDELITY_MARGIN):
+def pick_rewrites(eligible, sources, pool, margin=FIDELITY_MARGIN, chaos=False):
     """sentence number -> (rewrite, change, faithfulness) for the best safe rewrite among `pool` (number ->
-    candidates)."""
+    candidates): of those about as faithful as the most faithful one, the one keeping the fewest of the sentence's
+    words in a row (see RUN_FLOOR)."""
     flat = [(n, c) for n, options in pool.items() for c in options if c and c.strip() != sources[n]]
     if not flat:
         return {}
@@ -12716,7 +12768,20 @@ def pick_rewrites(eligible, sources, pool, margin=FIDELITY_MARGIN):
     best = {}
     for n, options in faithful.items():
         top = max(o[0] for o in options)
-        fidelity, _, candidate, change = max((o for o in options if o[0] >= top - margin), key=lambda o: (o[1], o[0]))
+        source_keys = word_keys(sources[n])
+
+        def copied(o):
+            """The most words in a row the rewrite keeps from the sentence, AI-style phrases it adds counting extra."""
+            new = word_keys(o[2])
+            run = difflib.SequenceMatcher(None, new, source_keys, autojunk=False).find_longest_match(
+                0, len(new), 0, len(source_keys)).size
+            return run + RUN_STOCK_WEIGHT * max(0, stock_count(o[2]) - stock_count(sources[n]))
+
+        def least_copied(band, floor):
+            # stretches shorter than `floor` count alike, and then the most changed, most faithful one wins as before
+            return min((o for o in options if o[0] >= top - band), key=lambda o: (max(copied(o), floor), -o[1], -o[0]))
+
+        fidelity, _, candidate, change = least_copied(margin, CHAOS_RUN_FLOOR if chaos else RUN_FLOOR)
         best[n] = (candidate, change, fidelity)
     return best
 
@@ -12786,11 +12851,17 @@ def contrast_kept(pool, sources):
         repaired[(n, candidate)] = opener + ' ' + (candidate if keep else candidate[:1].lower() + candidate[1:])
     return {n: {repaired.get((n, c), c): value for c, value in options.items()} for n, options in pool.items()}
 
-def deep_paraphrase(text, deep_mode=False):
+def deep_paraphrase(text, deep_mode=False, targets=None, runs=None, budget=None, progress=None, limit=None, stats=None):
     """Replace each sentence of running text with the most faithful safe rewrite from the models.
     Returns the new text and the content words of each sentence the models wrote, so the later layers can
-    recognise them."""
+    recognise them. With `targets` ([(start, end)] in `text`) only the sentences overlapping them are rewritten, and
+    only by a rewrite keeping fewer words in a row from the writer's text (`runs`, a SourceRuns) than the sentence now
+    does: the second pass, on sentences the layers left with a long stretch as written (see LATE_DEEP_SHARE).
+    `progress(share)` hears how much is done. `limit`: the most sentences the second pass takes on (those holding the
+    longest stretches; `targets` are then (start, end, words)). `stats` (a dict) gets the number of sentences eligible."""
     started = time.monotonic()
+    budget = DEEP_TIME_BUDGET if budget is None else budget
+    late = targets is not None
     parts = LINE_BREAKS.split(text)
     blocks = [k for k in range(0, len(parts), 2) if parts[k].strip() and is_prose(parts[k].strip())]
     if not blocks:
@@ -12804,55 +12875,42 @@ def deep_paraphrase(text, deep_mode=False):
     quotes = quoted_ranges(text)         # found in the whole text: a quotation may be hard-wrapped over lines
     for k, doc in zip(blocks, docs):
         doc.user_data['quoted'] = frozenset(t.i for t in doc if overlaps_quote(text, starts[k] + t.idx, starts[k] + t.idx + 1))
+    def stretch(k, sent):
+        """The longest target the sentence overlaps (in words), 0 for none; 1 when there are no targets."""
+        a, b = starts[k] + sent.start_char, starts[k] + sent.end_char
+        return 1 if targets is None else max((t[2] if len(t) > 2 else 1 for t in targets if t[0] < b and t[1] > a), default=0)
+
     # Only English paragraphs and whole sentences: the models paraphrase into English, one sentence at a time
-    eligible = [sent for doc in docs if looks_english(doc) for sent in doc.sents
+    eligible = [sent for k, doc in zip(blocks, docs) if looks_english(doc) for sent in doc.sents
                 if len(plain_words(sent.text)) >= DEEP_MIN_WORDS and sent.text.strip()[-1:] in '.!?'
                 and not set(sent.text) & set('"“”‘()[]:') and not has_quoted(doc, range(sent.start, sent.end))
-                and not any(t.like_url or t.like_email for t in sent) and stands_alone(sent)]
+                and not any(t.like_url or t.like_email for t in sent) and stands_alone(sent) and stretch(k, sent)]
+    if stats is not None:
+        stats['eligible'] = len(eligible)
+    if limit is not None and len(eligible) > limit:
+        where = {id(doc): k for k, doc in zip(blocks, docs)}
+        keep = set(sorted(range(len(eligible)), key=lambda n: -stretch(where[id(eligible[n].doc)], eligible[n]))[:limit])
+        eligible = [sent for n, sent in enumerate(eligible) if n in keep]
     if not eligible:
         return text, []
-    sources = [sent.text.strip() for sent in eligible]
     style = text_style(text)
-    began = time.monotonic()
-    generated = paraphraser.generate(sources, CHAOS_CANDIDATES if deep_mode else paraphraser.CANDIDATES)
-    generating = time.monotonic() - began
-    # each sentence's candidates, with whether back-translation wrote them
-    pool = {n: dict.fromkeys((restore_style(o, sources[n], style=style) for o in options if o), False)
-            for n, options in enumerate(generated)}
-    # With another Deep Rewrite running, both skip the optional extras so neither keeps its user waiting long;
-    # "another one is running" is checked when each extra would start, so a request that arrived meanwhile counts
-    if (paraphraser.backtranslate_available() and paraphraser.in_flight() <= 1
-            and time.monotonic() - started < DEEP_TIME_BUDGET * 0.4):
-        for n, options in enumerate(paraphraser.backtranslate(sources)):
-            for candidate in options:
-                pool[n][restore_style(candidate, sources[n], style=style)] = True
-    pool = contrast_kept(pool, sources)
-    began = time.monotonic()
-    best = pick_rewrites(eligible, sources, pool)
-    picking = time.monotonic() - began
-    # Chaos Mode: sentences the models changed only a little get a second, hotter round from the T5, which also
-    # paraphrases the first pick once more. A second-round rewrite replaces the first pick only if it is at
-    # least as faithful; sentences no candidate could rewrite safely get no second round (the models paraphrase
-    # them unsafely, and more samples would only fish for one that slips through), and neither do those whose pick
-    # is a back-translation (the T5 rates its own hot samples above it, inverted or garbled ones too). The round
-    # runs only if, going by the first round's own timings, it finishes within the time budget.
-    weak = [n for n in best if best[n][1] < SECOND_PASS_CHANGE and not pool[n].get(best[n][0])]
-    projected = len(weak) / len(sources) * (1.5 * generating + picking)
-    if (deep_mode and weak and paraphraser.in_flight() <= 1
-            and time.monotonic() - started + projected <= DEEP_TIME_BUDGET):
-        hotter = paraphraser.generate([sources[n] for n in weak], CHAOS_CANDIDATES, 1.0, 60)
-        again = paraphraser.generate([best[n][0] for n in weak], 2, 0.8, 40)
-        second = pick_rewrites(eligible, sources, contrast_kept(
-            {n: dict.fromkeys(restore_style(c, sources[n], style=style) for c in hotter[j] + again[j] if c)
-             for j, n in enumerate(weak)}, sources))
-        for n, (candidate, change, fidelity) in second.items():
-            if change > best[n][1] + 0.05 and fidelity >= best[n][2]:
-                best[n] = (candidate, change, fidelity)
+    # A long text goes to the models a part at a time, each part of up to DEEP_CHUNK_CHARS with a time budget of its
+    # own, so a 6,000-character text is handled like three short ones (memory and the extras' timings stay the same)
+    # and `progress` hears after each part
+    groups, size = [[]], 0
+    for sent in eligible:
+        if groups[-1] and size + len(sent.text) > DEEP_CHUNK_CHARS:
+            groups.append([])
+            size = 0
+        groups[-1].append(sent)
+        size += len(sent.text)
     chosen, written = {}, []
-    for n, (candidate, _, _) in best.items():
-        sent = eligible[n]
-        chosen[(id(sent.doc), sent.start)] = finish_sentence(candidate, sent.text)
-        written += [content_words(s) for s in re.split(r'(?<=[.!?])\s+', candidate)]
+    for j, group in enumerate(groups):
+        for sent, candidate in rewrite_sentences(group, deep_mode, late, runs, budget, style):
+            chosen[(id(sent.doc), sent.start)] = finish_sentence(candidate, sent.text)
+            written += [content_words(s) for s in re.split(r'(?<=[.!?])\s+', candidate)]
+        if progress is not None:
+            progress((j + 1) / len(groups))
     for k, doc in zip(blocks, docs):
         # each sentence keeps the space after it (a second space or a tab is a token of its own in spaCy)
         rebuilt = ''.join(chosen[(id(doc), sent.start)] + sent.text_with_ws[len(sent.text_with_ws.rstrip()):]
@@ -12861,6 +12919,28 @@ def deep_paraphrase(text, deep_mode=False):
         parts[k] = block[:len(block) - len(block.lstrip())] + rebuilt.rstrip() + block[len(block.rstrip()):]
     logger.info('Deep Rewrite: %d of %d sentences rewritten in %.1f s', len(chosen), len(eligible), time.monotonic() - started)
     return ''.join(parts), written
+
+def rewrite_sentences(eligible, deep_mode, late, runs, budget, style):
+    """[(sentence, rewrite)] for the sentences (spaCy spans) the models rewrite safely, within `budget` seconds for
+    the optional extras. `late`: the second pass (deep_paraphrase), which keeps a rewrite only if it keeps fewer of the
+    writer's words in a row (`runs`) than the sentence does now."""
+    started = time.monotonic()
+    sources = [sent.text.strip() for sent in eligible]
+    generated = paraphraser.generate(sources, (LATE_CANDIDATES if late else CHAOS_CANDIDATES) if deep_mode
+                                     else paraphraser.CANDIDATES)
+    # each sentence's candidates, with whether back-translation wrote them
+    pool = {n: dict.fromkeys((restore_style(o, sources[n], style=style) for o in options if o), False)
+            for n, options in enumerate(generated)}
+    # With another Deep Rewrite running, both skip the optional extras so neither keeps its user waiting long;
+    # "another one is running" is checked when each extra would start, so a request that arrived meanwhile counts
+    if (paraphraser.backtranslate_available() and paraphraser.in_flight() <= 1 and (LATE_BACKTRANSLATE or not late)
+            and time.monotonic() - started < budget * 0.4):
+        for n, options in enumerate(paraphraser.backtranslate(sources)):
+            for candidate in options:
+                pool[n][restore_style(candidate, sources[n], style=style)] = True
+    best = pick_rewrites(eligible, sources, contrast_kept(pool, sources), chaos=deep_mode)
+    return [(eligible[n], candidate) for n, (candidate, _, _) in sorted(best.items())
+            if not late or runs.longest(word_keys(candidate)) < runs.longest(word_keys(sources[n]))]
 
 # --- Vetting WordNet swaps with the T5 (Deep Rewrite requests, when the model is loaded) ---
 # A one-word swap that the paraphraser finds implausible as a paraphrase of the sentence changed its sense
@@ -12880,8 +12960,8 @@ class SwapVetter:
     it) or the request's share of checks is used up, it stops for good: guesses made on the assumption that
     they would be checked are dropped, and later blocks use the rules for working without the model."""
 
-    def __init__(self):
-        self.busy, self.pairs = False, 0
+    def __init__(self, limit=VET_MAX_PAIRS):
+        self.busy, self.pairs, self.limit = False, 0, limit
 
     def __call__(self, sent, guessed):
         return vet_many([(sent, guessed)], self)
@@ -12913,7 +12993,7 @@ def vet_many(batch, vetter=None):
             size += len(groups[k][2])
             k += 1
         if vetter is not None:
-            if vetter.busy or vetter.pairs + size > VET_MAX_PAIRS:
+            if vetter.busy or vetter.pairs + size > vetter.limit:
                 vetter.busy = True
                 break
             vetter.pairs += size
@@ -12942,21 +13022,204 @@ def usable(vet):
     return vet if vet is not None and not getattr(vet, 'busy', False) else None
 
 # ==========================================
+#   STEP 7: STRETCHES STILL AS WRITTEN
+# ==========================================
+# The editor shows the longest stretch of the input that came through word for word (calculate_diff_metrics). Every
+# layer above works sentence by sentence and is content with one change anywhere in it, so a sentence could keep 15
+# or 20 of its words in a row. Once they have all run, each stretch of RUN_LENGTH words or more still shared with the
+# input gets one edit inside it, the first of these that makes it shorter: a word swap there (force_word_edit), a
+# contraction, a possessive, another in-place rewrite, a template or a move, or a split at a point inside it. Each
+# goes through the same checks as in the layers above; a stretch of names, numbers or words no rule may touch stays.
+RUN_LENGTH = 8              # outside Chaos
+CHAOS_RUN_LENGTH = 6
+RUN_ROUNDS = 3
+RUN_CONTEXT = 12            # words either side of a sentence counted with it, for stretches across sentences
+RUN_VET_PAIRS = 40          # model checks of this pass's word swaps, on top of the layers' own
+# Deep Rewrite's second pass (perform_nuclear_chaos) gets this share of the time budget, within the budget and that share
+# altogether
+LATE_DEEP_SHARE = 0.5
+DEEP_CHUNK_CHARS = 2500     # see deep_paraphrase
+# ...asking the T5 for more rewrites than the first pass does: the sentences it gets are the hard ones
+LATE_CANDIDATES = 4
+LATE_RUN_LENGTH = 8         # the stretches it takes on (as RUN_LENGTH / CHAOS_RUN_LENGTH)
+CHAOS_LATE_RUN_LENGTH = 6
+LATE_BACKTRANSLATE = True
+# ...and at most this share of the sentences the first pass took, those holding the longest stretches, so it adds at
+# most about that share of the first pass's time on any server
+LATE_SENTENCE_SHARE = 0.4
+
+def break_runs(text, runs, tone, deep_mode, vet=None):
+    least = CHAOS_RUN_LENGTH if deep_mode else RUN_LENGTH
+    stuck = set()
+    for _ in range(RUN_ROUNDS):
+        found = [run for run in runs.spans(text, least) if run[2] not in stuck]
+        if not found:
+            break
+        text, edited = break_round(text, found, runs, tone, deep_mode, vet, stuck)
+        if not edited:
+            break
+    if stuck:
+        logger.debug('Run breaker: %d stretch(es) left as written', len(stuck))
+    return text
+
+def break_round(text, found, runs, tone, deep_mode, vet, stuck):
+    """One edit in each sentence holding a stretch (the longest first), on paragraphs parsed as rewrite_with_spacy
+    does: a line of a code block, a line with an unbroken run of characters and a paragraph not in English stay."""
+    parts = LINE_BREAKS.split(text)
+    code = [(m.start(), m.end()) for m in CODE_SPANS.finditer(text)]
+    jobs, offset, placed = [], 0, set()
+    for k, block in enumerate(parts):
+        core = block.strip()
+        if k % 2 == 0 and core:
+            start = offset + len(block) - len(block.lstrip())
+            end = start + len(core)
+            inside = [(max(s, start), min(e, end), key) for s, e, key in found if s < end and e > start]
+            if (inside and not any(s <= start and end <= e for s, e in code)
+                    and max(len(chunk) for chunk in core.split()) <= UNBROKEN_CHUNK_LIMIT):
+                jobs.append((start, core, inside))
+                placed.update(key for _, _, key in inside)
+        offset += len(block)
+    stuck.update(key for _, _, key in found if key not in placed)
+    if not jobs:
+        return text, False
+    with _NLP_LOCK:
+        docs = list(NLP.pipe([core for _, core, _ in jobs]))
+    edits = []
+    for (start, core, inside), doc in zip(jobs, docs):
+        doc.user_data['quoted'] = frozenset(t.i for t in doc if overlaps_quote(text, start + t.idx, start + t.idx + 1))
+        if not looks_english(doc):
+            stuck.update(key for _, _, key in inside)
+            continue
+        prose, sents, done = is_prose(core), list(doc.sents), set()
+        for s, e, key in inside:
+            lo, hi = s - start, e - start
+            sent = max(sents, key=lambda x: min(x.end_char, hi) - max(x.start_char, lo))
+            if min(sent.end_char, hi) - max(sent.start_char, lo) <= 0 or sent.start in done:
+                continue
+            within = {t.i for t in sent if not t.is_space and t.idx < hi and t.idx + len(t.text) > lo}
+            new = break_in_sentence(text, start, sents, sent, within, (s, e), runs, tone, deep_mode, vet, prose)
+            if new is None:
+                stuck.add(key)
+                continue
+            done.add(sent.start)
+            edits.append((start + sent.start_char, start + sent.end_char, new))
+    for a, b, new in sorted(edits, reverse=True):
+        text = text[:a] + new + text[b:]
+    return text, bool(edits)
+
+def same_facts(old, new, sent):
+    """True if a sentence's rewrite keeps its numbers as written and its names, and brings in no capital mid-sentence."""
+    if Counter(NUMBER_RUN.findall(old)) != Counter(NUMBER_RUN.findall(new)):
+        return False
+    for t in sent:
+        if t.is_alpha and keeps_capital(t) and not re.search(r'\b' + re.escape(t.text) + r'\b', new):
+            return False
+    for piece in re.split(r'(?<=[.!?])\s+', new):
+        for word in re.findall(r"[A-Za-z][\w'’-]*", piece)[1:]:
+            if word[0].isupper() and not re.search(r'\b' + re.escape(word) + r'\b', old):
+                return False
+    return True
+
+def break_in_sentence(text, base, sents, sent, within, run, runs, tone, deep_mode, vet, prose):
+    """The sentence rewritten so that the stretch in it (`within`, token indices) is shorter, or None."""
+    doc = sent.doc
+    old = sent.text
+    a, b = base + sent.start_char, base + sent.end_char
+    before, after = word_keys(text[:a])[-RUN_CONTEXT:], word_keys(text[b:])[:RUN_CONTEXT]
+    current = runs.longest(before + word_keys(old) + after)
+    k = sents.index(sent)
+    previous = sents[k - 1].text.strip().lower() if k else ''
+    nearby = (word_forms(sents[k - 1].text) if k else set()) | (word_forms(sents[k + 1].text) if k + 1 < len(sents) else set())
+    pieces = [[t.i, t.text] for t in sent if not t.is_space]
+
+    def better(new):
+        return (new and new != old and runs.longest(before + word_keys(new) + after) < current
+                and same_facts(old, new, sent))
+
+    new = force_word_edit(sent, pieces, tone, deep_mode, usable(vet), nearby, within=within)
+    if new and better(tidy(render(new, doc))):
+        return tidy(render(new, doc))
+    if tone in CONTRACT_CHANCE:
+        contracted = contract_within(text, *run)
+        if contracted != text:
+            new = contracted[a: b + len(contracted) - len(text)]
+            if better(new):
+                return new
+    if not prose:
+        return None
+    # Outside Chaos a sentence gets one template or move at most (rewrite_block), so here only the rewrites that work
+    # inside a phrase; Chaos may stack a move on another, and split, as its rhythm layer does (not in Academic)
+    if restructurable(sent):
+        options = [of_to_possessive] + [f for f in in_place_transforms(tone) if f is not of_to_possessive]
+        options += list(REORDERING) if deep_mode else []
+        for option in options:
+            new = option(sent, [list(p) for p in pieces])
+            if not new or (option in REORDERING and opens_like(new, previous)):
+                continue
+            new = [list(p) for p in new]
+            drop_doubled_stop(new, doc)
+            if better(tidy(render(new, doc))):
+                return tidy(render(new, doc))
+    if deep_mode and tone != 'academic' and splittable(sent):
+        sentence = Sentence([list(p) for p in pieces], doc, sent)
+        sentence.splits = split_points(sent, sentence.pieces)
+        for point in usable_splits(sentence, tone):
+            index = sentence.pieces[point[0]][0]
+            if index is None or not min(within) - 1 <= index <= max(within) + 1:
+                continue
+            halves = split_sentence(sentence, point, tone)
+            for half in halves:
+                drop_doubled_stop(half.pieces, doc)
+            new = tidy(' '.join(half.text() for half in halves))
+            if better(new):
+                return new
+    return None
+
+# ==========================================
 #   ENTRY POINTS
 # ==========================================
 
-def perform_nuclear_chaos(text, tone, deep_mode, deep_rewrite=False):
+def perform_nuclear_chaos(text, tone, deep_mode, deep_rewrite=False, model_checks=True, progress=None):
+    """The rewrite of `text`. `model_checks=False` (batch requests) keeps a Chaos request without Deep Rewrite from
+    having the model check the run breaker's word swaps. `progress(share)` hears how far a Deep Rewrite has got
+    (its first pass as the first 70%, its second as the next 25%)."""
+    started = time.monotonic()
+    runs = SourceRuns(text)     # the text as sent, which the change map compares with
     text = clean_text(text)
     source = text
     model_written = []
     deep = deep_rewrite and deep_rewrite_available()
+
+    def report(low, high):
+        return None if progress is None else (lambda share: progress(low + (high - low) * share))
+
+    first = {}
     if deep:
-        text, model_written = deep_paraphrase(text, deep_mode)
+        text, model_written = deep_paraphrase(text, deep_mode, progress=report(0.0, 0.7), stats=first)
     text = apply_phrase_rules(text, tone, deep_mode)
     text = apply_tone_contractions(text, tone, deep_mode)
     if NLP is not None:
         vet = swap_vetter(deep_mode, deep) if len(source) <= paraphraser.MAX_CHARS else None
         text = rewrite_with_spacy(text, tone, deep_mode, model_written, vet)
+        # Deep Rewrite's second pass, on the sentences the layers left with a long stretch as written: the layers
+        # often split or reworded them since, and the models take the new, shorter sentences more readily
+        least = (CHAOS_LATE_RUN_LENGTH if deep_mode else LATE_RUN_LENGTH)
+        parts = max(1, math.ceil(len(source) / DEEP_CHUNK_CHARS))     # as deep_paraphrase divides it, roughly
+        room = DEEP_TIME_BUDGET * (1 + LATE_DEEP_SHARE) * parts - (time.monotonic() - started)
+        targets = [(s, e, len(key)) for s, e, key in runs.spans(text, least)] if deep and room > 0 else []
+        if targets:
+            text, _ = deep_paraphrase(text, deep_mode, targets, runs, min(DEEP_TIME_BUDGET * LATE_DEEP_SHARE, room / parts),
+                                      progress=report(0.7, 0.95),
+                                      limit=max(1, math.ceil(LATE_SENTENCE_SHARE * first.get('eligible', 0))))
+        # The run breaker's swaps get model checks of their own, an allowance apart from the word layer's (which may have
+        # used its own up): a Deep Rewrite request's, or, in Chaos Mode, an idle model's (paraphraser.reserve_scoring)
+        scoring = (vet is None and deep_mode and model_checks and paraphraser.available()
+                   and paraphraser.reserve_scoring())
+        try:
+            text = break_runs(text, runs, tone, deep_mode, SwapVetter(RUN_VET_PAIRS) if vet is not None or scoring else None)
+        finally:
+            if scoring:
+                paraphraser.release_scoring()
     else:
         text = rewrite_basic(text, tone, deep_mode)
     return fix_number_articles(text, source)
@@ -12965,6 +13228,49 @@ def comparable(word):
     """A word without case or surrounding punctuation, so "Indian," and "Indian." are the same word."""
     return re.sub(r'^\W+|\W+$', '', word.lower())
 
+def word_keys(text):
+    """The words of a text as the change map compares them (calculate_diff_metrics), and the run breaker too."""
+    return [comparable(w) for w in text.split()]
+
+class SourceRuns:
+    """The writer's text, for finding the stretches of a rewrite still word for word as written: exactly the "Longest
+    unchanged" the editor shows, since both use word_keys. A stretch shares `least` or more words in a row with the
+    source wherever any `least` of its words in a row also stand together in the source, so nothing has to be mapped
+    back to the sentence it came from."""
+
+    def __init__(self, source):
+        self.keys = word_keys(source)
+        self.matcher = difflib.SequenceMatcher(None, autojunk=False)
+        self.matcher.set_seq2(self.keys)       # indexed once; each check only sets the other side
+        self.grams = {}
+
+    def longest(self, keys):
+        """The most words in a row that `keys` share with the source."""
+        self.matcher.set_seq1(keys)
+        return self.matcher.find_longest_match(0, len(keys), 0, len(self.keys)).size
+
+    def spans(self, text, least):
+        """[(start, end, keys)] of the stretches of `text` sharing `least` or more words in a row with the source,
+        longest first."""
+        if least not in self.grams:
+            self.grams[least] = {tuple(self.keys[i:i + least]) for i in range(len(self.keys) - least + 1)}
+        grams = self.grams[least]
+        tokens = [(m.start(), m.end(), comparable(m.group())) for m in re.finditer(r'\S+', text)]
+        keys = [t[2] for t in tokens]
+        hits = [tuple(keys[i:i + least]) in grams for i in range(len(keys) - least + 1)]
+        found, i = [], 0
+        while i < len(hits):
+            if hits[i]:
+                j = i
+                while j + 1 < len(hits) and hits[j + 1]:
+                    j += 1
+                first, last = i, j + least - 1
+                found.append((tokens[first][0], tokens[last][1], tuple(keys[first:last + 1])))
+                i = j + 1
+            else:
+                i += 1
+        return sorted(found, key=lambda run: -len(run[2]))
+
 def calculate_diff_metrics(original, humanized):
     """Compare the rewrite with the original, word by word. Each output word is one of:
       added      - not in the original (shown in red)
@@ -12972,7 +13278,7 @@ def calculate_diff_metrics(original, humanized):
       unchanged  - same word in the same place; the longest such run is also "longest" (blue)
     Case and surrounding punctuation are ignored, so splitting a sentence doesn't mark its words as new."""
     original_words, new_words = original.split(), humanized.split()
-    before, after = [comparable(w) for w in original_words], [comparable(w) for w in new_words]
+    before, after = word_keys(original), word_keys(humanized)
 
     matcher = difflib.SequenceMatcher(None, before, after, autojunk=False)
     match = matcher.find_longest_match(0, len(before), 0, len(after))

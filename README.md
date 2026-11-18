@@ -11,9 +11,12 @@ Razorpay, priced by region so it stays affordable everywhere.
 **Editor**
 - Four tones: standard, professional, casual and academic, plus Chaos Mode for a stronger rewrite.
 - Deep Rewrite (beta, optional): small models on the server reword whole sentences before the
-  rule-based layers run. Offered only when the models are installed.
+  rule-based layers run, and again afterwards on any sentence that still keeps a long stretch of the
+  original wording. Up to 6,000 characters; in the editor, a text over 2,500 characters runs in the
+  background and shows its progress. Offered only when the models are installed.
 - A change map: new words in red, moved words (restructured sentences) underlined in yellow, and the
-  longest unchanged run in blue, with counts of changed and moved words and restructured sentences.
+  longest unchanged run in blue (the most words of the input still in a row, ignoring case and
+  punctuation), with counts of changed and moved words and restructured sentences.
 - The six most recent results are kept in the browser's local storage (never on the server).
 
 **Rewriting engine** (rule-based, no external AI service)
@@ -34,6 +37,11 @@ Razorpay, priced by region so it stays affordable everywhere.
   something else ("its highest level since 2019" keeps "since 2019" in place), lists that run in
   order ("small, medium and large") keep their order, a joined sentence keeps the capital of a name
   but not of an ordinary word, and "offered her services" never becomes "had her services".
+- A last pass looks for stretches of the input still word for word: in Chaos Mode 6 or more words in
+  a row (8 otherwise), across sentence breaks too, each get one more edit inside them where a safe one
+  fits: a word swap there, a contraction, a possessive ("the history of the region" → "the region's
+  history"), a template or move, or a split. It goes through the same checks as the layers above, and
+  names, numbers and quotations stay, so a stretch made of them can remain.
 - Word choice uses hand-checked swaps for overused AI words and formal words, each with rules for
   where it fits ("nearly" stays in "not nearly enough", "sufficient" never follows "an", "cultivate"
   only becomes "build" for things like trust). WordNet synonyms are only tried when the Deep Rewrite
@@ -46,9 +54,9 @@ Razorpay, priced by region so it stays affordable everywhere.
   would offer…" → "proposed a new scheme. The new scheme would offer…"). The sentence templates are
   also applied to sentences Deep Rewrite wrote. On its own the gain is modest: a rule only fires
   where it fits, and on most sentences only a few fit, in any mode. Most of Chaos Mode's extra
-  reach comes from Deep Rewrite. Combined with Deep Rewrite, it also asks the model for
-  more rewrites, gives sentences that changed only a little a second round (kept only if it is at least
-  as faithful), and tries more model-checked synonym swaps, nouns included. In the editor, turning
+  reach comes from Deep Rewrite. Combined with Deep Rewrite, it also asks the model for more
+  rewrites, prefers the one keeping the fewest of the sentence's words in a row even among short
+  stretches, and tries more model-checked synonym swaps, nouns included. In the editor, turning
   Chaos Mode on also turns Deep Rewrite on when it is installed. The API keeps the two separate, so
   `deep_mode` alone stays fast: it uses the rules that need no model.
 - Input is cleaned first: zero-width and other invisible characters, control characters, odd spaces
@@ -72,7 +80,7 @@ Razorpay, priced by region so it stays affordable everywhere.
   installed, back-translation through French with OPUS-MT models trained on human translations,
   whose wording is plainer than the T5's (which learned from ChatGPT paraphrases). Every candidate
   must keep each name, number and date (and how many of each), the topic's nouns and the sentence's
-  subject, the key describing words ("remote work", "on an empty stomach", "is efficient"), who does
+  subject (in each part, if it splits the sentence), the key describing words ("remote work", "on an empty stomach", "is efficient"), who does
   what to whom (including who gives and who receives), the negations and what they apply to
   ("prevents", "unable to" and "avoid" count too), what the sentence claims ("must" vs "should", "can"
   vs "may", "studies suggest" vs "studies show", "some studies", "tended to", "often", who said it,
@@ -86,11 +94,17 @@ Razorpay, priced by region so it stays affordable everywhere.
   near-copy that only swaps one word for another sense, may use no made-up words or punctuation, and
   must pass three checks with the T5 (a round trip back to the original, the single least likely
   word, and a forward plausibility check).
-  Of the rewrites that are about as faithful as the best one, the most changed is used, ranked down
-  if it adds AI-style phrasing. Sentences it rewrites then get word-level edits and, in Chaos Mode,
-  the sentence templates; the others go through all the layers. Together the models need about
-  450 MB more memory and take roughly 10–20 ms per character on a server with 1.5 CPUs (a
-  2,400-character Chaos + Deep Rewrite took 20–25 seconds on an 8-core PC).
+  Of the rewrites that are about as faithful as the best one, the one keeping the fewest of the
+  sentence's words in a row is used (under 7 words, the most changed), ranked well down if it adds
+  AI-style phrasing ("vital", "landscape"). Sentences it rewrites then get word-level edits and, in
+  Chaos Mode, the sentence templates; the others go through all the layers. After them, a second
+  pass sends the sentences still holding the longest stretches of the input back to the models (at
+  most 40% as many sentences as the first pass, with the same checks) and keeps a rewrite only if it
+  shortens the stretch: the layers have often split or reworded the sentence by then, and the models
+  take the new one more readily. A text
+  over 2,500 characters goes to the models 2,500 characters at a time. Together the models need
+  about 450 MB more memory and take roughly 12–24 ms per character on a server with 1.5 CPUs
+  (a 2,400-character Chaos + Deep Rewrite took 26–29 seconds on an 8-core PC).
 - Text is processed in memory and never stored or logged.
 
 **Developer API**
@@ -209,8 +223,8 @@ production. Leaving an optional value empty turns that feature off.
 | `TRUST_PROXY` | `1` when a proxy such as Cloudflare sits in front (automatic on Render), so the app sees the visitor's IP and HTTPS. |
 | `PARAPHRASER_URL`, `BACKTRANSLATE_URL` | Download links for `paraphraser.zip` and `backtranslate.zip`; `start.py` installs a missing model from them. |
 | `PARAPHRASER_DIR`, `BACKTRANSLATE_DIR` | Where the models live, if not in `data/` (the installer uses them too). |
-| `DEEP_REWRITE_MAX_CHARS` | Longest text Deep Rewrite accepts (default 2,500 characters). |
-| `DEEP_REWRITE_SECONDS` | Time a Deep Rewrite aims to stay within (default 45). It is not a hard cap: back-translation is skipped once 40% of it has gone, and Chaos Mode's second round when it wouldn't finish in time; with two Deep Rewrites running at once, both skip these extras. |
+| `DEEP_REWRITE_MAX_CHARS` | Longest text Deep Rewrite accepts (default 6,000 characters). In the editor a text over 2,500 characters runs as a background job; the API waits for the result, so give API clients a timeout of about 3 minutes. |
+| `DEEP_REWRITE_SECONDS` | Time a Deep Rewrite aims to stay within for each 2,500 characters (default 45), and its second pass within half as much again. It is not a hard cap: back-translation is skipped once 40% of it has gone, and the second pass once all of it has; with two Deep Rewrites running at once, both skip back-translation. |
 | `DEEP_REWRITE_QUEUE` | Deep Rewrite requests allowed at once, running or waiting (default 2); more get a 503 at once. |
 | `PARAPHRASER_THREADS` | CPU threads for each model (default 2 on a server with at least 2 CPUs, otherwise 1). |
 | `GUNICORN_TIMEOUT` | Seconds a worker may go silent before gunicorn restarts it (default 120). It doesn't cut off a long request; the proxy's or client's timeout does, so give Deep Rewrite clients a long one. |
@@ -220,7 +234,9 @@ Empty or malformed numbers in these settings fall back to the default, with a wa
 ## Deploy on Botkeep
 
 One Botkeep server with 1.5–2 GB of RAM fits the app with Deep Rewrite (measured: about 650 MB in
-use with both models loaded, about 850 MB at the peak of a 2,500-character Chaos + Deep Rewrite).
+use with both models loaded, about 830 MB at the peak of a 6,000-character Chaos + Deep Rewrite).
+Keep one gunicorn worker (`WEB_CONCURRENCY`, default 1): the editor's background Deep Rewrites and the
+rate limits are kept in that worker's memory.
 The packages and models take about 0.9 GB of disk, and about 1.2 GB while an uploaded model zip is
 being unpacked.
 

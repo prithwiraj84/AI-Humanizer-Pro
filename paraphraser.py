@@ -69,8 +69,10 @@ def usable_cpus():
 
 
 # Measured at 1.5 CPUs: 10 to 20 ms per character (generating, back-translating and checking), so 2,500
-# characters take 25 to 50 seconds; longer texts would keep a small server busy for too long
-MAX_CHARS = env_number('DEEP_REWRITE_MAX_CHARS', 2500, minimum=1)
+# characters take 25 to 50 seconds. Longer texts go to the models 2,500 characters at a time (humanizer's
+# DEEP_CHUNK_CHARS), and in the editor run as a background job (app.py), so a 6,000-character text takes a few minutes
+# on a small server without holding up a web request
+MAX_CHARS = env_number('DEEP_REWRITE_MAX_CHARS', 6000, minimum=1)
 CANDIDATES = 3            # sampled T5 rewrites per sentence
 MAX_TOKENS = 160          # longer sentences are left to the rule-based layers
 # A second thread only helps with two whole CPUs; on less it competes with the web server for the same CPU
@@ -271,6 +273,24 @@ def release():
 def in_flight():
     """Deep Rewrite requests running or waiting now; with more than one, each skips its optional extras."""
     return _in_flight
+
+
+# A request without Deep Rewrite (Chaos Mode on its own, or a text over the Deep Rewrite limit) may still have the T5
+# check the few word swaps of the run breaker while the model is idle: one such request at a time, and it never waits
+# or triggers a load
+_scoring = threading.BoundedSemaphore(1)
+
+
+def reserve_scoring():
+    """Take the scoring slot without waiting: False if the model isn't loaded, a Deep Rewrite is in flight or another
+    request holds the slot. Pair with release_scoring()."""
+    if _in_flight or not is_loaded():
+        return False
+    return _scoring.acquire(blocking=False)
+
+
+def release_scoring():
+    _scoring.release()
 
 
 def generate(sentences, n=CANDIDATES, temperature=0.8, topk=40):

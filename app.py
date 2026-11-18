@@ -97,6 +97,10 @@ CRON_SECRET = os.environ.get("CRON_SECRET", "")
 MAX_TEXT_LENGTH = 20000
 MAX_BATCH_ITEMS = 25
 MAX_BATCH_CHARS = 50000
+# The editor's Deep Rewrite of a longer text runs in the background (JobStore); the models take a text this much at a
+# time, and a finished job's result waits this many seconds to be fetched
+BACKGROUND_MIN_CHARS = 2500
+JOB_LIFETIME = 600
 MIN_PASSWORD_LENGTH = 8
 VERIFY_LINK_LIFETIME = timedelta(days=3)
 OTP_LIFETIME = timedelta(minutes=10)
@@ -742,6 +746,7 @@ def template_globals():
         'api_plans': billing.PLANS,
         'deep_rewrite_available': humanizer.deep_rewrite_available(),
         'deep_rewrite_max_chars': paraphraser.MAX_CHARS,
+        'deep_rewrite_background_chars': BACKGROUND_MIN_CHARS,
         'current_year': utcnow().year,
     }
 
@@ -1706,6 +1711,99 @@ def scheduled_tasks():
 #   CORE HUMANIZER ENDPOINT
 # ==========================================
 
+def humanize_result(text, humanized_text):
+    """The JSON fields of a rewrite: the text, the change map and its figures."""
+    metrics = calculate_diff_metrics(text, humanized_text)
+    return {
+        "original": text,
+        "humanized": humanized_text,
+        "diff_html": metrics['diff_html'],
+        "longest_unchanged": metrics['longest_unchanged'],
+        "structural_changes": f"{metrics['structural_score']}%",
+        "changed_words": metrics['changed_words_count'],
+        "new_words": metrics['new_words_count'],
+        "moved_words": metrics['moved_words_count'],
+        "restructured_sentences": metrics['restructured_sentences'],
+    }
+
+class JobStore:
+    """The editor's long Deep Rewrites, run in the background so no web request waits minutes for one: kept in memory
+    only (a text and its rewrite are never written anywhere), one running job per user, a result handed out once and
+    dropped unfetched after JOB_LIFETIME seconds. Exact with one gunicorn worker (the default config), like the rate
+    limiter; with several, a job is only found by the worker that runs it."""
+
+    def __init__(self):
+        self._jobs, self._lock = {}, threading.Lock()
+
+    def _expire(self, now):
+        for key in [k for k, job in self._jobs.items() if job['finished'] and now - job['finished'] > JOB_LIFETIME]:
+            del self._jobs[key]
+
+    def start(self, user_id):
+        """A new job's id, or None while the user has one running."""
+        now = time.monotonic()
+        with self._lock:
+            self._expire(now)
+            if any(job['user'] == user_id and not job['finished'] for job in self._jobs.values()):
+                return None
+            key = secrets.token_urlsafe(16)
+            self._jobs[key] = {'user': user_id, 'progress': 0.0, 'finished': None, 'result': None, 'error': None}
+            return key
+
+    def drop(self, key):
+        with self._lock:
+            self._jobs.pop(key, None)
+
+    def progress(self, key, share):
+        with self._lock:
+            if key in self._jobs:
+                self._jobs[key]['progress'] = max(self._jobs[key]['progress'], min(1.0, share))
+
+    def finish(self, key, result=None, error=None):
+        with self._lock:
+            if key in self._jobs:
+                self._jobs[key].update(result=result, error=error, finished=time.monotonic(), progress=1.0)
+
+    def fetch(self, key, user_id):
+        """The user's job as it stands (a copy), or None; a finished one is handed out once."""
+        with self._lock:
+            self._expire(time.monotonic())
+            job = self._jobs.get(key)
+            if job is None or job['user'] != user_id:
+                return None
+            if job['finished']:
+                del self._jobs[key]
+            return dict(job)
+
+jobs = JobStore()
+
+def run_job(key, text, tone, deep_mode):
+    """A background Deep Rewrite (see JobStore); it holds the Deep Rewrite slot the request took until it ends."""
+    try:
+        humanized_text = perform_nuclear_chaos(text, tone, deep_mode, True,
+                                               progress=lambda share: jobs.progress(key, share))
+        jobs.finish(key, result=humanize_result(text, humanized_text))
+    except Exception as e:
+        # Log only the error type and location: messages can quote the user's text, which is never stored
+        logger.error('Humanize job failed: %s at %s', type(e).__name__, error_location(e))
+        jobs.finish(key, error="Processing failed.")
+    finally:
+        paraphraser.release()
+
+@app.route('/humanize/jobs/<key>', methods=['GET'])
+def humanize_job(key):
+    """How a background Deep Rewrite is getting on: {"status": "running", "progress": 0.42}, or its result once."""
+    if 'user_id' not in session:
+        return jsonify({"error": "Authentication required"}), 401
+    job = jobs.fetch(key, session['user_id'])
+    if job is None:
+        return jsonify({"error": "This rewrite has expired or doesn't exist. Please run it again."}), 404
+    if not job['finished']:
+        return jsonify({"status": "running", "progress": round(job['progress'], 2)})
+    if job['error']:
+        return jsonify({"error": job['error']}), 500
+    return jsonify(dict(job['result'], status='done'))
+
 @app.route('/humanize', methods=['POST'])
 def humanize():
     api_key = request.headers.get('X-API-Key')
@@ -1736,6 +1834,7 @@ def humanize():
     tone = data.get('tone', 'standard')
     deep_mode = data.get('deep_mode', False)
     deep_rewrite = data.get('deep_rewrite', False)
+    background = data.get('background', False)
 
     if not isinstance(text, str) or not text.strip():
         return jsonify({"error": "No text provided"}), 400
@@ -1747,13 +1846,19 @@ def humanize():
         return jsonify({"error": "deep_mode must be true or false"}), 400
     if not isinstance(deep_rewrite, bool):
         return jsonify({"error": "deep_rewrite must be true or false"}), 400
+    if not isinstance(background, bool):
+        return jsonify({"error": "background must be true or false"}), 400
+    # Only the editor (a signed-in session) runs a long Deep Rewrite in the background; shorter texts don't need it
+    background = background and deep_rewrite and not api_key and len(text) > BACKGROUND_MIN_CHARS
     if deep_rewrite:
         if not humanizer.deep_rewrite_available():
             return jsonify({"error": "Deep Rewrite isn't available on this server"}), 400
         if len(text) > paraphraser.MAX_CHARS:
             return jsonify({"error": f"Deep Rewrite handles up to {paraphraser.MAX_CHARS:,} characters at a time"}), 400
-        # The model is far heavier than the rule-based layers, so it has its own, lower limit
-        retry_after = limiter.hit(f'deep_rewrite:{identity}', *RATE_LIMITS['deep_rewrite'])
+        # The model is far heavier than the rule-based layers, so it has its own, lower limit; a long text counts
+        # once for each part of up to BACKGROUND_MIN_CHARS the models take at a time
+        retry_after = limiter.hit(f'deep_rewrite:{identity}', *RATE_LIMITS['deep_rewrite'],
+                                  cost=max(1, math.ceil(len(text) / BACKGROUND_MIN_CHARS)))
         if retry_after:
             return too_many_requests(retry_after)
 
@@ -1767,34 +1872,37 @@ def humanize():
         if charge.warn:
             send_quota_warning(api_user_id, charge.row)
 
+    # A long Deep Rewrite from the editor runs in the background (see JobStore); the API waits for its result
+    job = None
+    if background:
+        job = jobs.start(session['user_id'])
+        if job is None:
+            return jsonify({"error": "A long Deep Rewrite of yours is still running. Please wait for it to finish."}), 409
+
     if deep_rewrite and not paraphraser.reserve():
         if charge:
             billing.refund_request(api_user_id, charge)
+        if job:
+            jobs.drop(job)
         response = jsonify({"error": "Deep Rewrite is busy with other texts. Please try again in a minute, or turn it off."})
         response.status_code = 503
         response.headers['Retry-After'] = '30'
         return response
 
+    if job:
+        threading.Thread(target=run_job, args=(job, text, tone, deep_mode), daemon=True).start()
+        return jsonify({"job": job}), 202
+
     try:
         humanized_text = perform_nuclear_chaos(text, tone, deep_mode, deep_rewrite)
-        metrics = calculate_diff_metrics(text, humanized_text)
+        result = humanize_result(text, humanized_text)
 
         response_time = (time.perf_counter() - start_time) * 1000
 
         if api_key_id:
             log_api_usage(api_key_id, '/humanize', 'success', response_time)
 
-        response = jsonify({
-            "original": text,
-            "humanized": humanized_text,
-            "diff_html": metrics['diff_html'],
-            "longest_unchanged": metrics['longest_unchanged'],
-            "structural_changes": f"{metrics['structural_score']}%",
-            "changed_words": metrics['changed_words_count'],
-            "new_words": metrics['new_words_count'],
-            "moved_words": metrics['moved_words_count'],
-            "restructured_sentences": metrics['restructured_sentences'],
-        })
+        response = jsonify(result)
         return quota_headers(response, charge) if charge else response
 
     except Exception as e:
@@ -1873,7 +1981,8 @@ def humanize_batch():
         item_start = time.perf_counter()
         result = {"index": i} if item['id'] is None else {"index": i, "id": item['id']}
         try:
-            humanized_text = perform_nuclear_chaos(item['text'], item['tone'], item['deep_mode'])
+            # no Deep Rewrite, and no model checks of word swaps either (deep_rewrite, model_checks): a batch is many texts
+            humanized_text = perform_nuclear_chaos(item['text'], item['tone'], item['deep_mode'], False, False)
             metrics = calculate_diff_metrics(item['text'], humanized_text)
             result.update({"humanized": humanized_text, "longest_unchanged": metrics['longest_unchanged'],
                            "structural_changes": f"{metrics['structural_score']}%", "changed_words": metrics['changed_words_count'],

@@ -155,6 +155,9 @@
     // Deep Rewrite runs a model on the server's CPU, so it takes shorter texts (absent if it isn't installed)
     const deepRewriteEl = document.getElementById('deepRewrite');
     const DEEP_REWRITE_MAX_CHARS = {{ deep_rewrite_max_chars | tojson }};
+    // A longer Deep Rewrite runs on the server in the background; the page asks how it's getting on
+    const BACKGROUND_CHARS = {{ deep_rewrite_background_chars | tojson }};
+    const POLL_MS = 2000;
     const charLimit = () => deepRewriteEl && deepRewriteEl.checked ? DEEP_REWRITE_MAX_CHARS : MAX_CHARS;
     // Each account keeps its own history in this browser, so people sharing a device don't see each other's work
     const HISTORY_KEY = 'ai_humanizer_history:' + {{ session.get('user_id') | tojson }};
@@ -304,6 +307,27 @@
     }
 
     // --- MAIN LOGIC ---
+    // A background Deep Rewrite: ask every POLL_MS how far it has got, until its result (or an error) comes back.
+    // A dropped connection is retried; the server keeps a finished result for ten minutes.
+    async function waitForJob(job) {
+        let failures = 0;
+        for (;;) {
+            await new Promise((resolve) => setTimeout(resolve, POLL_MS));
+            let response;
+            try {
+                response = await fetch(`/humanize/jobs/${encodeURIComponent(job)}`, { cache: 'no-store' });
+            } catch (e) {
+                if (++failures >= 5) throw e;
+                continue;
+            }
+            failures = 0;
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) throw new Error(data.error || 'Something went wrong. Please try again.');
+            if (data.status !== 'running') return data;
+            setStatus('working', `Deep rewriting · ${Math.round((data.progress || 0) * 100)}%`);
+        }
+    }
+
     async function processText() {
         if (actionBtn.disabled) return;
         const input = inputEl.value;
@@ -333,11 +357,12 @@
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     text: input, tone: getTone(), deep_mode: document.getElementById('deepMode').checked,
-                    deep_rewrite: deepRewrite
+                    deep_rewrite: deepRewrite, background: deepRewrite && input.length > BACKGROUND_CHARS
                 })
             });
-            const data = await response.json().catch(() => ({}));
+            let data = await response.json().catch(() => ({}));
             if (!response.ok) throw new Error(data.error || 'Something went wrong. Please try again.');
+            if (response.status === 202 && data.job) data = await waitForJob(data.job);
 
             renderResult(input, data);
             saveToHistory(input, data.humanized);
