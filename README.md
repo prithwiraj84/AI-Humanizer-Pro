@@ -20,6 +20,12 @@ Razorpay, priced by region so it stays affordable everywhere.
 - The six most recent results are kept in the browser's local storage (never on the server).
 
 **Rewriting engine** (rule-based, no external AI service)
+- A sentence planner decides what each sentence gets. It lists every edit that is safe there (word
+  swaps, the phrase table, sentence templates, moved phrases, reordered lists, splits), chooses a
+  combination that breaks up the longest stretches of the input still word for word, within a risk
+  budget set by the tone, and checks each sentence's names, numbers and negations before keeping it.
+  Where no safe edit exists, the words stay. `HUMANIZER_CORE=legacy` switches back to the previous
+  engine, which adds edits by chance, for one release.
 - Six layers: stock AI phrases, openers and transitions ("plays a crucial role in", "In today's
   fast-paced digital landscape", "cannot be overstated", "questions regarding X" → "questions about
   X"); contractions by tone; word choice; sentence structure (passive to active, "the integration of
@@ -42,11 +48,30 @@ Razorpay, priced by region so it stays affordable everywhere.
   fits: a word swap there, a contraction, a possessive ("the history of the region" → "the region's
   history"), a template or move, or a split. It goes through the same checks as the layers above, and
   names, numbers and quotations stay, so a stretch made of them can remain.
+- Measured on 24 new AI-written paragraphs that played no part in development (stories, emails,
+  product copy, reviews, how-tos, science, history, academic and opinion texts; 3 runs each),
+  Standard changes about 9% of the words (the previous version 6%) and Chaos Mode about 10% (7%).
+  The longest unchanged run averages about 32 words (44 before), and about 3 sentences in 10 come
+  back word for word (half before). With Deep Rewrite, on a held-out set of 60 paragraphs, Standard
+  changes about 18% (16%) and Chaos Mode about 23% (19%), with the longest run at about 21 and 18
+  words (27 and 25). In a blind review of the 24 paragraphs neither version changed a meaning, and
+  the new one had more sentences with awkward or slightly shifted wording (about 13 in 100, against
+  8); the cases found were fixed afterwards. Names, numbers, key terms and most common words stay,
+  and a sentence with no safe edit is left as written, so the rules alone keep much of the wording.
 - Word choice uses hand-checked swaps for overused AI words and formal words, each with rules for
   where it fits ("nearly" stays in "not nearly enough", "sufficient" never follows "an", "cultivate"
   only becomes "build" for things like trust). WordNet synonyms are only tried when the Deep Rewrite
   model is loaded to check each swap in its sentence: about a quarter of them take another sense of
   the word ("sunny" → "gay", "employs 4,500 people" → "applies"), which no word statistic catches.
+- Two data files widen what the rules can change without a model. `data/lexicon10.json` holds about
+  210 words, each with rules for where its swap fits, sentences where it must swap and sentences
+  where it must not ("much bigger" → "far bigger" but not "very much"; "has been shown to" → "has
+  been found to" but not "shown to the committee"). `data/phrases10.json` holds about 85 multi-word
+  rewrites ("across the globe" → "around the world"). Four general sentence edits join them: "also"
+  moved to the end ("also rely on local forests for food" → "rely on local forests for food as
+  well"), a frequency adverb to the front ("Adults generally need" → "Generally, adults need"), "the
+  plants that share the planet" → "the plants sharing the planet", and ", offering peace" → "and
+  offers peace".
 - Chaos Mode rewrites more of everything: every hand-checked word swap that fits, every optional
   opener, most filler openers ("Moreover,", "In conclusion,") left out entirely, empty intensifiers
   always cut, phrases moved and lists reordered wherever they fit, more contractions in the standard
@@ -62,6 +87,11 @@ Razorpay, priced by region so it stays affordable everywhere.
 - Input is cleaned first: zero-width and other invisible characters, control characters, odd spaces
   and look-alike letters from other alphabets (often left by copy-pasting from chat tools) are removed,
   and old-style line breaks become ordinary ones, so none of them reach the output.
+- A chat assistant's own lines around the text are dropped: a lead-in such as "Sure! Here's a short
+  paragraph about bees:" and a closing offer such as "Would you like me to make it longer?". Only
+  short lines at the very start or end that talk about the text itself count, so an email's "Let me
+  know if you have any questions." stays. The editor says what was removed, and the API returns it
+  as `removed_lines`.
 - spaCy (`en_core_web_sm`) for tags, entities and the dependency parse; lemminflect for word forms.
 - Data built offline with NLTK: a WordNet synonym table that keeps only senses both words are
   mainly used in (SemCor counts, `scripts/build_synonyms.py`), and Brown corpus word pairs that
@@ -155,8 +185,9 @@ mailer.py            Transactional email over SMTP
 db.py                SQLite / PostgreSQL access layer
 templates/           Pages, partials and email templates
 static/              CSS, JavaScript and images
-data/                Synonym, word-pair, action-noun, noun-kind and person-noun tables, WordNet
-                     licence (GeoIP and the Deep Rewrite models are downloaded or uploaded separately)
+data/                Lexicon and phrase table (lexicon10.json, phrases10.json), synonym, word-pair,
+                     action-noun, noun-kind and person-noun tables, WordNet licence (GeoIP and the
+                     Deep Rewrite models are downloaded or uploaded separately)
 scripts/             build_synonyms.py (also builds the noun kinds), build_collocations.py,
                      build_nominalizations.py, build_person_nouns.py, fetch_geoip.py,
                      build_paraphraser.py, fetch_paraphraser.py
@@ -222,6 +253,7 @@ production. Leaving an optional value empty turns that feature off.
 | `SECURE_COOKIES` | `1` on any HTTPS site (automatic on Render) so login cookies are only sent over HTTPS. |
 | `TRUST_PROXY` | `1` when a proxy such as Cloudflare sits in front (automatic on Render), so the app sees the visitor's IP and HTTPS. |
 | `PARAPHRASER_URL`, `BACKTRANSLATE_URL` | Download links for `paraphraser.zip` and `backtranslate.zip`; `start.py` installs a missing model from them. |
+| `HUMANIZER_CORE` | `planner` (default) or `legacy`: the previous rule engine, kept for one release as a fallback. |
 | `PARAPHRASER_DIR`, `BACKTRANSLATE_DIR` | Where the models live, if not in `data/` (the installer uses them too). |
 | `DEEP_REWRITE_MAX_CHARS` | Longest text Deep Rewrite accepts (default 6,000 characters). In the editor a text over 2,500 characters runs as a background job; the API waits for the result, so give API clients a timeout of about 3 minutes. |
 | `DEEP_REWRITE_SECONDS` | Time a Deep Rewrite aims to stay within for each 2,500 characters (default 45), and its second pass within half as much again. It is not a hard cap: back-translation is skipped once 40% of it has gone, and the second pass once all of it has; with two Deep Rewrites running at once, both skip back-translation. |

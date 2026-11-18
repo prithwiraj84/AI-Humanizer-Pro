@@ -435,7 +435,7 @@ TRANSITIONS += [
                            'academic': ['At present,']}),
     # Both are fine; the one the writer used becomes the other
     (('for example', 'for instance'), 0.5, {'*': ['For instance,', 'For example,']}),
-    (('finally',), 1.0, {'*': ['Lastly,', 'To finish,']}),
+    (('finally',), 1.0, {'*': ['Lastly,']}),
     (('truth be told', 'to tell the truth'), 1.0, {'*': ['In truth,', 'Honestly,'], 'casual': ['Honestly,', 'To be honest,'],
                                                    'professional': ['In truth,'], 'academic': ['In truth,']}),
     (('to get started',), 1.0, {'*': ['To start,', 'To begin,']}),
@@ -6001,6 +6001,15 @@ def phrase_belongs_elsewhere(sent, child, span):
         return True
     return outcome_infinitive(child, root)
 
+# Verbs that take an object and then "to" ("link X to Y"): a "to" after their object is a preposition
+TO_OBJECT_VERBS = {'link', 'connect', 'attribute', 'expose', 'compare', 'tie', 'relate', 'add', 'apply', 'devote',
+                   'dedicate', 'introduce', 'limit', 'restrict', 'assign', 'transfer', 'send', 'give', 'lend', 'owe',
+                   'prefer', 'commit', 'adapt', 'adjust', 'return', 'convert', 'turn', 'bring', 'take', 'show', 'explain',
+                   'describe', 'sell', 'offer', 'deliver', 'present', 'recommend', 'report', 'submit', 'admit', 'invite',
+                   'welcome', 'direct', 'lead', 'guide', 'attach', 'match', 'trace', 'expose', 'reduce', 'increase',
+                   'raise', 'lower', 'move', 'shift', 'switch', 'change', 'contribute', 'respond', 'refer', 'pass'}
+SEQUENCE_ADVERBS = {'later', 'then', 'afterwards', 'afterward', 'subsequently', 'earlier', 'previously'}
+
 def front_trailing_adjunct(sent, pieces):
     """"Many studies lack data despite recent advances." -> "Despite recent advances, many studies lack data.\""""
     doc, root, stop = sent.doc, sent.root, sent[-1].i
@@ -6019,6 +6028,15 @@ def front_trailing_adjunct(sent, pieces):
         return None     # (the phrase layer's own wording stays whole: "To healthcare, AI can contribute ...")
     if misparsed_root(sent) or phrase_belongs_elsewhere(sent, child, span):
         return None
+    if span[0].lower_ == 'to' and child.dep_ in ('advcl', 'xcomp') and root.lemma_.lower() in TO_OBJECT_VERBS and any(
+            c.dep_ in ('dobj', 'obj') for c in root.children):
+        return None     # "linked chronic exposure to noise with ...": the parser took "to noise" for an infinitive
+    if child.dep_ == 'prep' and child.lower_ == 'for' and any(
+            t.lower_ in ('another', 'more', 'further', 'additional', 'extra') for t in span):
+        return None     # "keep their rate for another year": how long a state goes on; in front it reads as when
+    if child.lower_ in ('after', 'before', 'following') and any(
+            c.dep_ == 'advmod' and c.lower_ in SEQUENCE_ADVERBS for c in root.children):
+        return None     # "later completed it after ...": in front, "After X, they later did Y" says it twice
     if [t.lower_ for t in span] == ['at', 'a', 'time'] or any(
             t.lower_ == 'time' and t.i < span.end - 1 and any(
                 c.lower_ in ('first', 'last', 'only', 'second', 'third') or c.ent_type_ == 'ORDINAL' for c in t.lefts)
@@ -7273,6 +7291,9 @@ def pair_items(token):
         return None
     return items, False
 
+LIST_EMPHASIS = {'even', 'especially', 'particularly', 'notably', 'above', 'ultimately', 'finally', 'mainly', 'mostly',
+                 'primarily', 'chiefly', 'including'}
+
 def reorder_list(sent, pieces):
     doc, root = sent.doc, sent.root
     if not any(c.dep_ in ('nsubj', 'nsubjpass', 'expl', 'csubj', 'csubjpass') for c in root.children) and any(
@@ -7284,6 +7305,8 @@ def reorder_list(sent, pieces):
         if not found:
             continue
         items, fixed_last = found
+        if any(doc[i].lower_ in LIST_EMPHASIS for start, end in items for i in range(max(start - 1, sent.start), end + 1)):
+            continue    # "digestion, immune function, and even mood": moved, the marked item loses its point
         k, m = random.sample(range(len(items) - 1 if fixed_last else len(items)), 2)
         order = list(range(len(items)))
         order[k], order[m] = order[m], order[k]
@@ -8728,8 +8751,18 @@ def so_point(token, sent):
                 and not any(c.dep_ == 'aux' and c.tag_ == 'MD' for c in right.children))
             or any(c.dep_ == 'aux' and c.lower_ in ('should', 'must', 'ought', 'shall') for c in left.children)
             or (left.lemma_.lower() in ('need', 'have') and any(c.dep_ == 'xcomp' for c in left.children))):
+        if any(c.dep_ == 'aux' and c.lower_ in ('can', 'will', "'ll", 'may') for c in right.children):
+            # a bare "So managers can plan cover." reads as a fragment: after a duty the "so" gives a purpose and stays
+            # joined; otherwise the result is said outright ("This means firms can recruit ...")
+            if doc[i + 1].lower_ in ('this', 'that', 'these', 'those') or any(
+                    c.dep_ == 'aux' and c.lower_ in ('should', 'must', 'ought', 'shall') for c in left.children):
+                return None
+            return i - 1, i, 'so:means'
         return i - 1, i, 'so:plain'
-    return i - 1, i, 'so:' + tenses.pop()
+    kind = 'so:' + tenses.pop()
+    if kind == 'so:present' and any(c.dep_ == 'aux' and c.lower_ in ('can', 'will', "'ll", 'may') for c in right.children):
+        kind = 'so:means'   # "So you can take it anywhere" alone reads as a fragment; "This means you can ..." doesn't
+    return i - 1, i, kind
 
 def then_point(token, sent):
     """", then season it well." -> ". Then season it well.": steps in order, both commands ("Replace the key,
@@ -9334,6 +9367,7 @@ def splittable(sent):
 # "This meant engineers reinforced its piers" reads oddly before what someone then did)
 SO_OPENERS = {'standard': ('So', 'This means'), 'casual': ('So', 'That means'), 'professional': ('This means',),
               'academic': ('This means',)}
+MEANS_OPENERS = {'standard': 'This means', 'casual': 'That means', 'professional': 'This means', 'academic': 'This means'}
 
 def split_sentence(sentence, point, tone):
     position, kind = point
@@ -9371,7 +9405,8 @@ def split_sentence(sentence, point, tone):
         rest = [[None, kind.split(':', 1)[1]]] + rest[1:]
     elif kind.startswith('so:'):
         # the "so" stays ("So you can ..."), or the result is said outright ("This means you can ...")
-        opener = 'So' if kind in ('so:command', 'so:plain') else random.choice(SO_OPENERS[tone])
+        opener = ('So' if kind in ('so:command', 'so:plain') else MEANS_OPENERS[tone] if kind == 'so:means'
+                  else random.choice(SO_OPENERS[tone]))
         if opener != 'So':
             rest = [[None, 'As a result,' if kind == 'so:past' else opener]] + rest[1:]
     elif kind.startswith('of:'):
@@ -9746,7 +9781,7 @@ def vary_rhythm(sentences, tone, deep_mode):
     if deep_mode:
         for s in sentences:
             point = (relative_clause_point(s.span, s.pieces) if not s.splits and s.span is not None and not s.reordered
-                     and splittable(s.span) else None)
+                     and splittable(s.span) and not getattr(s, 'keep_relative', False) else None)
             if point is not None:
                 s.splits = [point]
     for k in range(len(sentences) - 1, -1, -1):
@@ -9912,6 +9947,1082 @@ def tidy(text):
     return TIDY_SPACING.sub(close_up, text)
 
 # ==========================================
+#   STEP 5B: THE SENTENCE PLANNER
+# ==========================================
+# In place of dice deciding which edits a sentence gets (round 9 and before: rates per tone), each sentence's possible
+# edits are listed - word swaps, in-place rewrites, one template or phrase move, in Chaos a move on top of it, a split -
+# and the set chosen is the one that leaves no stretch of more than K of the writer's words in a row and changes at least
+# a floor share of the sentence, at the least risk, within a risk budget for the sentence. A stretch that no edit within
+# the budget can break stays as written: the planner never forces an edit. HUMANIZER_CORE=legacy keeps the dice.
+
+CORE = os.environ.get('HUMANIZER_CORE', 'planner').strip().lower() or 'planner'
+
+# --- Lines a chat assistant wrapped the text in ---
+# A first line that only introduces the text ("Here's a short paragraph about habits:", "Sure! Below is ...:") and a last
+# line that only offers more ("Would you like me to make it shorter?", "Let me know if you'd like a longer version!") are
+# the assistant talking, not part of the text: they are taken off (and reported). A closing line only counts when it
+# talks about the text itself ("this paragraph", "shorter", "add some tips"), so an email's own "Let me know if you need
+# anything else" stays.
+CHAT_LEAD_IN = re.compile(
+    r"^\s*(?:(?:sure|certainly|of course|absolutely|okay|ok|great|alright)[!,.]*\s*)?"
+    r"(?:here(?:'s|’s|\s+is|\s+are)|below\s+is|below\s+are|this\s+is)\b[^\n]{0,160}[:：]\s*$", re.I)
+CHAT_INTERJECTION = re.compile(r"^\s*(?:sure|certainly|of course|absolutely|okay|ok|great|alright)[!.]*\s*$", re.I)
+CHAT_OFFER = re.compile(
+    r"^\s*(?:would you like|do you want|want me to|shall i|should i|let me know if you(?:'d|’d| would)? like|"
+    r"i hope (?:this|that) helps|hope this helps|if you(?:'d|’d| would)? like(?: me)? to|feel free to ask|"
+    r"is there anything else)\b[^\n]*$", re.I)
+CHAT_OFFER_SUBJECT = re.compile(
+    r"\b(?:paragraph|essay|text|version|draft|response|article|summary|story|poem|answer|"
+    r"me to|shorten\w*|expand\w*|adjust\w*|tweak\w*|revis\w*|modif\w*|rewrit\w*|more formal|more casual|"
+    r"fun facts|specific focus|tips|helps?)\b", re.I)
+
+
+def strip_chat_wrappers(text):
+    """(the text without an assistant's lead-in and closing offer, [the lines taken off]). Nothing is taken off a text
+    of a single line, and a text that would be left empty is returned whole."""
+    lines = text.split('\n')
+    nonblank = [k for k, line in enumerate(lines) if line.strip()]
+    if len(nonblank) < 2:
+        return text, []
+    removed = []
+    first, last = nonblank[0], nonblank[-1]
+    if CHAT_LEAD_IN.match(lines[first]) or CHAT_INTERJECTION.match(lines[first]):
+        removed.append(lines[first].strip())
+        lines[first] = None
+    if (lines[last] is not None and CHAT_OFFER.match(lines[last]) and CHAT_OFFER_SUBJECT.search(lines[last])
+            and lines[last].rstrip()[-1:] in '?.!'):
+        removed.append(lines[last].strip())
+        lines[last] = None
+    if not removed:
+        return text, []
+    kept = [line for line in lines if line is not None]
+    out = re.sub(r'\n{3,}', '\n\n', '\n'.join(kept)).strip('\n')
+    return (out, removed) if out.strip() else (text, [])
+
+# Per tone: the longest stretch of the writer's words allowed (K), the share of the sentence to change at least, and the
+# risk budget for the sentence's edits. Chaos Mode: K 6 (Academic 7), the floor CHAOS_FLOOR, CHAOS_BUDGET times the budget
+PLAN_SETTINGS = {'academic': (10, 0.12, 0.20), 'professional': (9, 0.16, 0.30), 'standard': (8, 0.20, 0.45),
+                 'casual': (7, 0.22, 0.55)}
+CHAOS_K = {'academic': 7}
+CHAOS_K_DEFAULT = 6
+CHAOS_FLOOR = 0.28
+CHAOS_BUDGET = 1.8
+MODEL_BUDGET_SHARE = 0.5    # a sentence Deep Rewrite wrote already changed; it gets half the budget
+
+# Risk of one edit by family: about the chance it reads awkwardly plus five times the chance it shifts the meaning,
+# before the parse-doubt factor. An overused AI word or construction costs less than nothing: it is always worth changing
+PLAN_RISK = {'ai': -0.05, 'everyday': 0.04, 'plain': 0.03, 'lexicon': 0.05, 'wordnet': 0.06,
+             'denominalize': 0.08, 'the_way_to_how': 0.03, 'process_to_how': 0.05, 'reorder_list': 0.04,
+             'allows_to_lets': 0.03, 'of_to_possessive': 0.06,
+             'signature': 0.02, 'passive_to_active': 0.08, 'move': 0.06, 'follow_up': 0.04, 'split': 0.06,
+             'model_safe': 0.04, 'also_to_end': 0.04, 'adverb_to_front': 0.04, 'relative_to_participle': 0.05,
+             'participle_to_finite': 0.05}
+# ...and how much more the tones that keep more of the writer's form pay for it
+TONE_RISK = {'academic': {'passive_to_active': 3.0, 'move': 1.5, 'denominalize': 2.0, 'of_to_possessive': 2.0,
+                          'reorder_list': 1.5, 'everyday': 1.5, 'split': 1.5},
+             'professional': {'passive_to_active': 1.5, 'everyday': 1.2}}
+OVER_K_COST = 0.06      # per word a stretch runs past K
+FLOOR_COST = 0.8        # per share of the sentence short of the change floor
+PLAN_EPSILON = 0.04     # plans this close to the best count alike; one is drawn at random, so the output varies
+UNTOUCHED_COST = 0.1    # a sentence of 6+ words left word for word: a safe edit that fits the budget is worth taking
+FILL_STEPS = 10         # slot edits placed per plan at most
+BEFORE_WORDS, AFTER_WORDS = 12, 6   # the neighbours' words a sentence's stretches are measured with
+
+class SlotEdit:
+    """A word swap: token index -> new text (one or two tokens: "carried it out"), its family, the word it brings, and
+    whether the sentence wants it whatever the stretches (an AI word; a plain or everyday swap drawn at its old chance)."""
+    __slots__ = ('changes', 'family', 'word', 'anchor', 'wanted')
+
+    def __init__(self, changes, family, word, anchor, wanted=False):
+        self.changes, self.family, self.word, self.anchor, self.wanted = changes, family, word, anchor, wanted
+
+
+# The old engine's texture stays: each sentence wants each structural edit at the rate the old layers made it (by tone,
+# with the Chaos boosts: NOMINAL_RATE, LIST_RATE, LET_RATE, POSSESSIVE_RATE, SIGNATURE_RATE, PASSIVE_RATE, MOVE_RATE), and
+# each plain or everyday swap at its old chance (PLAIN_CHANCE, EVERYDAY_CHANCE). A wanted edit costs nothing; the
+# planner adds the others only where a long stretch remains
+WANTED_RISK = -0.01
+
+
+def wanted_families(tone, chaos):
+    """The structural edits this sentence wants, each drawn at the old engine's rate."""
+    boost = CHAOS_STRUCTURE_BOOST if chaos else 0.0
+    reorder = CHAOS_REORDER_BOOST if chaos else 0.0
+    nominal = NOMINAL_RATE[tone] + boost
+    rates = {'denominalize': nominal, 'the_way_to_how': nominal, 'process_to_how': nominal if tone != 'academic' else 0.0,
+             'reorder_list': LIST_RATE[tone] + reorder, 'allows_to_lets': LET_RATE[tone] + reorder if LET_RATE[tone] else 0.0,
+             'of_to_possessive': POSSESSIVE_RATE[tone] + reorder, 'signature': SIGNATURE_RATE[tone] + boost,
+             'passive_to_active': PASSIVE_RATE[tone] + boost, 'move': MOVE_RATE[tone] + reorder,
+             'follow_up': 1.0 if chaos else 0.0, 'model_safe': 1.0 if chaos else 0.0}
+    return {family for family, rate in rates.items() if random.random() < rate}
+
+
+def swap_wanted(family, tone, chaos):
+    """Whether one plain or everyday swap is wanted, drawn at the old layer's chance."""
+    if family == 'plain':
+        chance = 1.0 if chaos else ACADEMIC_PLAIN_CHANCE if tone == 'academic' else PLAIN_CHANCE[tone]
+    elif family == 'everyday':
+        chance = 1.0 if chaos else EVERYDAY_CHANCE[tone]
+    else:
+        return False
+    return random.random() < chance
+
+
+def edit_risk(family, tone, doubt=1.0, wanted=frozenset()):
+    if family in wanted:
+        return WANTED_RISK
+    base = PLAN_RISK.get(family, 0.06) * TONE_RISK.get(tone, {}).get(family, 1.0)
+    return base * doubt if base > 0 else base
+
+
+def slot_risk(edit, tone, doubt):
+    return WANTED_RISK if edit.wanted else edit_risk(edit.family, tone, doubt)
+
+
+def parse_doubt(sent):
+    """How far the parse may be off, as a factor on every edit's risk: long sentences, a misread main verb and
+    sentences full of names are where the templates and swaps misfire."""
+    factor = 1.0
+    if len(sent) > 30:
+        factor += 0.5
+    if misparsed_root(sent):
+        factor += 0.5
+    if sum(1 for t in sent if t.pos_ == 'PROPN') >= 3:
+        factor += 0.3
+    return factor
+
+
+def word_changes(token, word):
+    """{index: text} for one swapped word (and the pronoun of a separable particle verb: "speed them up")."""
+    if not word or word.lower() == token.lower_:
+        return None
+    changes = {}
+    split = particle_split(token, word)
+    if split:
+        word, pronoun, with_particle = split
+        changes[pronoun.i] = with_particle
+    changes[token.i] = match_case(token.text, word)
+    return changes
+
+
+def word_options(sent, tone, deep_mode, model_wrote=False, avoid=frozenset(), used=frozenset()):
+    """token index -> SlotEdit for each word of the sentence the curated tables may swap, without dice: the same
+    tables and sense checks as plan_word_edits. `avoid`: words the swap may not bring in (the sentence's own, its
+    neighbours'); `used`: replacements already made elsewhere in the text, not repeated."""
+    doc = sent.doc
+    plain_words = ACADEMIC_PLAIN if tone == 'academic' else PLAIN_WORDS
+    keeps = TONE_KEEPS.get(tone, ())
+    curated_wording = phrase_tokens(doc) | planner_phrase_tokens(doc)
+    blocked = set(avoid) | set(used)
+    options = {}
+    for token in sent:
+        if token.i in curated_wording:
+            continue
+        if not (model_wrote and not deep_mode) and tone != 'academic':
+            keeping = keep_doing_edit(token)
+            if keeping:
+                options[token.i] = SlotEdit(keeping, 'lexicon', 'keep', token.i)
+                continue
+        extra = swap_key(token)
+        key = curated_key(token)
+        changes, family, replacement = None, None, None
+        if extra or can_rewrite(token):
+            if key in AI_WORDS and curated_fits(token, key):
+                choices = curated_choices(AI_WORDS[key], tone, token)
+                replacement = fresh_choice(choices, blocked) or echo_fallback(key, token, avoid)
+                if replacement is not None:
+                    changes, family = word_changes(token, inflect(replacement, token.tag_)), 'ai'
+            elif extra in AI_FAVOURITES or (extra in EVERYDAY_SWAPS and (deep_mode or not model_wrote)):
+                replacement = fresh_choice(swap_choices(token, extra, tone), blocked)
+                new = swap_edits(token, extra, replacement) if replacement is not None else None
+                if new and new.get(token.i, '').lower() != token.lower_:
+                    changes = {i: match_case(doc[i].text, text) for i, text in new.items()}
+                    family = 'ai' if extra in AI_FAVOURITES else 'everyday'
+            elif model_wrote and not deep_mode:
+                continue
+            elif key in plain_words and curated_fits(token, key) and key not in keeps:
+                replacement = fresh_choice(context_choices(plain_words[key], token), blocked)
+                if replacement is not None:
+                    changes, family = word_changes(token, inflect(replacement, token.tag_)), 'plain'
+        # the round-10 lexicon: its own gate (common short words such as "show" or "keep" are stop words to
+        # can_rewrite) and its own sense rules; the curated tables above come first
+        if (changes is None and LEXICON and not (model_wrote and not deep_mode)
+                and f'{token.lemma_.lower()}|{token.pos_}' not in CURATED_KEYS):
+            # a word a curated table owns is swapped by that table or not at all: its "no" (a sense check, a tone it
+            # stays in) stands
+            found = lexicon_edit(token, tone, blocked)
+            if found:
+                changes, replacement = found
+                family = 'lexicon'
+        if changes:
+            wanted = family == 'ai' or swap_wanted(family, tone, deep_mode)
+            options[token.i] = SlotEdit(changes, family, replacement, token.i, wanted)
+            remember(blocked, replacement)      # not the same new word twice in one sentence
+    return options
+
+
+# --- The round-10 lexicon (data/lexicon10.json): model-free swaps, each with the sense rules that keep it safe ---
+
+def load_lexicon():
+    """lemma|UPOS -> entry, for the entries that have rules; {} if the file is missing or malformed."""
+    try:
+        with open(os.path.join(DATA_DIR, 'lexicon10.json'), encoding='utf-8') as f:
+            data = json.load(f)
+    except (OSError, ValueError) as e:
+        logger.warning('Lexicon not loaded (%s); the planner uses the curated tables only', type(e).__name__)
+        return {}
+    return {k: v for k, v in data.items() if not k.startswith('_') and v.get('rules')}
+
+LEXICON = load_lexicon()
+
+
+def lexicon_matches(token, items):
+    """True if the token's lemma (or word) is one of `items`, or it is a noun of a kind named as 'class:person' etc."""
+    if not items or token is None:
+        return False
+    lemma, low = token.lemma_.lower(), token.lower_
+    for item in items:
+        if item.startswith('class:'):
+            kind = item[6:]
+            if kind == 'person' and (lemma in PERSON_NOUNS or noun_sense_is(token, 'person', 'people', 'clinician')):
+                return True
+            if kind in NOUN_SENSES and noun_sense_is(token, kind):
+                return True
+        elif item == lemma or item == low:
+            return True
+    return False
+
+
+def lexicon_object(token):
+    """The thing a verb acts on: its object, or the subject of its passive ("Oxygen is released")."""
+    objects = [c for c in token.children if c.dep_ in ('dobj', 'obj')]
+    obj = objects[-1] if objects else None      # "gives parents a chance": the thing given
+    if obj is None and any(c.dep_ == 'auxpass' for c in token.children):
+        obj = next((c for c in token.children if c.dep_ == 'nsubjpass'), None)
+    if obj is not None and obj.lemma_.lower() in QUANTITY_HEADS:
+        # "enormous amounts of textile waste", "a lot of heat": the thing itself
+        of = next((c for c in obj.children if c.dep_ == 'prep' and c.lower_ == 'of'), None)
+        inner = next((c for c in of.children if c.dep_ == 'pobj'), None) if of is not None else None
+        obj = inner if inner is not None else obj
+    return obj
+
+FRACTION_WORDS = {'quarter', 'third', 'fifth', 'tenth', 'half', 'dozen', 'hundred', 'thousand', 'million', 'billion'}
+QUANTITY_HEADS = {'quarter', 'third', 'half', 'fifth', 'tenth', 'percent', 'thousand', 'hundred', 'million', 'billion', 'dozen', 'couple', 'amount', 'quantity', 'lot', 'deal', 'number', 'level', 'ton', 'tonne', 'volume', 'piece', 'bit', 'kind',
+                  'type', 'sort', 'variety', 'range', 'share', 'portion', 'percentage', 'proportion', 'majority'}
+
+
+def lexicon_subject(token):
+    """A verb's subject, through "continue to grow" and "grow and change", and the noun a "who"/"that" stands for."""
+    t = token
+    for _ in range(4):
+        subject = next((c for c in t.children if c.dep_ == 'nsubj'), None)
+        if subject is not None:
+            if subject.lower_ in ('who', 'that', 'which') and t.dep_ == 'relcl':
+                return t.head
+            return subject
+        if t.dep_ == 'relcl':
+            return t.head
+        if t.dep_ in ('xcomp', 'conj') and t.head is not t:
+            t = t.head
+            continue
+        break
+    return None
+
+
+def lexicon_head(token):
+    """The noun an adjective describes (also as "X is <adjective>"), else the word the token depends on."""
+    if token.pos_ == 'ADJ':
+        t = token
+        while t.dep_ == 'conj' and t.head is not t:
+            t = t.head
+        if t.dep_ == 'amod':
+            return t.head
+        if t.dep_ in ('acomp', 'oprd'):
+            return next((c for c in t.head.children if c.dep_ in ('nsubj', 'nsubjpass')), None)
+        return None
+    return token.head if token.head is not token else None
+
+
+def lexicon_rule_fits(token, rule, tone):
+    """True if every condition of one rule of a lexicon entry holds for the token (see data/lexicon10.json)."""
+    doc = token.doc
+    if rule.get('tones') and tone not in rule['tones']:
+        return False
+    if 'tags' in rule and token.tag_ not in rule['tags']:
+        return False
+    if 'dep' in rule and token.dep_ not in rule['dep']:
+        return False
+    if token.dep_ in rule.get('dep_not', ()):
+        return False
+    kids = list(token.children)
+    if 'child' in rule:
+        child = next((c for c in kids if c.dep_ == rule['child']), None)
+        if child is None or ('child_tag' in rule and child.tag_ != rule['child_tag']):
+            return False
+    if any(c.dep_ in rule.get('child_not', ()) for c in kids):
+        return False
+    if 'child_word' in rule and rule['child_word'] not in {t.lower_ for t in token.subtree if t.i != token.i}:
+        return False
+    if 'child_prep' in rule and not any(c.dep_ == 'prep' and c.lower_ == rule['child_prep'] for c in kids):
+        return False
+    preps = [c for c in kids if c.dep_ in ('prep', 'prt', 'dative', 'agent')]
+    if 'prep' in rule:
+        prep = next((c for c in preps if c.lower_ == rule['prep']), None)
+        if prep is None:
+            return False
+        if 'pobj_class' in rule:
+            pobj = next((c for c in prep.children if c.dep_ == 'pobj'), None)
+            if not lexicon_matches(pobj, rule['pobj_class']):
+                return False
+    if any(c.lower_ in rule.get('prep_not', ()) for c in preps):
+        return False
+    if any(c.dep_ == 'prt' and c.lower_ in rule.get('prt_not', ()) for c in kids):
+        return False
+    if 'object' in rule or 'object_not' in rule:
+        obj = lexicon_object(token)
+        want = rule.get('object')
+        if want == 'none' and obj is not None:
+            return False
+        if want == 'any' and obj is None:
+            return False
+        if isinstance(want, list) and not lexicon_matches(obj, want):
+            return False
+        if obj is not None and isinstance(want, list) and any(not lexicon_matches(c, want) for c in obj.conjuncts):
+            return False        # "improve memory, skills, and patience": every item has to fit, not just the first
+        if obj is not None and any(lexicon_matches(c, rule.get('object_not', ())) for c in obj.conjuncts):
+            return False
+        if obj is not None and (lexicon_matches(obj, rule.get('object_not', ())) or obj.pos_ == 'PRON' and want not in (None, 'any', 'none')):
+            return False
+        if obj is not None and obj.tag_ in rule.get('object_tag_not', ()):
+            return False        # "avoid exposing your phone" is not "stay away from exposing"
+        if obj is not None and obj.pos_ == 'PRON' and rule.get('object_not_pron'):
+            return False        # "start it": a pronoun may stand for a machine
+    if 'subject' in rule or 'subject_not' in rule:
+        subject = lexicon_subject(token)
+        if 'subject' in rule and not lexicon_matches(subject, rule['subject']):
+            return False
+        if subject is not None and lexicon_matches(subject, rule.get('subject_not', ())):
+            return False
+    if any(k in rule for k in ('head', 'head_not', 'head_tag', 'head_pos', 'no_det_on_head')):
+        head = lexicon_head(token)
+        if 'head' in rule and not lexicon_matches(head, rule['head']):
+            return False
+        if head is not None and lexicon_matches(head, rule.get('head_not', ())):
+            return False
+        if 'head_tag' in rule and (head is None or head.tag_ not in rule['head_tag']):
+            return False
+        if 'head_pos' in rule and (head is None or head.pos_ != rule['head_pos']):
+            return False
+        if rule.get('no_det_on_head') and (head is None or any(c.dep_ in ('det', 'poss', 'nummod') for c in head.children)):
+            return False
+    before = doc[token.i - 1] if token.i > 0 else None
+    after = doc[token.i + 1] if token.i + 1 < len(doc) else None
+    if before is not None and before.lower_ in rule.get('not_after', ()):
+        return False
+    if after is not None and after.lower_ in rule.get('not_before', ()):
+        return False
+    if 'prev_tag' in rule and (before is None or before.tag_ not in rule['prev_tag']):
+        return False        # "her final day" -> "her last day", but not "the emotional final scenes"
+    if rule.get('no_compound') and (token.dep_ == 'compound' or any(c.dep_ == 'compound' for c in kids)):
+        return False
+    position = rule.get('position')
+    if position:
+        words = [t for t in token.sent if not t.is_punct and not t.is_space]
+        first, last = (words[0].i, words[-1].i) if words else (None, None)
+        if ((position == 'first' and first != token.i) or (position == 'not_first' and first == token.i)
+                or (position == 'last' and last != token.i) or (position == 'after_head' and not token.i > token.head.i)):
+            return False
+    if any(c.dep_ == 'aux' and c.lower_ in rule.get('aux_not', ()) for c in kids):
+        return False
+    if rule.get('aux_have') and not any(c.dep_ == 'aux' and c.lemma_ == 'have' for c in token.head.children):
+        return False
+    if rule.get('aux_will') and not any(c.dep_ == 'aux' and c.lower_ in ('will', 'would', "'ll", '’ll') for c in token.head.children):
+        return False
+    if 'with_next' in rule and (after is None or after.lower_ != rule['with_next'] or after.head.i != token.i):
+        return False
+    if 'next' in rule and (after is None or after.lower_ not in rule['next']):
+        return False
+    if rule.get('next_num') and (after is None or not (after.like_num or after.text in ('$', '£', '€'))):
+        return False
+    if rule.get('next_num_or_fraction'):
+        second = doc[token.i + 2] if token.i + 2 < len(doc) else None
+        if after is None or not (after.like_num or after.text in ('$', '£', '€') or after.lower_ == 'half' or (
+                after.lower_ in ('a', 'an', 'one') and second is not None and second.lower_ in FRACTION_WORDS)):
+            return False
+    if 'child_any' in rule and not any(c.dep_ in rule['child_any'] for c in kids):
+        return False
+    if 'child_prep_not' in rule and any(c.dep_ == 'prep' and c.lower_ == rule['child_prep_not'] for c in kids):
+        return False
+    if rule.get('no_neg_head') and any(c.dep_ == 'neg' or c.lower_ in ('not', "n't", 'never', 'no')
+                                       for t in (token.head, token.head.head) for c in t.children):
+        return False
+    if 'head_not_dep' in rule and token.head.dep_ in rule['head_not_dep']:
+        return False
+    if 'head_not_tag' in rule and token.head.tag_ in rule['head_not_tag']:
+        return False
+    if rule.get('need_subject') and lexicon_subject(token) is None:
+        return False
+    if rule.get('no_reduced_relative'):
+        subject = next((c for c in kids if c.dep_ == 'nsubj'), None)
+        if subject is not None and subject.i > 0 and doc[subject.i - 1].pos_ in ('NOUN', 'PROPN'):
+            return False        # "the oxygen we need to survive": the noun is what is needed ("have to" reads as a duty)
+    if rule.get('subject_not_propn'):
+        subject = lexicon_subject(token)
+        if subject is not None and (subject.pos_ == 'PROPN' or subject.ent_type_ in NAME_ENTITIES):
+            return False
+    if 'det_in' in rule and not any(c.dep_ == 'det' and c.lower_ in rule['det_in'] for c in kids):
+        return False
+    if any(c.dep_ == 'det' and c.lower_ in rule.get('det_not', ()) for c in kids):
+        return False        # "a rise" -> not "a growth"
+    if 'acomp_in' in rule:
+        acomp = next((c for c in kids if c.dep_ == 'acomp'), None)
+        if acomp is None or acomp.lemma_.lower() not in rule['acomp_in']:
+            return False        # "stays smooth" -> not "keeps smooth"; "becomes active" -> not "gets active"
+    if rule.get('need_det') and not any(c.dep_ in ('det', 'poss', 'nummod') for c in kids):
+        return False        # "their strategy" -> "their plan", but not "focus on strategy" (the skill)
+    if rule.get('attr_plain'):
+        attr = next((c for c in kids if c.dep_ == 'attr'), None)
+        if attr is not None and any(d.tag_ in ('JJS', 'RBS') or d.lower_ in ('first', 'last', 'only', 'second', 'third', 'next')
+                                    for d in attr.subtree):
+            return False        # "became the first person": a ranking, not a change of state
+    if rule.get('pobj_plain'):
+        prep = next((c for c in kids if c.dep_ == 'prep'), None)
+        pobj = next((c for c in prep.children if c.dep_ == 'pobj'), None) if prep is not None else None
+        if pobj is not None and any(d.tag_ in ('JJR', 'RBR') or d.lower_ in ('more', 'less') for d in pobj.children):
+            return False        # "contribute to higher costs" -> "add to higher costs" reads as piling on
+    if rule.get('next2_proper') and (token.i + 2 >= len(doc) or doc[token.i + 2].pos_ != 'PROPN'):
+        return False
+    if rule.get('attr_det') and not any(c.dep_ == 'attr' and any(d.dep_ in ('det', 'poss') for d in c.children) for c in kids):
+        return False
+    if rule.get('child_wh') or 'child_mark' in rule:
+        clause = next((c for c in kids if c.dep_ == rule.get('child', 'ccomp')), None)
+        if clause is None:
+            return False
+        if rule.get('child_wh') and not any(t.tag_ in ('WRB', 'WDT', 'WP') or t.lower_ in ('whether', 'if')
+                                            for t in clause.subtree if t.i < clause.i):
+            return False
+        if 'child_mark' in rule and not any(c.dep_ == 'mark' and c.lower_ in rule['child_mark'] for c in clause.children):
+            return False
+    if 'prep_any' in rule and not any(c.dep_ in ('prep', 'prt', 'advmod') and c.lower_ in rule['prep_any'] for c in kids):
+        return False
+    if rule.get('no_subject') and any(c.dep_ in ('nsubj', 'nsubjpass', 'expl') for c in kids):
+        return False
+    return True
+
+
+def lexicon_gate(token):
+    """The words the lexicon may touch: plain lower-case words (a capital mid-sentence may be part of a name or a
+    title), not names, acronyms, quoted words or parts of a hyphenated word."""
+    doc = token.doc
+    if not token.is_alpha or token.pos_ == 'PROPN' or token.ent_type_ in NAME_ENTITIES:
+        return False
+    if (token.is_upper and len(token.text) > 1) or (token.text[0].isupper() and not token.is_sent_start):
+        return False
+    if token.i in quoted_tokens(doc):
+        return False
+    if token.pos_ == 'VERB' and token.tag_ in ('VBN', 'VBG') and not any(c.dep_ in ('aux', 'auxpass') for c in token.children):
+        # a participle used as a describing word ("shortened or expanded", "a growing concern", "flowing rivers"),
+        # also through a conjunct: the swaps are for verbs
+        t = token
+        while t.dep_ == 'conj' and t.head is not t:
+            t = t.head
+        if t.dep_ in ('amod', 'acl', 'oprd', 'acomp', 'compound', 'attr', 'npadvmod') or t.pos_ != 'VERB':
+            return False
+    if ((token.i > 0 and doc[token.i - 1].text == '-' and not doc[token.i - 1].whitespace_)
+            or (token.i + 1 < len(doc) and doc[token.i + 1].text == '-' and not token.whitespace_)):
+        return False
+    return True
+
+
+def writer_word(token):
+    """True unless the word came from an earlier layer: the planner's swaps and edits work on the writer's own words
+    ("takes into account" -> "considers" is the phrase layer's, and doesn't become "thinks about"). The words of the text
+    as sent are in doc.user_data['writer_words'] (set by plan_sentences); without them every word counts."""
+    words = token.doc.user_data.get('writer_words')
+    return words is None or comparable(token.text) in words
+
+
+def lexicon_edit(token, tone, avoid=frozenset()):
+    """({index: text}, the option) for the token's swap from the lexicon, or None. The first rule whose conditions
+    hold decides: an empty 'use' keeps the word."""
+    entry = LEXICON.get(f'{token.lemma_.lower()}|{token.pos_}')
+    if entry is None or tone in entry.get('off', ()) or not lexicon_gate(token) or not writer_word(token):
+        return None
+    for rule in entry['rules']:
+        if not lexicon_rule_fits(token, rule, tone):
+            continue
+        choice = fresh_choice(rule.get('use', []), avoid)
+        if choice is None:
+            return None
+        inflected = token.pos_ in ('VERB', 'AUX') or (token.pos_ == 'NOUN' and token.tag_ == 'NNS')
+        word = inflect(choice, token.tag_) if inflected else choice
+        changes = word_changes(token, word) if word else None
+        if changes and 'with_next' in rule:
+            changes[token.i + 1] = ''
+        return (changes, choice) if changes else None
+    return None
+
+
+# --- The round-10 phrase table (data/phrases10.json): multi-word paraphrases, applied in one pass ---
+
+def load_planner_phrases():
+    """[(pattern, options by tone, before-guard)] from data/phrases10.json; [] if it is missing or malformed."""
+    try:
+        with open(os.path.join(DATA_DIR, 'phrases10.json'), encoding='utf-8') as f:
+            entries = json.load(f)['entries']
+    except (OSError, ValueError, KeyError) as e:
+        logger.warning('Phrase table not loaded (%s)', type(e).__name__)
+        return []
+    rules = []
+    for entry in entries:
+        if not entry.get('options'):
+            continue
+        pattern = re.compile(r'\b(?P<phrase>' + phrase_regex(entry['phrases']) + r')\b' + entry.get('after', ''), re.I)
+        before = re.compile('(?:' + entry['before'] + r')\Z', re.I) if entry.get('before') else None
+        rules.append((pattern, entry['options'], before))
+    return rules
+
+PLANNER_PHRASES = load_planner_phrases()
+CURATED_KEYS = frozenset(AI_WORDS) | frozenset(PLAIN_WORDS) | frozenset(EVERYDAY_SWAPS) | frozenset(AI_FAVOURITES)
+# "the world that surrounds us" -> "the world around us"
+SURROUNDS = re.compile(r"\b(?:that|which)\s+(?:surrounds?|surrounded)\s+(?P<who>us|them|you|it|him|her|me)\b", re.I)
+# The wording the phrase table writes, which the planner's word swaps leave alone (as phrase_tokens does for PHRASES)
+PLANNER_PHRASE_OUTPUT = re.compile(r"\b(?:" + "|".join(sorted(
+    {re.escape(o) for _, options, _ in PLANNER_PHRASES for opts in options.values() for o in opts if ' ' in o},
+    key=len, reverse=True)) + r")\b", re.I) if PLANNER_PHRASES else None
+
+
+def apply_planner_phrases(text, tone):
+    """The phrase table's rewrites, all found in the text as written and made at once, so one never rewrites
+    another's wording ("nowadays" -> "these days" stays). Quotations and code stay, and so does wording in a title."""
+    if not PLANNER_PHRASES:
+        return text
+    quotes = quoted_ranges(text)
+
+    def free(start, end):
+        return not any(s < end and start < e for s, e in quotes)
+
+    found = []
+    for pattern, options, before in PLANNER_PHRASES:
+        choices = options.get(tone, options.get('*'))
+        if not choices:
+            continue
+        for m in pattern.finditer(text):
+            start, end = m.start('phrase'), m.end('phrase')
+            if (before is not None and before.search(text[max(0, start - 80):start])) or not free(start, end) \
+                    or match_in_a_title(m):
+                continue
+            found.append((start, end, choices))
+    for m in SURROUNDS.finditer(text):
+        if free(m.start(), m.end()):
+            found.append((m.start(), m.end(), ['around ' + m.group('who').lower()]))
+    found.sort(key=lambda f: (f[0], f[0] - f[1]))
+    out, last = [], 0
+    for start, end, choices in found:
+        if start < last:
+            continue
+        old = text[start:end]
+        new = random.choice(choices)
+        new = new[0].upper() + new[1:] if old[0].isupper() else new
+        out += [text[last:start], new]
+        last = end
+    out.append(text[last:])
+    return ''.join(out)
+
+
+def planner_phrase_tokens(doc):
+    """Token indices inside wording the phrase table wrote."""
+    cached = doc.user_data.get('planner_phrases')
+    if cached is None:
+        cached = set()
+        if PLANNER_PHRASE_OUTPUT is not None:
+            for m in PLANNER_PHRASE_OUTPUT.finditer(doc.text):
+                cached.update(t.i for t in doc if m.start() <= t.idx < m.end())
+        doc.user_data['planner_phrases'] = cached
+    return cached
+
+
+def keep_doing_edit(token):
+    """{index: text} turning "continue(s) to V" into "keep(s) V-ing" ("continue to grow" -> "keep growing"), read
+    from the parse: the verb after "to" must be the verb's own complement. Not for "be" or "have"."""
+    doc = token.doc
+    if token.lemma_.lower() != 'continue' or token.pos_ != 'VERB' or token.i + 2 >= len(doc) or not writer_word(token):
+        return None
+    to, verb = doc[token.i + 1], doc[token.i + 2]
+    if (to.lower_ != 'to' or verb.tag_ != 'VB' or verb.head.i != token.i or verb.dep_ != 'xcomp'
+            or verb.lemma_.lower() in ('be', 'have') or to.head.i != verb.i):
+        return None
+    keep = inflect('keep', token.tag_)
+    doing = inflect(verb.lemma_.lower(), 'VBG')
+    if not keep or not doing:
+        return None
+    return {token.i: match_case(token.text, keep), to.i: '', verb.i: doing}
+
+
+def apply_slot_edit(pieces, edit, doc):
+    """The pieces with a word swap made, or None where it no longer fits: each slot it changes must still hold the
+    writer's word (a template may have moved, dropped or re-inflected it), two slots it changes together must still be
+    neighbours, an "a"/"an" before it is made to agree only if it still stands right before it, and a plural's
+    apostrophe after it gets its "s" ("individuals' risk" -> "people's risk")."""
+    positions = {p[0]: k for k, p in enumerate(pieces) if p[0] is not None}
+    for i in edit.changes:
+        k = positions.get(i)
+        if k is None or pieces[k][1] != doc[i].text:
+            return None
+    indices = sorted(edit.changes)
+    if any(positions[b] != positions[a] + 1 for a, b in zip(indices, indices[1:]) if b == a + 1):
+        return None
+    new = [list(p) for p in pieces]
+    for i, text in edit.changes.items():
+        new[positions[i]][1] = text
+    first = positions[indices[0]]
+    before = live_neighbour(new, first, -1)
+    if before is not None and before[1].lower() in ('a', 'an'):
+        wanted = 'an' if starts_with_vowel_sound(new[first][1]) else 'a'
+        if before[1].lower() != wanted:
+            if before[0] is None or before[0] != indices[0] - 1:
+                return None
+            before[1] = match_case(before[1], wanted)
+    last = positions[indices[-1]]
+    after = live_neighbour(new, last, 1)
+    if (after is not None and after[0] is not None and after[0] == indices[-1] + 1 and doc[after[0]].tag_ == 'POS'
+            and after[1] in ("'", "’") and not new[last][1].lower().endswith('s')):
+        after[1] += 's'
+    return new
+
+
+def render_offsets(pieces, doc):
+    """render(), and where each piece landed: piece position -> (start, end) in the text."""
+    out, offsets, previous, length = [], {}, None, 0
+    for k, (index, text) in enumerate(pieces):
+        if not text:
+            continue
+        if previous is not None:
+            prev_index, prev_text = previous
+            neighbours = prev_index is not None and index is not None and index == prev_index + 1
+            if text == '.' and prev_text.endswith('.') and not neighbours:
+                continue
+            if neighbours:
+                gap = doc[prev_index].whitespace_
+            elif not (text in NO_SPACE_BEFORE or apostrophe_attached(index, text, doc) or prev_text in NO_SPACE_AFTER):
+                gap = ' '
+            else:
+                gap = ''
+            out.append(gap)
+            length += len(gap)
+        offsets[k] = (length, length + len(text))
+        out.append(text)
+        length += len(text)
+        previous = (index, text)
+    return ''.join(out), offsets
+
+
+def long_stretches(runs, before, text, after, k):
+    """[(start, end, words)] in `text` of the stretches of more than k of the writer's words in a row that reach into
+    it, measured with its neighbours' words around it (a stretch may run across a sentence break), longest first."""
+    ctx = ' '.join(part for part in (before, text, after) if part)
+    shift = len(before) + 1 if before else 0
+    found = []
+    for s, e, keys in runs.spans(ctx, k + 1):
+        a, b = s - shift, e - shift
+        if b <= 0 or a >= len(text):
+            continue
+        found.append((max(a, 0), min(b, len(text)), len(keys)))
+    return found
+
+
+class Plan:
+    __slots__ = ('pieces', 'families', 'reordered', 'risk', 'text', 'score', 'longest', 'changed', 'split', 'words')
+
+    def __init__(self, pieces, families, reordered, risk):
+        self.pieces, self.families, self.reordered, self.risk = pieces, list(families), reordered, risk
+        self.text, self.score, self.longest, self.changed, self.split, self.words = '', 0.0, 0, 0.0, None, []
+
+
+def transform_family(transform):
+    if transform in SIGNATURE_TRANSFORMS:
+        return 'signature'
+    if transform is passive_to_active:
+        return 'passive_to_active'
+    return 'move'
+
+
+def skeletons(sent, pieces, tone, deep_mode, after_move, previous, from_model):
+    """The ways the sentence's structure may change, each as a Plan before any further word swap: as it is; the
+    in-place rewrites (each, and all of them chained); one template, passive turned active or phrase move on top of
+    each of those; in Chaos a date or a source moved after a passive turned active. A sentence Deep Rewrite wrote only
+    gets the model-safe templates (Chaos). The rules of restructure() hold: a phrase move after a reordered sentence
+    only goes to the end, and no reordering opens like the sentence before."""
+    plans = [Plan(pieces, [], from_model, 0.0)]
+    if not restructurable(sent):
+        return plans
+    if from_model:
+        if deep_mode:
+            for transform in MODEL_SAFE_TRANSFORMS:
+                new = transform(sent, pieces)
+                if new:
+                    plans.append(Plan(new, ['denominalize' if transform is denominalize else 'model_safe'], True, 0.0))
+        return plans
+    focused = any(t.lower_ in ('only', 'just', 'solely', 'merely', 'even') for t in sent)
+    bases = [(pieces, [])]
+    chained, chain = pieces, []
+    for transform in in_place_transforms(tone):
+        if tone == 'academic' and transform in (allows_to_lets, process_to_how):
+            continue
+        new = transform(sent, pieces)
+        if new:
+            bases.append((new, [transform.__name__]))
+        again = transform(sent, chained)
+        if again:
+            chained, chain = again, chain + [transform.__name__]
+    if len(chain) > 1:
+        bases.append((chained, chain))
+    for base, families in bases:
+        if families:
+            plans.append(Plan(base, families, False, 0.0))
+        for transform in REORDERING:
+            if after_move and transform in PHRASE_MOVES and transform not in MOVES_TO_END:
+                continue
+            family = transform_family(transform)
+            if family == 'move' and focused:
+                continue        # "is only effective when X" -> "When X, it is only effective" says something else
+            new = transform(sent, base)
+            if not new or opens_like(new, previous):
+                continue
+            plans.append(Plan(new, families + [family], True, 0.0))
+            if deep_mode and transform is passive_to_active:
+                added_comma = sum(1 for p in new if p[1] == ',') > sum(1 for p in base if p[1] == ',')
+                for move in FOLLOW_UP_MOVES:
+                    if move not in MOVES_TO_END and (after_move or added_comma):
+                        continue
+                    again = move(sent, new)
+                    if again and not opens_like(again, previous):
+                        plans.append(Plan(again, families + [family, 'follow_up'], True, 0.0))
+    for plan in list(plans):
+        for name, edit in PLANNER_EDITS:
+            if name == 'adverb_to_front' and (plan.reordered or after_move):
+                continue
+            new = edit(sent, plan.pieces, tone) if edit is also_to_end else edit(sent, plan.pieces)
+            if new and not (name == 'adverb_to_front' and opens_like(new, previous)):
+                plans.append(Plan(new, plan.families + [name], plan.reordered or name == 'adverb_to_front', 0.0))
+    return plans
+
+
+# --- Round-10 sentence edits the planner adds on top of a plan. Each changes only slots still as written (word swaps
+# and other edits elsewhere in the sentence may stand), so they also follow a template or a move ---
+
+def slot_positions(pieces):
+    return {p[0]: k for k, p in enumerate(pieces) if p[0] is not None}
+
+
+def intact(pieces, positions, doc, *indices):
+    """True if each token still stands in its slot as the writer wrote it."""
+    return all(i in positions and pieces[positions[i]][1] == doc[i].text for i in indices)
+
+
+def final_stop(pieces):
+    """Position of the sentence's closing full stop, if the sentence still ends with one."""
+    live = [k for k, p in enumerate(pieces) if p[1]]
+    return live[-1] if live and pieces[live[-1]][1] == '.' else None
+
+
+TRAILING_CLAUSES = ('relcl', 'advcl', 'acl', 'ccomp', 'parataxis')
+
+
+def also_to_end(sent, pieces, tone='standard'):
+    """ "Many communities also rely on forests for food." -> "Many communities rely on forests for food as well." (Casual:
+    "too"): only where nothing after the verb could take the "as well" as its own (a clause, a second verb)."""
+    doc = sent.doc
+    also = next((t for t in sent if t.lower_ == 'also' and t.dep_ == 'advmod' and t.head == sent.root
+                 and t.i < t.head.i and t.i > sent.start), None)
+    if also is None or len(sent) > 26 or doc[also.i + 1].text == ',' or doc[also.i - 1].text == ',':
+        return None
+    verb = also.head
+    if any(t.i > verb.i and (t.dep_ in TRAILING_CLAUSES or t.dep_ in ('conj', 'cc')) for t in sent):
+        return None     # a list or a second phrase at the end would take the "as well" as its own
+    if any(t.lower_ in ('not', "n't", 'never', 'only', 'too', 'well', 'either') for t in sent):
+        return None
+    if any(t.i > verb.i and t.lower_ in ('including', 'like', 'such', 'especially', 'particularly', 'notably', 'except',
+                                         'besides', 'plus') for t in sent):
+        return None     # "..., including the mobile phone as well": the "as well" would join the example
+    positions = slot_positions(pieces)
+    stop = final_stop(pieces)
+    if stop is None or not intact(pieces, positions, doc, also.i):
+        return None
+    new = [list(p) for p in pieces]
+    new[positions[also.i]][1] = ''
+    new.insert(stop, [None, 'too' if tone == 'casual' else 'as well'])
+    return new
+
+
+FRONTABLE_ADVERBS = {'generally', 'usually', 'often', 'typically', 'frequently', 'sometimes', 'occasionally', 'normally',
+                     'eventually', 'gradually', 'soon'}
+
+
+def adverb_to_front(sent, pieces):
+    """ "Adults generally need seven to nine hours." -> "Generally, adults need seven to nine hours.": a frequency or
+    stance adverb between the subject and the main verb comes to the front."""
+    doc = sent.doc
+    verb = sent.root
+    subject = next((c for c in verb.children if c.dep_ in ('nsubj', 'nsubjpass')), None)
+    if subject is None:
+        return None
+    adverb = next((c for c in verb.children if c.dep_ == 'advmod' and c.lower_ in FRONTABLE_ADVERBS
+                   and subject.i < c.i < verb.i), None)
+    if adverb is None or subject.left_edge.i != sent.start or sent[0].text[:1].islower() or not writer_word(adverb):
+        return None
+    if doc[adverb.i - 1].text == ',' or doc[adverb.i + 1].text == ',' or uncertain_capital(sent[0]):
+        return None
+    positions = slot_positions(pieces)
+    if not intact(pieces, positions, doc, adverb.i, sent.start) or positions[sent.start] != 0:
+        return None
+    rest = [list(p) for k, p in enumerate(pieces) if k != positions[adverb.i]]
+    lowercase_first(rest, doc)
+    return [[adverb.i, capitalized(adverb.text)], [None, ',']] + rest
+
+
+STATIVE_VERBS = {'be', 'have', 'know', 'own', 'belong', 'contain', 'consist', 'seem', 'appear', 'mean', 'need', 'want',
+                 'like', 'love', 'hate', 'prefer', 'believe', 'understand', 'remember', 'forget', 'deserve', 'involve',
+                 'require', 'depend', 'matter', 'cost', 'weigh', 'resemble', 'exist', 'lack', 'owe', 'possess', 'fit', 'suit',
+                 'equal', 'recognize', 'realize', 'wish', 'hope', 'include', 'do', 'get', 'can', 'tend', 'feel', 'think',
+                 'see', 'hear', 'agree', 'mind', 'care', 'doubt', 'imagine', 'suppose', 'guess', 'cause', 'make'}
+
+
+INDEFINITE_HEADS = {'anyone', 'anybody', 'someone', 'somebody', 'everyone', 'everybody', 'no one', 'nobody', 'those', 'one',
+                    'whoever', 'all', 'few', 'many', 'some', 'others'}
+
+
+def relative_to_participle(sent, pieces):
+    """ "the animals and plants that share the planet" -> "the animals and plants sharing the planet": a defining
+    relative clause with an action verb in the present (no "which" set off by a comma, no auxiliary or negation)."""
+    doc = sent.doc
+    for verb in sent:
+        if verb.dep_ != 'relcl' or verb.tag_ not in ('VBZ', 'VBP') or verb.lemma_.lower() in STATIVE_VERBS:
+            continue
+        pronoun = next((c for c in verb.children if c.dep_ == 'nsubj' and c.lower_ in ('that', 'who', 'which')), None)
+        if (pronoun is None or pronoun.i != verb.i - 1 or (pronoun.i > 0 and doc[pronoun.i - 1].text == ',')
+                or any(c.dep_ in ('aux', 'auxpass', 'neg', 'prt', 'conj', 'cc') for c in verb.children)
+                or any(t.lower_ in ('that', 'which', 'who') for t in doc[verb.i + 1:verb.sent.end])):
+            continue        # "a tool that protects people and (that) has saved lives": the second verb would dangle
+        if verb.head.lower_ in INDEFINITE_HEADS:
+            continue        # "anyone who enjoys" names a kind of person; "anyone enjoying" reads as right now
+        positions = slot_positions(pieces)
+        if not intact(pieces, positions, doc, pronoun.i, verb.i) or positions[verb.i] != positions[pronoun.i] + 1:
+            continue
+        doing = inflect(verb.lemma_.lower(), 'VBG')
+        if not doing:
+            continue
+        new = [list(p) for p in pieces]
+        new[positions[pronoun.i]][1] = ''
+        new[positions[verb.i]][1] = doing
+        return new
+    return None
+
+
+def participle_to_finite(sent, pieces):
+    """ "Nature calms the mind, offering peace." -> "Nature calms the mind and offers peace.": a closing participle
+    clause on a main verb in the simple present becomes a second verb in the same tense. Not in the past: a story's
+    "She left the room, smiling at the guests" tells how she left, not what she did next."""
+    doc = sent.doc
+    root = sent.root
+    if root.tag_ not in ('VBZ', 'VBP') or any(c.dep_ in ('aux', 'auxpass', 'neg') for c in root.children):
+        return None
+    for verb in root.children:
+        if (verb.dep_ != 'advcl' or verb.tag_ != 'VBG' or verb.i < root.i or doc[verb.i - 1].text != ','
+                or any(c.dep_ in ('mark', 'aux', 'neg', 'nsubj') for c in verb.children)):
+            continue
+        if verb.right_edge.i + 1 != sent.end - 1 or doc[sent.end - 1].text != '.':
+            continue        # the clause must run to the end of the sentence
+        if verb.lemma_.lower() in ('be', 'have', 'do', 'make', 'leave'):
+            continue
+        comma = verb.i - 1
+        positions = slot_positions(pieces)
+        if not intact(pieces, positions, doc, comma, verb.i) or positions[verb.i] != positions[comma] + 1:
+            continue
+        finite = inflect(verb.lemma_.lower(), root.tag_)
+        if not finite:
+            continue
+        new = [list(p) for p in pieces]
+        new[positions[comma]][1] = ''
+        new[positions[verb.i]][1] = 'and ' + finite
+        return new
+    return None
+
+
+# Chaos splits every sentence it safely can; the new in-place edits rule a split out, so there they cost this much more
+CHAOS_SPLIT_KEPT = 0.08
+POSSESSIVE_S = re.compile(r"(?<=\w)['’]s\b")
+
+
+def plan_facts(old, new, sent):
+    """same_facts, reading a name with a possessive ("the Industrial Revolution's legacy") as the name itself, and
+    letting a first word that may be capitalised only because it opens the sentence (uncertain_capital: "Wildfires,
+    floods, and droughts" -> "Floods, wildfires, and droughts") lose its capital, as the templates themselves do."""
+    new = POSSESSIVE_S.sub('', new)
+    if Counter(NUMBER_RUN.findall(old)) != Counter(NUMBER_RUN.findall(new)):
+        return False
+    first = next((t for t in sent if not t.is_punct and not t.is_space), None)
+    loose = first is not None and (uncertain_capital(first) or (
+        first.pos_ != 'PROPN' and first.text[:1].isupper() and first.text[1:].islower()
+        and bool(getAllLemmas(first.lower_).get('NOUN') or getAllLemmas(first.lower_).get('ADJ'))))
+    for t in sent:
+        if t.is_alpha and keeps_capital(t) and not (loose and t.i == first.i) and not re.search(r'\b' + re.escape(t.text) + r'\b', new):
+            return False
+    for piece in re.split(r'(?<=[.!?])\s+', new):
+        for word in re.findall(r"[A-Za-z][\w'’-]*", piece)[1:]:
+            if word[0].isupper() and not re.search(r'\b' + re.escape(word) + r'\b', old):
+                return False
+    return True
+
+
+NO_SPLIT_AFTER = {'also_to_end', 'adverb_to_front', 'relative_to_participle', 'participle_to_finite'}
+PLANNER_EDITS = (('also_to_end', also_to_end), ('adverb_to_front', adverb_to_front),
+                 ('relative_to_participle', relative_to_participle), ('participle_to_finite', participle_to_finite))
+
+
+def plan_sentences(doc, tone, deep_mode, model_starts, runs, stats=None, vet=None):
+    """The block's sentences as Sentence objects, each with the plan chosen for it (see the top of this section)."""
+    k_limit, floor, budget = PLAN_SETTINGS.get(tone, PLAN_SETTINGS['standard'])
+    if deep_mode:
+        k_limit, floor, budget = CHAOS_K.get(tone, CHAOS_K_DEFAULT), CHAOS_FLOOR, budget * CHAOS_BUDGET
+    sents = list(doc.sents)
+    doc.user_data['writer_words'] = runs.words
+    sentences, used = [], set()
+    previous_text = ''
+    for k, sent in enumerate(sents):
+        pieces = [[t.i, t.text] for t in sent if not t.is_space]
+        if not pieces:
+            continue
+        from_model = sent.start in model_starts
+        doubt = parse_doubt(sent)
+        limit = budget * (MODEL_BUDGET_SHARE if from_model else 1.0)
+        following = sentence_words(sents[k + 1]) if k + 1 < len(sents) else set()
+        before_words = previous_text.split()[-BEFORE_WORDS:]
+        preceding = sentence_words(sents[k - 1]) if k else set()     # its words and lemmas: "has" and "have" alike
+        avoid = sentence_words(sent) | following | preceding | {w.lower() for w in before_words}
+        options = word_options(sent, tone, deep_mode, from_model, avoid, used)
+        # The swaps that cost nothing (the overused AI words; plain and everyday words outside Academic) are made whatever
+        # the plan, before the templates, as plan_word_edits did; they cost nothing
+        always = [e for e in options.values() if e.wanted]
+        made = []
+        for edit in always:
+            new = apply_slot_edit(pieces, edit, doc)
+            if new:
+                pieces = new
+                made.append(edit)
+        optional = {i: e for i, e in options.items() if e not in always}
+        before = ' '.join(before_words)
+        after = ' '.join(sents[k + 1].text.split()[:AFTER_WORDS]) if k + 1 < len(sents) else ''
+        source_keys = word_keys(sent.text)
+        prev = sentences[-1] if sentences else None
+        previous = prev.opener() if prev else ''
+        after_move = bool(prev and prev.reordered)
+        best = []
+        wanted = wanted_families(tone, deep_mode)
+        splits_here = deep_mode and not from_model and splittable(sent) and bool(usable_splits(
+            type('S', (), {'splits': split_points(sent, pieces)})(), tone))
+        for plan in skeletons(sent, pieces, tone, deep_mode, after_move, previous, from_model):
+            plan.risk = sum(edit_risk(f, tone, doubt, wanted) for f in plan.families)
+            if plan.risk > limit:
+                continue
+            fill_plan(plan, doc, optional, runs, before, after, k_limit, floor, limit, tone, doubt, source_keys)
+            if splits_here and any(f in NO_SPLIT_AFTER for f in plan.families):
+                plan.risk += CHAOS_SPLIT_KEPT      # Chaos splits where it can: an edit that rules the split out costs more
+            score_plan(plan, doc, runs, before, after, k_limit, floor, source_keys)
+            if plan_facts(sent.text, plan.text, sent):
+                best.append(plan)
+        if not best:
+            best = [Plan(pieces, [], from_model, 0.0)]
+            score_plan(best[0], doc, runs, before, after, k_limit, floor, source_keys)
+        low = min(p.score for p in best)
+        near = [p for p in best if p.score <= low + PLAN_EPSILON]
+        chosen = random.choice(near)
+        sentence = Sentence(chosen.pieces, doc, sent)
+        # the new edits change a clause in place; a split found on the sentence as written would cut through it
+        sentence.reordered = chosen.reordered
+        # split_points (below) refuses a cut whose tail an edit changed; the split before a closing relative clause that
+        # Chaos adds later (vary_rhythm) doesn't look, so it is ruled out after the new in-place edits
+        sentence.keep_relative = any(f in NO_SPLIT_AFTER for f in chosen.families)
+        reworked = 'model_safe' in chosen.families
+        if splittable(sent) and ((from_model and not reworked) or not sentence.reordered):
+            sentence.splits = split_points(sent, sentence.pieces)
+        shortest = CHAOS_COVERAGE_MIN_WORDS if deep_mode else COVERAGE_MIN_WORDS
+        if not from_model and untouched(sentence.pieces, doc) and sentence.words() >= shortest:
+            sentence.must_split = True      # nothing else fit: a split or a join (vary_rhythm)
+        elif chosen.longest > k_limit and sentence.splits and not deep_mode:
+            sentence.must_split = True      # a split's new opener breaks what the swaps couldn't
+        used.update(w.lower() for w in chosen.words if w)
+        used.update(e.word.lower() for e in made if e.word)
+        if stats is not None:
+            for family in chosen.families + [e.family for e in made]:
+                stats[family] = stats.get(family, 0) + 1
+        sentences.append(sentence)
+        previous_text = chosen.text
+    return sentences
+
+
+def fill_plan(plan, doc, options, runs, before, after, k_limit, floor, limit, tone, doubt, source_keys):
+    """Places word swaps in the plan's long stretches, one at a time, the cheapest near the middle of the longest
+    stretch first, then tops the sentence up to the change floor, all within the risk budget."""
+    pieces = plan.pieces
+    spent = plan.risk
+    tried = set()
+    for _ in range(FILL_STEPS):
+        text, offsets = render_offsets(pieces, doc)
+        stretches = sorted(long_stretches(runs, before, text, after, k_limit), key=lambda s: -s[2])
+        placed = False
+        for start, end, _ in stretches:
+            middle = (start + end) / 2
+            inside = [(abs((a + b) / 2 - middle), pieces[pos][0]) for pos, (a, b) in offsets.items()
+                      if a >= start and b <= end and pieces[pos][0] in options and pieces[pos][0] not in tried]
+            for _, i in sorted(inside, key=lambda c: (slot_risk(options[c[1]], tone, doubt), c[0] // 12)):
+                edit = options[i]
+                cost = slot_risk(edit, tone, doubt)
+                tried.add(i)
+                if spent + cost > limit:
+                    continue
+                new = apply_slot_edit(pieces, edit, doc)
+                if new:
+                    pieces, spent, placed = new, spent + cost, True
+                    plan.families.append(edit.family)
+                    plan.words.append(edit.word)
+                    break
+            if placed:
+                break
+        if not placed:
+            break
+    # the change floor: the cheapest swaps left, wherever they are
+    for i in sorted((i for i in options if i not in tried), key=lambda i: slot_risk(options[i], tone, doubt)):
+        text = render(pieces, doc)
+        if changed_share(source_keys, word_keys(text)) >= floor:
+            break
+        edit = options[i]
+        cost = slot_risk(edit, tone, doubt)
+        if spent + cost > limit:
+            break
+        new = apply_slot_edit(pieces, edit, doc)
+        if new:
+            pieces, spent = new, spent + cost
+            plan.families.append(edit.family)
+            plan.words.append(edit.word)
+    plan.pieces, plan.risk = pieces, spent
+
+
+def changed_share(source_keys, keys):
+    return 1 - difflib.SequenceMatcher(None, source_keys, keys, autojunk=False).ratio()
+
+
+def score_plan(plan, doc, runs, before, after, k_limit, floor, source_keys):
+    plan.text = render(plan.pieces, doc)
+    stretches = long_stretches(runs, before, plan.text, after, k_limit)
+    plan.longest = max((s[2] for s in stretches), default=0)
+    plan.changed = changed_share(source_keys, word_keys(plan.text))
+    plan.score = (plan.risk + OVER_K_COST * max(0, plan.longest - k_limit)
+                  + FLOOR_COST * max(0.0, floor - plan.changed)
+                  + (UNTOUCHED_COST if plan.changed == 0 and len(source_keys) >= 6 else 0.0))
+
+
+# ==========================================
 #   PUTTING THE LAYERS TOGETHER
 # ==========================================
 
@@ -9971,62 +11082,65 @@ def sentence_gap(before, after, doc):
         return doc[last[0]].whitespace_
     return ' '
 
-def rewrite_block(doc, tone, deep_mode, prose, model_written=(), vet=None):
+def rewrite_block(doc, tone, deep_mode, prose, model_written=(), vet=None, runs=None, stats=None):
     model_starts = {sent.start for sent in doc.sents if model_written and written_by_model(sent, model_written)}
-    edits = plan_word_edits(doc, tone, deep_mode, model_starts, unlock_model=deep_mode, vet=usable(vet))
-    if not prose:
-        return ''.join(edits.get(t.i, t.text) + t.whitespace_ for t in doc)
-    sentences = []
-    sents = list(doc.sents)
-    for k, sent in enumerate(sents):
-        pieces = [[t.i, edits.get(t.i, t.text)] for t in sent if not t.is_space]
-        if not pieces:
-            continue
-        sentence = Sentence(pieces, doc, sent)
-        from_model = sent.start in model_starts
-        previous = sentences[-1].opener() if sentences else ''
-        boost = CHAOS_STRUCTURE_BOOST if deep_mode else 0.0
-        reworked = False        # a template dropped or moved words, so the original split points no longer hold
-        if from_model:
-            # Deep Rewrite already restructured it; moving its phrases again risks the meaning
-            sentence.reordered = True
-            if deep_mode and restructurable(sent):
-                for transform in MODEL_SAFE_TRANSFORMS:
-                    new = transform(sent, sentence.pieces)
-                    if new:
-                        sentence.pieces = new
-                        reworked = transform is not denominalize
-                        break
-        elif restructurable(sent):
-            if random.random() < NOMINAL_RATE[tone] + boost:
-                pieces = denominalize(sent, pieces) or pieces
-            if random.random() < NOMINAL_RATE[tone] + boost:
-                pieces = the_way_to_how(sent, pieces) or pieces
-            if tone != 'academic' and random.random() < NOMINAL_RATE[tone] + boost:
-                pieces = process_to_how(sent, pieces) or pieces
-            reorder_boost = CHAOS_REORDER_BOOST if deep_mode else 0.0
-            if random.random() < LIST_RATE[tone] + reorder_boost:
-                pieces = reorder_list(sent, pieces) or pieces
-            if LET_RATE[tone] and random.random() < LET_RATE[tone] + reorder_boost:
-                pieces = allows_to_lets(sent, pieces) or pieces
-            if random.random() < POSSESSIVE_RATE[tone] + reorder_boost:
-                pieces = of_to_possessive(sent, pieces) or pieces
-            sentence.pieces = pieces
-            after_move = bool(sentences and sentences[-1].reordered)
-            new = restructure(sent, pieces, tone, deep_mode, after_move=after_move, previous=previous)
-            if new:
-                sentence.pieces, sentence.reordered = new, True
-        shortest = CHAOS_COVERAGE_MIN_WORDS if deep_mode else COVERAGE_MIN_WORDS
-        if not from_model and untouched(sentence.pieces, doc) and sentence.words() >= shortest:
-            # the neighbours as they now read, so a forced swap doesn't echo them ("looks into ... looked at")
-            nearby = word_forms(' '.join(text for _, text in sentences[-1].pieces)) if sentences else set()
-            if k + 1 < len(sents):
-                nearby |= word_forms(' '.join(edits.get(t.i, t.text) for t in sents[k + 1]))
-                nearby |= {t.lemma_.lower() for t in sents[k + 1]}
-            ensure_change(sentence, tone, deep_mode, usable(vet), previous, nearby)
-        if splittable(sent) and ((from_model and not reworked) or not sentence.reordered):
-            sentence.splits = split_points(sent, sentence.pieces)
-        sentences.append(sentence)
+    if CORE != 'legacy' and prose and runs is not None:
+        sentences = plan_sentences(doc, tone, deep_mode, model_starts, runs, stats, vet)
+    else:
+        edits = plan_word_edits(doc, tone, deep_mode, model_starts, unlock_model=deep_mode, vet=usable(vet))
+        if not prose:
+            return ''.join(edits.get(t.i, t.text) + t.whitespace_ for t in doc)
+        sentences = []
+        sents = list(doc.sents)
+        for k, sent in enumerate(sents):
+            pieces = [[t.i, edits.get(t.i, t.text)] for t in sent if not t.is_space]
+            if not pieces:
+                continue
+            sentence = Sentence(pieces, doc, sent)
+            from_model = sent.start in model_starts
+            previous = sentences[-1].opener() if sentences else ''
+            boost = CHAOS_STRUCTURE_BOOST if deep_mode else 0.0
+            reworked = False        # a template dropped or moved words, so the original split points no longer hold
+            if from_model:
+                # Deep Rewrite already restructured it; moving its phrases again risks the meaning
+                sentence.reordered = True
+                if deep_mode and restructurable(sent):
+                    for transform in MODEL_SAFE_TRANSFORMS:
+                        new = transform(sent, sentence.pieces)
+                        if new:
+                            sentence.pieces = new
+                            reworked = transform is not denominalize
+                            break
+            elif restructurable(sent):
+                if random.random() < NOMINAL_RATE[tone] + boost:
+                    pieces = denominalize(sent, pieces) or pieces
+                if random.random() < NOMINAL_RATE[tone] + boost:
+                    pieces = the_way_to_how(sent, pieces) or pieces
+                if tone != 'academic' and random.random() < NOMINAL_RATE[tone] + boost:
+                    pieces = process_to_how(sent, pieces) or pieces
+                reorder_boost = CHAOS_REORDER_BOOST if deep_mode else 0.0
+                if random.random() < LIST_RATE[tone] + reorder_boost:
+                    pieces = reorder_list(sent, pieces) or pieces
+                if LET_RATE[tone] and random.random() < LET_RATE[tone] + reorder_boost:
+                    pieces = allows_to_lets(sent, pieces) or pieces
+                if random.random() < POSSESSIVE_RATE[tone] + reorder_boost:
+                    pieces = of_to_possessive(sent, pieces) or pieces
+                sentence.pieces = pieces
+                after_move = bool(sentences and sentences[-1].reordered)
+                new = restructure(sent, pieces, tone, deep_mode, after_move=after_move, previous=previous)
+                if new:
+                    sentence.pieces, sentence.reordered = new, True
+            shortest = CHAOS_COVERAGE_MIN_WORDS if deep_mode else COVERAGE_MIN_WORDS
+            if not from_model and untouched(sentence.pieces, doc) and sentence.words() >= shortest:
+                # the neighbours as they now read, so a forced swap doesn't echo them ("looks into ... looked at")
+                nearby = word_forms(' '.join(text for _, text in sentences[-1].pieces)) if sentences else set()
+                if k + 1 < len(sents):
+                    nearby |= word_forms(' '.join(edits.get(t.i, t.text) for t in sents[k + 1]))
+                    nearby |= {t.lemma_.lower() for t in sents[k + 1]}
+                ensure_change(sentence, tone, deep_mode, usable(vet), previous, nearby)
+            if splittable(sent) and ((from_model and not reworked) or not sentence.reordered):
+                sentence.splits = split_points(sent, sentence.pieces)
+            sentences.append(sentence)
     sentences = vary_rhythm(sentences, tone, deep_mode)
     vary_openings(sentences)
     out = []
@@ -10043,7 +11157,9 @@ def rewrite_block(doc, tone, deep_mode, prose, model_written=(), vet=None):
 # tokenizer takes time that grows with the square of such a run
 UNBROKEN_CHUNK_LIMIT = 1000
 
-def rewrite_with_spacy(text, tone, deep_mode, model_written=(), vet=None):
+def rewrite_with_spacy(text, tone, deep_mode, model_written=(), vet=None, runs=None, stats=None):
+    if runs is None and CORE != 'legacy':
+        runs = SourceRuns(text)          # called on its own: the stretches are measured against this text
     parts = LINE_BREAKS.split(text)      # paragraphs and lines at even positions, the breaks between them at odd ones
     quotes = quoted_ranges(text)         # found in the whole text: a quotation may be hard-wrapped over lines
     code = [(m.start(), m.end()) for m in CODE_SPANS.finditer(text)]
@@ -10064,7 +11180,7 @@ def rewrite_with_spacy(text, tone, deep_mode, model_written=(), vet=None):
         doc.user_data['quoted'] = frozenset(t.i for t in doc if overlaps_quote(text, start + t.idx, start + t.idx + 1))
         if not looks_english(doc):
             continue
-        parts[k] = lead + tidy(rewrite_block(doc, tone, deep_mode, is_prose(core), model_written, vet)) + trail
+        parts[k] = lead + tidy(rewrite_block(doc, tone, deep_mode, is_prose(core), model_written, vet, runs, stats)) + trail
     return ''.join(parts)
 
 # A word with optional surrounding punctuation, e.g. '"Hello,' -> ('"', 'Hello', ',')
@@ -12375,9 +13491,9 @@ def paraphrase_score(sent, candidate, cand_doc, why=None):
         return refuse(why, 'repeated trigram')
     if any(lower_new.count(w) > max(1, lower_source.count(w)) for w in set(lower_new) if len(w) >= 4 and w not in stop_words):
         return refuse(why, 'doubled word')     # a doubled word ("feedback and feedback", "insights from these insights")
-    if any(a == b and a not in lower_source for a, b in zip(lower_new, lower_new[1:])):
-        return refuse(why, 'doubled word')
     source_pairs = set(zip(lower_source, lower_source[1:]))
+    if any(a == b and (a, b) not in source_pairs for a, b in zip(lower_new, lower_new[1:])):
+        return refuse(why, 'doubled word')     # "I have have mixed feelings" ("have" alone is in the source)
     if any('-' in a + b and (a.rsplit('-', 1)[-1] == b or b.split('-', 1)[0] == a) and (a, b) not in source_pairs
            for a, b in zip(lower_new, lower_new[1:])):
         return refuse(why, 'doubled word')     # across a hyphen: "using mixed-methods methods", "a well well-known"
@@ -13140,7 +14256,8 @@ def break_in_sentence(text, base, sents, sent, within, run, runs, tone, deep_mod
     if new and better(tidy(render(new, doc))):
         return tidy(render(new, doc))
     if tone in CONTRACT_CHANCE:
-        contracted = contract_within(text, *run)
+        # only inside this sentence: the stretch may begin in the one before, and a change there would shift the text
+        contracted = contract_within(text, max(run[0], a), min(run[1], b))
         if contracted != text:
             new = contracted[a: b + len(contracted) - len(text)]
             if better(new):
@@ -13179,28 +14296,38 @@ def break_in_sentence(text, base, sents, sent, within, run, runs, tone, deep_mod
 #   ENTRY POINTS
 # ==========================================
 
-def perform_nuclear_chaos(text, tone, deep_mode, deep_rewrite=False, model_checks=True, progress=None):
+def perform_nuclear_chaos(text, tone, deep_mode, deep_rewrite=False, model_checks=True, progress=None, report=None):
     """The rewrite of `text`. `model_checks=False` (batch requests) keeps a Chaos request without Deep Rewrite from
     having the model check the run breaker's word swaps. `progress(share)` hears how far a Deep Rewrite has got
-    (its first pass as the first 70%, its second as the next 25%)."""
+    (its first pass as the first 70%, its second as the next 25%). `report` (a dict) receives 'removed', the chat
+    assistant's lines taken off the text (strip_chat_wrappers), 'source', the text as rewritten, and 'families', how
+    many edits of each kind the planner made."""
     started = time.monotonic()
-    runs = SourceRuns(text)     # the text as sent, which the change map compares with
+    removed = []
+    if CORE != 'legacy':
+        text, removed = strip_chat_wrappers(text)
+    if report is not None:
+        report['removed'], report['source'] = removed, text     # the change map compares with the text as rewritten
+    runs = SourceRuns(text)     # the text as sent (less any chatbot lines), which the change map compares with
     text = clean_text(text)
     source = text
     model_written = []
     deep = deep_rewrite and deep_rewrite_available()
 
-    def report(low, high):
+    def progress_between(low, high):
         return None if progress is None else (lambda share: progress(low + (high - low) * share))
 
     first = {}
     if deep:
-        text, model_written = deep_paraphrase(text, deep_mode, progress=report(0.0, 0.7), stats=first)
+        text, model_written = deep_paraphrase(text, deep_mode, progress=progress_between(0.0, 0.7), stats=first)
+    if CORE != 'legacy':
+        text = apply_planner_phrases(text, tone)     # first: the phrase layer below never rewrites its wording
     text = apply_phrase_rules(text, tone, deep_mode)
     text = apply_tone_contractions(text, tone, deep_mode)
     if NLP is not None:
         vet = swap_vetter(deep_mode, deep) if len(source) <= paraphraser.MAX_CHARS else None
-        text = rewrite_with_spacy(text, tone, deep_mode, model_written, vet)
+        families = report.setdefault('families', {}) if report is not None else None
+        text = rewrite_with_spacy(text, tone, deep_mode, model_written, vet, runs, families)
         # Deep Rewrite's second pass, on the sentences the layers left with a long stretch as written: the layers
         # often split or reworded them since, and the models take the new, shorter sentences more readily
         least = (CHAOS_LATE_RUN_LENGTH if deep_mode else LATE_RUN_LENGTH)
@@ -13209,7 +14336,7 @@ def perform_nuclear_chaos(text, tone, deep_mode, deep_rewrite=False, model_check
         targets = [(s, e, len(key)) for s, e, key in runs.spans(text, least)] if deep and room > 0 else []
         if targets:
             text, _ = deep_paraphrase(text, deep_mode, targets, runs, min(DEEP_TIME_BUDGET * LATE_DEEP_SHARE, room / parts),
-                                      progress=report(0.7, 0.95),
+                                      progress=progress_between(0.7, 0.95),
                                       limit=max(1, math.ceil(LATE_SENTENCE_SHARE * first.get('eligible', 0))))
         # The run breaker's swaps get model checks of their own, an allowance apart from the word layer's (which may have
         # used its own up): a Deep Rewrite request's, or, in Chaos Mode, an idle model's (paraphraser.reserve_scoring)
@@ -13240,6 +14367,7 @@ class SourceRuns:
 
     def __init__(self, source):
         self.keys = word_keys(source)
+        self.words = frozenset(self.keys)      # the writer's own words (writer_word)
         self.matcher = difflib.SequenceMatcher(None, autojunk=False)
         self.matcher.set_seq2(self.keys)       # indexed once; each check only sets the other side
         self.grams = {}

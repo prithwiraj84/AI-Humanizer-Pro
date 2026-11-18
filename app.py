@@ -1711,12 +1711,16 @@ def scheduled_tasks():
 #   CORE HUMANIZER ENDPOINT
 # ==========================================
 
-def humanize_result(text, humanized_text):
-    """The JSON fields of a rewrite: the text, the change map and its figures."""
-    metrics = calculate_diff_metrics(text, humanized_text)
+def humanize_result(text, humanized_text, report=None):
+    """The JSON fields of a rewrite: the text, the change map and its figures. `report` is the engine's
+    (perform_nuclear_chaos): the change map compares the rewrite with the text as rewritten, without the chat
+    assistant's lines the engine took off it, which are listed as removed_lines."""
+    report = report or {}
+    metrics = calculate_diff_metrics(report.get('source', text), humanized_text)
     return {
         "original": text,
         "humanized": humanized_text,
+        "removed_lines": report.get('removed', []),
         "diff_html": metrics['diff_html'],
         "longest_unchanged": metrics['longest_unchanged'],
         "structural_changes": f"{metrics['structural_score']}%",
@@ -1780,9 +1784,10 @@ jobs = JobStore()
 def run_job(key, text, tone, deep_mode):
     """A background Deep Rewrite (see JobStore); it holds the Deep Rewrite slot the request took until it ends."""
     try:
+        report = {}
         humanized_text = perform_nuclear_chaos(text, tone, deep_mode, True,
-                                               progress=lambda share: jobs.progress(key, share))
-        jobs.finish(key, result=humanize_result(text, humanized_text))
+                                               progress=lambda share: jobs.progress(key, share), report=report)
+        jobs.finish(key, result=humanize_result(text, humanized_text, report))
     except Exception as e:
         # Log only the error type and location: messages can quote the user's text, which is never stored
         logger.error('Humanize job failed: %s at %s', type(e).__name__, error_location(e))
@@ -1894,8 +1899,9 @@ def humanize():
         return jsonify({"job": job}), 202
 
     try:
-        humanized_text = perform_nuclear_chaos(text, tone, deep_mode, deep_rewrite)
-        result = humanize_result(text, humanized_text)
+        report = {}
+        humanized_text = perform_nuclear_chaos(text, tone, deep_mode, deep_rewrite, report=report)
+        result = humanize_result(text, humanized_text, report)
 
         response_time = (time.perf_counter() - start_time) * 1000
 
@@ -1982,9 +1988,12 @@ def humanize_batch():
         result = {"index": i} if item['id'] is None else {"index": i, "id": item['id']}
         try:
             # no Deep Rewrite, and no model checks of word swaps either (deep_rewrite, model_checks): a batch is many texts
-            humanized_text = perform_nuclear_chaos(item['text'], item['tone'], item['deep_mode'], False, False)
-            metrics = calculate_diff_metrics(item['text'], humanized_text)
-            result.update({"humanized": humanized_text, "longest_unchanged": metrics['longest_unchanged'],
+            report = {}
+            humanized_text = perform_nuclear_chaos(item['text'], item['tone'], item['deep_mode'], False, False,
+                                                   report=report)
+            metrics = calculate_diff_metrics(report.get('source', item['text']), humanized_text)
+            result.update({"humanized": humanized_text, "removed_lines": report.get('removed', []),
+                           "longest_unchanged": metrics['longest_unchanged'],
                            "structural_changes": f"{metrics['structural_score']}%", "changed_words": metrics['changed_words_count'],
                            "new_words": metrics['new_words_count'], "moved_words": metrics['moved_words_count'],
                            "restructured_sentences": metrics['restructured_sentences']})

@@ -1,0 +1,6785 @@
+{
+ "_about": "Model-free word swaps (round 10), read by humanizer.lexicon_edit. Key: lemma|UPOS. A word a curated table in humanizer.py owns (AI_WORDS, PLAIN_WORDS, EVERYDAY_SWAPS, AI_FAVOURITES) is not listed here: that table decides it. 'rules' are tried in order; the first whose conditions all hold gives the options ('use', lemmas; the first word is inflected like the original; an empty 'use' keeps the word). Conditions: object (lemmas | 'any' | 'none'; every item of a listed object must match), object_not, object_not_pron, object_tag_not, head / head_not (the noun an adjective describes, the word an adverb modifies), head_pos / head_tag, head_not_dep / head_not_tag, no_det_on_head, subject / subject_not, subject_not_propn, need_subject, no_subject, dep / dep_not, tags, tones, child (a dependency that must be present), child_tag, child_not, child_any, child_word, child_prep, child_prep_not, child_wh, child_mark, prep (a preposition or particle child that must be present), prep_not, prt_not, prep_any, pobj_class, pobj_plain, not_after / not_before / prev_tag (neighbouring words), next, next_num, next_num_or_fraction, next2_proper, with_next (the next word, dropped by the swap: 'lead to' -> 'cause'), position (first | not_first | last | after_head), aux_have, aux_will, aux_not, no_neg_head, attr_det, attr_plain, det_in / det_not, need_det, acomp_in, no_compound, no_reduced_relative. A list item 'class:person' etc. matches nouns of that kind. 'off': tones the entry never applies in. 'never': sentences where the word must stay (tests). 'examples': sentences where it changes (tests).",
+ "appreciate|VERB": {
+  "rules": [
+   {
+    "object": "any",
+    "dep_not": [
+     "amod"
+    ],
+    "use": [
+     "value"
+    ],
+    "object_not": [
+     "patience",
+     "help",
+     "time",
+     "support",
+     "understanding",
+     "cooperation",
+     "co-operation",
+     "feedback",
+     "effort",
+     "business",
+     "interest",
+     "consideration",
+     "attention",
+     "kindness",
+     "hospitality",
+     "input"
+    ],
+    "aux_not": [
+     "would",
+     "will",
+     "should",
+     "could",
+     "'d"
+    ]
+   }
+  ],
+  "examples": [
+   "Many employees appreciate the flexibility to manage their own schedules."
+  ],
+  "never": [
+   "Homes in the area appreciate in value every year.",
+   "I appreciate that you came.",
+   "We really appreciate your patience.",
+   "I would appreciate a full refund or a replacement."
+  ]
+ },
+ "improve|VERB": {
+  "rules": [
+   {
+    "object": [
+     "mood",
+     "spirit"
+    ],
+    "use": [
+     "lift"
+    ]
+   },
+   {
+    "object": [
+     "skill",
+     "focus",
+     "concentration",
+     "memory"
+    ],
+    "use": [
+     "sharpen"
+    ]
+   },
+   {
+    "object": "any",
+    "use": [
+     "boost"
+    ],
+    "tones": [
+     "standard",
+     "casual"
+    ]
+   },
+   {
+    "object": "any",
+    "use": [
+     "strengthen"
+    ],
+    "tones": [
+     "professional"
+    ]
+   },
+   {
+    "object": "none",
+    "child_not": [
+     "prep",
+     "acomp"
+    ],
+    "tags": [
+     "VBD",
+     "VBZ",
+     "VBP",
+     "VB"
+    ],
+    "use": [
+     "get better"
+    ],
+    "tones": [
+     "standard",
+     "casual"
+    ]
+   }
+  ],
+  "examples": [
+   "Even ten minutes of meditation can improve your mood.",
+   "Practice will improve your skills."
+  ],
+  "never": [
+   "The program improved on earlier designs."
+  ]
+ },
+ "create|VERB": {
+  "rules": [
+   {
+    "object": [
+     "sense",
+     "feeling",
+     "atmosphere",
+     "environment",
+     "space",
+     "culture",
+     "bond"
+    ],
+    "use": [
+     "build"
+    ]
+   },
+   {
+    "object": "any",
+    "object_not": [
+     "job",
+     "problem",
+     "issue",
+     "account",
+     "file",
+     "folder",
+     "password",
+     "law",
+     "universe",
+     "world",
+     "artwork",
+     "work",
+     "wealth",
+     "opportunity",
+     "value",
+     "impact",
+     "demand",
+     "awareness",
+     "tension",
+     "conflict",
+     "difference",
+     "employment",
+     "prosperity",
+     "confusion"
+    ],
+    "use": [
+     "make"
+    ]
+   }
+  ],
+  "examples": [
+   "Create a realistic schedule for each subject."
+  ],
+  "never": [
+   "The new factory will create 500 jobs.",
+   "The revolution created new wealth and opportunities."
+  ]
+ },
+ "build|VERB": {
+  "rules": [
+   {
+    "object": [
+     "skeleton",
+     "shell",
+     "nest",
+     "web",
+     "hive",
+     "dam",
+     "reef",
+     "colony",
+     "mound",
+     "burrow"
+    ],
+    "use": [
+     "form",
+     "make"
+    ]
+   },
+   {
+    "object": [
+     "vocabulary",
+     "muscle",
+     "stamina",
+     "endurance"
+    ],
+    "use": [
+     "develop"
+    ]
+   },
+   {
+    "object": [
+     "friendship",
+     "relationship",
+     "bond",
+     "connection",
+     "partnership",
+     "alliance"
+    ],
+    "use": [
+     "form"
+    ]
+   },
+   {
+    "object": [
+     "skill",
+     "habit",
+     "ability",
+     "confidence",
+     "knowledge",
+     "understanding",
+     "resilience",
+     "trust",
+     "strength",
+     "muscle"
+    ],
+    "use": [
+     "develop"
+    ]
+   },
+   {
+    "object": [
+     "future",
+     "society",
+     "community",
+     "career"
+    ],
+    "use": [
+     "create"
+    ]
+   }
+  ],
+  "examples": [
+   "Being part of a team helps build lasting friendships.",
+   "Hobbies help you build new skills.",
+   "Reading to children builds their vocabulary.",
+   "Corals build hard skeletons made of calcium carbonate."
+  ],
+  "never": [
+   "They built a bridge across the river.",
+   "To build a strong team, leaders should encourage open communication."
+  ]
+ },
+ "develop|VERB": {
+  "rules": [
+   {
+    "object": [
+     "skill",
+     "habit",
+     "understanding",
+     "relationship",
+     "confidence",
+     "knowledge"
+    ],
+    "use": [
+     "build"
+    ]
+   },
+   {
+    "object": [
+     "plan",
+     "strategy",
+     "policy",
+     "program",
+     "programme",
+     "software",
+     "app",
+     "application",
+     "tool",
+     "product",
+     "method",
+     "system",
+     "technology",
+     "vaccine",
+     "guideline",
+     "framework",
+     "model",
+     "curriculum",
+     "course",
+     "game",
+     "website",
+     "theory"
+    ],
+    "use": [
+     "create",
+     "build"
+    ],
+    "tags": [
+     "VB",
+     "VBZ",
+     "VBP",
+     "VBD",
+     "VBG"
+    ]
+   }
+  ],
+  "examples": [
+   "Hobbies help children develop new skills.",
+   "Engineers developed a new tool."
+  ],
+  "never": [
+   "Some patients develop cancer later in life.",
+   "The photos were developed in a darkroom.",
+   "The software was initially developed for internal use.",
+   "Dolphins have developed a unique ability to sleep with half their brain."
+  ]
+ },
+ "start|VERB": {
+  "rules": [
+   {
+    "object": [
+     "business",
+     "company",
+     "firm",
+     "shop",
+     "store",
+     "bakery",
+     "restaurant",
+     "project",
+     "campaign",
+     "program",
+     "programme",
+     "podcast",
+     "blog",
+     "channel",
+     "brand",
+     "venture",
+     "startup"
+    ],
+    "use": [
+     "launch",
+     "set up"
+    ],
+    "not_after": [
+     "get",
+     "got",
+     "gets",
+     "getting",
+     "gotten"
+    ],
+    "not_before": [
+     "over",
+     "up",
+     "out",
+     "off",
+     "back"
+    ]
+   },
+   {
+    "object": [
+     "car",
+     "engine",
+     "fire",
+     "machine",
+     "computer",
+     "motor",
+     "vehicle",
+     "laptop",
+     "device",
+     "app",
+     "generator",
+     "fight",
+     "war"
+    ],
+    "use": [],
+    "not_after": [
+     "get",
+     "got",
+     "gets",
+     "getting",
+     "gotten"
+    ],
+    "not_before": [
+     "over",
+     "up",
+     "out",
+     "off",
+     "back"
+    ]
+   },
+   {
+    "object": "any",
+    "use": [
+     "begin"
+    ],
+    "object_not_pron": true,
+    "not_after": [
+     "get",
+     "got",
+     "gets",
+     "getting",
+     "gotten"
+    ],
+    "not_before": [
+     "over",
+     "up",
+     "out",
+     "off",
+     "back"
+    ]
+   },
+   {
+    "object": "none",
+    "use": [
+     "begin"
+    ],
+    "not_after": [
+     "get",
+     "got",
+     "gets",
+     "getting",
+     "gotten"
+    ],
+    "not_before": [
+     "over",
+     "up",
+     "out",
+     "off",
+     "back"
+    ]
+   }
+  ],
+  "examples": [
+   "Start by listing your income.",
+   "The pandemic started in 2020.",
+   "She started a small business."
+  ],
+  "never": [
+   "He started the car and drove away.",
+   "The kettle connects to your phone, so you can start it from bed.",
+   "All you need to get started is a pair of binoculars.",
+   "She wondered whether she should start over."
+  ]
+ },
+ "stay|VERB": {
+  "rules": [
+   {
+    "child": "acomp",
+    "use": [
+     "keep"
+    ],
+    "not_before": [
+     "at",
+     "away",
+     "behind",
+     "for",
+     "here",
+     "home",
+     "in",
+     "out",
+     "overnight",
+     "put",
+     "there",
+     "until",
+     "up",
+     "with"
+    ],
+    "acomp_in": [
+     "calm",
+     "quiet",
+     "warm",
+     "cool",
+     "dry",
+     "safe",
+     "busy",
+     "fit",
+     "active",
+     "healthy",
+     "clean",
+     "fresh",
+     "sharp",
+     "focused",
+     "motivated",
+     "organized",
+     "organised",
+     "positive",
+     "hydrated",
+     "cold",
+     "awake",
+     "still",
+     "alert",
+     "productive",
+     "connected",
+     "informed",
+     "flexible",
+     "consistent"
+    ]
+   },
+   {
+    "prep": "on",
+    "use": [
+     "keep"
+    ],
+    "not_before": [
+     "for",
+     "here",
+     "overnight",
+     "put",
+     "there",
+     "until",
+     "with"
+    ]
+   }
+  ],
+  "examples": [
+   "Kids who stay active tend to sleep better.",
+   "Clear deadlines help you stay on track."
+  ],
+  "never": [
+   "We stayed at a small hotel near the beach.",
+   "Stay away from the edge.",
+   "I would definitely consider staying here again.",
+   "Hang the shirt up so it stays smooth until you wear it."
+  ]
+ },
+ "grow|VERB": {
+  "rules": [
+   {
+    "prep": "into",
+    "object": "none",
+    "use": [
+     "turn"
+    ]
+   },
+   {
+    "object": "none",
+    "prt_not": [
+     "up",
+     "out",
+     "apart",
+     "into"
+    ],
+    "subject": [
+     "number",
+     "population",
+     "demand",
+     "sale",
+     "revenue",
+     "rate",
+     "cost",
+     "price",
+     "share",
+     "use",
+     "interest",
+     "popularity",
+     "risk",
+     "concern",
+     "pressure",
+     "debt",
+     "income",
+     "budget",
+     "membership",
+     "audience",
+     "traffic",
+     "spending"
+    ],
+    "use": [
+     "rise"
+    ]
+   },
+   {
+    "object": "none",
+    "prt_not": [
+     "up",
+     "out",
+     "apart",
+     "into"
+    ],
+    "subject": [
+     "city",
+     "market",
+     "business",
+     "company",
+     "industry",
+     "economy",
+     "network",
+     "community",
+     "town",
+     "sector",
+     "platform",
+     "program",
+     "programme"
+    ],
+    "use": [
+     "expand"
+    ]
+   }
+  ],
+  "examples": [
+   "As cities continue to grow, gardens matter more.",
+   "Demand for clean energy keeps growing.",
+   "Since then, the Olympics have grown into the largest sporting event."
+  ],
+  "never": [
+   "Children grow so quickly.",
+   "We grow tomatoes in the garden.",
+   "The plants grew tall."
+  ]
+ },
+ "support|VERB": {
+  "rules": [
+   {
+    "object": [
+     "specie",
+     "species",
+     "life",
+     "animal",
+     "plant",
+     "fish",
+     "population",
+     "biodiversity",
+     "ecosystem",
+     "habitat",
+     "organism",
+     "creature",
+     "crop"
+    ],
+    "use": [
+     "sustain"
+    ]
+   },
+   {
+    "object": [
+     "class:person",
+     "people",
+     "community",
+     "wildlife",
+     "student",
+     "family",
+     "worker",
+     "business",
+     "economy",
+     "farmer",
+     "child",
+     "patient",
+     "employee",
+     "member",
+     "learner",
+     "teacher",
+     "artist",
+     "charity",
+     "cause",
+     "creator",
+     "brand",
+     "user",
+     "customer"
+    ],
+    "use": [
+     "help"
+    ]
+   },
+   {
+    "object": [
+     "idea",
+     "claim",
+     "theory",
+     "policy",
+     "view",
+     "argument",
+     "plan",
+     "proposal",
+     "conclusion",
+     "hypothesis",
+     "finding",
+     "decision"
+    ],
+    "use": [
+     "back"
+    ]
+   }
+  ],
+  "examples": [
+   "Green spaces support local wildlife.",
+   "The evidence supports this theory.",
+   "Reefs support about a quarter of all marine species."
+  ],
+  "never": [
+   "The beams support the weight of the roof.",
+   "Businesses should support the growth of new payment methods."
+  ]
+ },
+ "protect|VERB": {
+  "rules": [
+   {
+    "object": [
+     "account",
+     "data",
+     "password",
+     "device",
+     "system",
+     "information",
+     "privacy",
+     "identity",
+     "network",
+     "computer",
+     "file",
+     "phone"
+    ],
+    "use": [
+     "secure"
+    ]
+   },
+   {
+    "object": [
+     "skin",
+     "eye",
+     "body",
+     "face",
+     "head",
+     "ear"
+    ],
+    "use": [
+     "shield"
+    ]
+   },
+   {
+    "object": [
+     "environment",
+     "planet",
+     "nature",
+     "forest",
+     "wildlife",
+     "ocean",
+     "ecosystem",
+     "habitat",
+     "specie",
+     "species",
+     "reef",
+     "earth",
+     "river",
+     "land",
+     "health",
+     "heart",
+     "child",
+     "animal"
+    ],
+    "use": [
+     "look after"
+    ],
+    "tones": [
+     "standard",
+     "casual"
+    ]
+   },
+   {
+    "object": [
+     "environment",
+     "planet",
+     "nature",
+     "forest",
+     "wildlife",
+     "ocean",
+     "ecosystem",
+     "habitat",
+     "specie",
+     "species",
+     "reef",
+     "earth",
+     "river",
+     "land"
+    ],
+    "use": [
+     "preserve"
+    ],
+    "tones": [
+     "professional",
+     "academic"
+    ]
+   }
+  ],
+  "examples": [
+   "A strong password protects your accounts.",
+   "Protecting forests is a priority."
+  ],
+  "never": [
+   "The law protects free speech."
+  ]
+ },
+ "release|VERB": {
+  "rules": [
+   {
+    "object": [
+     "oxygen",
+     "gas",
+     "methane",
+     "carbon",
+     "dioxide",
+     "heat",
+     "energy",
+     "moisture",
+     "light",
+     "smell",
+     "odor",
+     "odour",
+     "chemical",
+     "fume",
+     "smoke",
+     "steam",
+     "toxin",
+     "pollutant",
+     "spore",
+     "pollen",
+     "scent"
+    ],
+    "use": [
+     "give off"
+    ]
+   }
+  ],
+  "examples": [
+   "Oxygen is released as a byproduct.",
+   "Forests release moisture into the air."
+  ],
+  "never": [
+   "The band released a new album.",
+   "Police released the suspect."
+  ]
+ },
+ "absorb|VERB": {
+  "rules": [
+   {
+    "object": "any",
+    "object_not": [
+     "cost",
+     "loss",
+     "shock",
+     "blow",
+     "company",
+     "firm"
+    ],
+    "use": [
+     "take in"
+    ]
+   },
+   {
+    "tags": [
+     "VBN"
+    ],
+    "child": "auxpass",
+    "use": [
+     "take in"
+    ]
+   }
+  ],
+  "examples": [
+   "Forests absorb carbon dioxide from the atmosphere."
+  ],
+  "never": [
+   "The company absorbed the extra costs."
+  ]
+ },
+ "communicate|VERB": {
+  "rules": [
+   {
+    "object": [
+     "vision",
+     "idea",
+     "goal",
+     "message",
+     "expectation",
+     "plan",
+     "value",
+     "need",
+     "feeling",
+     "priority",
+     "decision",
+     "change",
+     "update",
+     "result"
+    ],
+    "use": [
+     "share"
+    ]
+   },
+   {
+    "object": "none",
+    "child_not": [
+     "ccomp"
+    ],
+    "use": [
+     "talk"
+    ],
+    "tones": [
+     "standard",
+     "casual"
+    ],
+    "subject": [
+     "class:person",
+     "people",
+     "user",
+     "customer",
+     "team",
+     "member",
+     "employee",
+     "colleague",
+     "partner",
+     "parent",
+     "child",
+     "student",
+     "teacher",
+     "leader",
+     "manager",
+     "staff",
+     "friend",
+     "family",
+     "group",
+     "they",
+     "we",
+     "you",
+     "he",
+     "she",
+     "i",
+     "who"
+    ]
+   }
+  ],
+  "examples": [
+   "A good leader communicates a clear vision.",
+   "Social media changed the way people communicate."
+  ],
+  "never": [
+   "The rooms communicate through a narrow door."
+  ]
+ },
+ "affect|VERB": {
+  "rules": [
+   {
+    "object": "any",
+    "object_not": [
+     "class:person",
+     "people",
+     "child",
+     "adult",
+     "patient",
+     "student",
+     "population",
+     "teen",
+     "teenager",
+     "woman",
+     "man",
+     "worker",
+     "employee",
+     "family",
+     "community",
+     "million",
+     "thousand"
+    ],
+    "use": [
+     "influence"
+    ]
+   }
+  ],
+  "examples": [
+   "Screen time may affect sleep quality."
+  ],
+  "never": [
+   "The disease affects millions of people."
+  ]
+ },
+ "engage|VERB": {
+  "rules": [
+   {
+    "prep": "in",
+    "use": [
+     "take part"
+    ]
+   }
+  ],
+  "examples": [
+   "Engaging in enjoyable activities can reduce stress."
+  ],
+  "never": [
+   "The app engages users with daily challenges."
+  ]
+ },
+ "teach|VERB": {
+  "rules": [
+   {
+    "child_word": "how",
+    "use": [
+     "show"
+    ]
+   }
+  ],
+  "examples": [
+   "Teach young people how to use these platforms."
+  ]
+ },
+ "present|VERB": {
+  "rules": [
+   {
+    "object": [
+     "challenge",
+     "problem",
+     "risk",
+     "difficulty",
+     "threat",
+     "obstacle",
+     "opportunity",
+     "issue",
+     "hurdle",
+     "danger"
+    ],
+    "use": [
+     "bring",
+     "pose"
+    ]
+   },
+   {
+    "object": [
+     "report",
+     "finding",
+     "result",
+     "paper",
+     "argument",
+     "case",
+     "idea",
+     "plan",
+     "proposal",
+     "data",
+     "evidence",
+     "work",
+     "research"
+    ],
+    "use": [
+     "share"
+    ]
+   }
+  ],
+  "examples": [
+   "Working from home also presents unique challenges."
+  ],
+  "never": [
+   "She was presented with an award."
+  ]
+ },
+ "prepare|VERB": {
+  "rules": [
+   {
+    "prep": "for",
+    "object": "none",
+    "use": [
+     "get ready"
+    ]
+   },
+   {
+    "object": [
+     "meal",
+     "food",
+     "dinner",
+     "lunch",
+     "breakfast",
+     "dish",
+     "snack",
+     "salad",
+     "sandwich",
+     "drink"
+    ],
+    "use": [
+     "make"
+    ]
+   }
+  ],
+  "examples": [
+   "Preparing for exams can be stressful.",
+   "She prepared a simple meal."
+  ],
+  "never": [
+   "The team prepared a detailed report."
+  ]
+ },
+ "depend|VERB": {
+  "rules": [
+   {
+    "prep": "on",
+    "subject_not": [
+     "it",
+     "that",
+     "this",
+     "answer",
+     "outcome",
+     "result",
+     "price",
+     "cost",
+     "success",
+     "choice"
+    ],
+    "use": [
+     "rely"
+    ],
+    "subject": [
+     "class:person",
+     "people",
+     "company",
+     "business",
+     "firm",
+     "organization",
+     "organisation",
+     "team",
+     "student",
+     "worker",
+     "employee",
+     "school",
+     "brand",
+     "startup",
+     "country",
+     "city",
+     "family",
+     "leader",
+     "manager",
+     "they",
+     "we",
+     "you",
+     "he",
+     "she",
+     "i",
+     "who",
+     "player",
+     "athlete",
+     "candidate",
+     "applicant",
+     "group",
+     "community",
+     "store",
+     "shop",
+     "restaurant",
+     "farmer",
+     "household",
+     "user",
+     "customer",
+     "specie",
+     "species",
+     "animal",
+     "plant",
+     "economy",
+     "industry",
+     "town",
+     "region",
+     "nation",
+     "patient",
+     "child"
+    ]
+   }
+  ],
+  "examples": [
+   "Many species depend on coral reefs."
+  ],
+  "never": [
+   "It depends on the weather.",
+   "The outcome depends on the vote.",
+   "Choosing the right provider depends on each organization's needs."
+  ]
+ },
+ "rely|VERB": {
+  "rules": [
+   {
+    "prep": "on",
+    "use": [
+     "depend"
+    ]
+   }
+  ],
+  "examples": [
+   "Many communities rely on forests for food."
+  ]
+ },
+ "focus|VERB": {
+  "rules": [
+   {
+    "prep": "on",
+    "use": [
+     "concentrate"
+    ]
+   }
+  ],
+  "examples": [
+   "Students should focus on achievements rather than duties."
+  ],
+  "never": [
+   "Focus the lens on the subject."
+  ]
+ },
+ "lower|VERB": {
+  "rules": [
+   {
+    "object": "any",
+    "object_not": [
+     "voice",
+     "head",
+     "eye",
+     "flag",
+     "arm",
+     "hand",
+     "boat",
+     "bucket",
+     "rope",
+     "window",
+     "blind",
+     "guard",
+     "standard"
+    ],
+    "use": [
+     "reduce",
+     "cut"
+    ]
+   }
+  ],
+  "examples": [
+   "Listening to music can lower stress levels."
+  ],
+  "never": [
+   "She lowered her voice."
+  ]
+ },
+ "limit|VERB": {
+  "rules": [
+   {
+    "object": "any",
+    "use": [
+     "cut back on"
+    ],
+    "tones": [
+     "casual"
+    ],
+    "not_after": [
+     "have",
+     "has",
+     "had",
+     "having"
+    ]
+   },
+   {
+    "object": "any",
+    "use": [
+     "restrict"
+    ],
+    "tones": [
+     "standard",
+     "professional",
+     "academic"
+    ],
+    "not_after": [
+     "have",
+     "has",
+     "had",
+     "having"
+    ]
+   }
+  ],
+  "examples": [
+   "Parents should limit screen time before bed."
+  ],
+  "never": [
+   "Residents have limited access to fresh food."
+  ]
+ },
+ "prevent|VERB": {
+  "off": [
+   "academic"
+  ],
+  "rules": [
+   {
+    "object": "any",
+    "use": [
+     "stop"
+    ]
+   }
+  ],
+  "examples": [
+   "Forests help prevent soil erosion."
+  ]
+ },
+ "manage|VERB": {
+  "rules": [
+   {
+    "object": [
+     "stress",
+     "anxiety",
+     "emotion",
+     "pain",
+     "symptom",
+     "workload",
+     "time",
+     "money",
+     "finance",
+     "budget",
+     "schedule",
+     "expectation",
+     "risk",
+     "pressure",
+     "condition"
+    ],
+    "use": [
+     "handle"
+    ]
+   },
+   {
+    "object": [
+     "team",
+     "project",
+     "company",
+     "business",
+     "staff",
+     "store",
+     "department",
+     "shop",
+     "campaign",
+     "program",
+     "programme"
+    ],
+    "use": [
+     "run"
+    ]
+   }
+  ],
+  "examples": [
+   "Employees can manage their own schedules.",
+   "She managed a team of ten."
+  ],
+  "never": [
+   "They managed to finish on time."
+  ]
+ },
+ "avoid|VERB": {
+  "off": [
+   "academic"
+  ],
+  "rules": [
+   {
+    "object": [
+     "mistake",
+     "error",
+     "risk",
+     "problem",
+     "conflict",
+     "confusion",
+     "delay",
+     "trouble",
+     "penalty",
+     "fee",
+     "debt",
+     "injury",
+     "burnout"
+    ],
+    "use": []
+   },
+   {
+    "object": "any",
+    "use": [
+     "stay away from"
+    ],
+    "tones": [
+     "standard",
+     "casual"
+    ],
+    "object_tag_not": [
+     "VBG"
+    ]
+   }
+  ],
+  "examples": [
+   "Avoid screens such as phones before bed.",
+   "Avoid sugary drinks before bed."
+  ],
+  "never": [
+   "Try to avoid mistakes.",
+   "Finally, avoid exposing your phone to extreme heat."
+  ]
+ },
+ "consider|VERB": {
+  "rules": [
+   {
+    "object": "any",
+    "tags": [
+     "VB",
+     "VBP",
+     "VBZ",
+     "VBG",
+     "VBD"
+    ],
+    "child_not": [
+     "oprd",
+     "ccomp",
+     "xcomp",
+     "attr"
+    ],
+    "use": [
+     "think about"
+    ],
+    "not_after": [
+     "for",
+     "to",
+     "please"
+    ],
+    "tones": [
+     "standard",
+     "casual"
+    ]
+   },
+   {
+    "child": "xcomp",
+    "child_tag": "VBG",
+    "tags": [
+     "VB",
+     "VBP",
+     "VBZ",
+     "VBG",
+     "VBD"
+    ],
+    "use": [
+     "think about"
+    ],
+    "not_after": [
+     "for",
+     "to",
+     "please"
+    ],
+    "tones": [
+     "standard",
+     "casual"
+    ]
+   }
+  ],
+  "examples": [
+   "Consider using a reputable password manager.",
+   "Consider staying in hostels."
+  ],
+  "never": [
+   "Many consider him a hero.",
+   "The plan is considered a success.",
+   "Thank you for considering my application."
+  ]
+ },
+ "contribute|VERB": {
+  "rules": []
+ },
+ "observe|VERB": {
+  "rules": [
+   {
+    "object": [
+     "bird",
+     "animal",
+     "sky",
+     "star",
+     "wildlife",
+     "moon",
+     "planet",
+     "sunset",
+     "insect",
+     "whale"
+    ],
+    "use": [
+     "watch"
+    ]
+   },
+   {
+    "object": [
+     "thought",
+     "feeling",
+     "behavior",
+     "behaviour",
+     "change",
+     "pattern",
+     "effect",
+     "reaction",
+     "process",
+     "movement"
+    ],
+    "use": [
+     "notice",
+     "watch"
+    ]
+   }
+  ],
+  "examples": [
+   "Observe your thoughts without judgment.",
+   "Early morning is the best time to observe birds."
+  ],
+  "never": [
+   "Many families observe the holiday."
+  ]
+ },
+ "adapt|VERB": {
+  "rules": [
+   {
+    "prep": "to",
+    "object": "none",
+    "use": [
+     "adjust"
+    ]
+   },
+   {
+    "object": [
+     "strategy",
+     "approach",
+     "plan",
+     "method",
+     "practice",
+     "style",
+     "recipe",
+     "routine"
+    ],
+    "use": [
+     "adjust"
+    ]
+   }
+  ],
+  "examples": [
+   "Workers who adapt to new technologies will do well."
+  ],
+  "never": [
+   "The novel was adapted into a film."
+  ]
+ },
+ "succeed|VERB": {
+  "rules": [
+   {
+    "object": "none",
+    "child_not": [
+     "dobj"
+    ],
+    "use": [
+     "do well"
+    ],
+    "subject": [
+     "class:person",
+     "people",
+     "company",
+     "business",
+     "firm",
+     "organization",
+     "organisation",
+     "team",
+     "student",
+     "worker",
+     "employee",
+     "school",
+     "brand",
+     "startup",
+     "country",
+     "city",
+     "family",
+     "leader",
+     "manager",
+     "they",
+     "we",
+     "you",
+     "he",
+     "she",
+     "i",
+     "who",
+     "player",
+     "athlete",
+     "candidate",
+     "applicant",
+     "group",
+     "community",
+     "store",
+     "shop",
+     "restaurant",
+     "farmer",
+     "household",
+     "user",
+     "customer"
+    ]
+   }
+  ],
+  "examples": [
+   "Companies that want to succeed with remote teams must invest."
+  ],
+  "never": [
+   "She succeeded her father as king.",
+   "Their efforts finally succeeded in 1920."
+  ]
+ },
+ "notice|VERB": {
+  "off": [
+   "academic",
+   "professional"
+  ],
+  "rules": [
+   {
+    "object": "any",
+    "use": [
+     "spot"
+    ]
+   }
+  ],
+  "examples": [
+   "She noticed a set of footprints."
+  ]
+ },
+ "emerge|VERB": {
+  "rules": [
+   {
+    "object": "none",
+    "prep_not": [
+     "from"
+    ],
+    "use": [
+     "appear"
+    ]
+   }
+  ],
+  "examples": [
+   "New roles are emerging in data science."
+  ],
+  "never": [
+   "The diver emerged from the water."
+  ]
+ },
+ "speak|VERB": {
+  "off": [
+   "academic"
+  ],
+  "rules": [
+   {
+    "object": "none",
+    "prep_not": [
+     "of",
+     "about",
+     "for",
+     "up",
+     "out"
+    ],
+    "use": [
+     "talk"
+    ],
+    "tags": [
+     "VB",
+     "VBD",
+     "VBZ",
+     "VBP",
+     "VBN"
+    ]
+   }
+  ],
+  "examples": [
+   "Speak slowly and clearly."
+  ],
+  "never": [
+   "She speaks three languages.",
+   "Speak up if you disagree.",
+   "Gains in speaking and listening skills appear smaller."
+  ]
+ },
+ "learn|VERB": {
+  "rules": [
+   {
+    "object": [
+     "skill",
+     "language",
+     "word",
+     "song",
+     "recipe",
+     "trick",
+     "technique",
+     "instrument",
+     "habit",
+     "phrase",
+     "craft",
+     "dance"
+    ],
+    "use": [
+     "pick up"
+    ]
+   },
+   {
+    "prep": "about",
+    "object": "none",
+    "use": [
+     "find out"
+    ]
+   }
+  ],
+  "examples": [
+   "Hobbies let you learn new skills.",
+   "Students learn about the past."
+  ],
+  "never": [
+   "We learned that the bridge was closed."
+  ]
+ },
+ "assess|VERB": {
+  "rules": [
+   {
+    "use": [
+     "judge",
+     "gauge"
+    ],
+    "tones": [
+     "standard",
+     "casual"
+    ]
+   }
+  ],
+  "examples": [
+   "Researchers need to assess potential risks."
+  ]
+ },
+ "reflect|VERB": {
+  "rules": []
+ },
+ "involve|VERB": {
+  "rules": []
+ },
+ "include|VERB": {
+  "rules": [
+   {
+    "subject": [
+     "menu",
+     "list",
+     "kit",
+     "package",
+     "price",
+     "ticket",
+     "fee",
+     "cost",
+     "set",
+     "bundle",
+     "box",
+     "course",
+     "program",
+     "programme",
+     "plan",
+     "tour",
+     "deal",
+     "offer",
+     "room",
+     "suite",
+     "rate"
+    ],
+    "object": "any",
+    "use": [
+     "come with"
+    ]
+   }
+  ],
+  "examples": [
+   "The price includes breakfast."
+  ],
+  "never": [
+   "Symptoms include fever and cough."
+  ]
+ },
+ "explain|VERB": {
+  "rules": []
+ },
+ "travel|VERB": {
+  "rules": [
+   {
+    "subject": [
+     "earth",
+     "planet",
+     "light",
+     "sound",
+     "energy",
+     "wave",
+     "signal",
+     "heat",
+     "current",
+     "electricity",
+     "message",
+     "news",
+     "information",
+     "virus",
+     "disease",
+     "data",
+     "moon",
+     "particle",
+     "comet"
+    ],
+    "object": "none",
+    "use": [
+     "move"
+    ]
+   },
+   {
+    "object": [
+     "mile",
+     "kilometre",
+     "kilometer",
+     "distance",
+     "km"
+    ],
+    "use": [
+     "cover"
+    ]
+   }
+  ],
+  "examples": [
+   "The Earth travels around the sun.",
+   "Huge whales travel thousands of miles each year."
+  ],
+  "never": [
+   "Many people travel to Spain in summer."
+  ]
+ },
+ "connect|VERB": {
+  "rules": [
+   {
+    "prep": "with",
+    "object": "none",
+    "use": [
+     "bond"
+    ],
+    "pobj_class": [
+     "class:person",
+     "neighbor",
+     "neighbour",
+     "friend",
+     "people",
+     "colleague",
+     "peer",
+     "customer",
+     "audience",
+     "community"
+    ]
+   }
+  ],
+  "examples": [
+   "Gardening helps you connect with neighbors."
+  ]
+ },
+ "share|VERB": {
+  "rules": []
+ },
+ "struggle|VERB": {
+  "rules": [
+   {
+    "child": "xcomp",
+    "child_tag": "VB",
+    "use": [
+     "find it hard"
+    ],
+    "tones": [
+     "standard",
+     "casual"
+    ]
+   }
+  ],
+  "examples": [
+   "Small stores often struggle to compete."
+  ]
+ },
+ "boost|VERB": {
+  "rules": [
+   {
+    "object": "any",
+    "use": [
+     "lift",
+     "raise"
+    ]
+   }
+  ],
+  "examples": [
+   "Hobbies can boost your mood."
+  ]
+ },
+ "enjoy|VERB": {
+  "rules": [
+   {
+    "object": [
+     "benefit",
+     "advantage",
+     "perk",
+     "reward"
+    ],
+    "use": [
+     "get"
+    ]
+   }
+  ],
+  "examples": [
+   "Users can enjoy the benefits of social media."
+  ]
+ },
+ "remove|VERB": {
+  "rules": [
+   {
+    "object": "any",
+    "use": [
+     "take out",
+     "take away"
+    ],
+    "tones": [
+     "casual"
+    ]
+   }
+  ]
+ },
+ "replace|VERB": {
+  "rules": []
+ },
+ "suffer|VERB": {
+  "rules": []
+ },
+ "handle|VERB": {
+  "rules": [
+   {
+    "object": [
+     "stress",
+     "pressure",
+     "conflict",
+     "criticism",
+     "defeat",
+     "victory",
+     "failure",
+     "change",
+     "setback",
+     "loss",
+     "emotion"
+    ],
+    "use": [
+     "deal with",
+     "cope with"
+    ]
+   }
+  ],
+  "examples": [
+   "Players learn how to handle defeat with grace."
+  ]
+ },
+ "lead|VERB": {
+  "rules": [
+   {
+    "with_next": "to",
+    "subject_not": [
+     "path",
+     "road",
+     "trail",
+     "door",
+     "stair",
+     "staircase",
+     "street",
+     "route",
+     "corridor",
+     "hallway",
+     "river",
+     "track",
+     "bridge",
+     "gate",
+     "tunnel",
+     "step",
+     "way",
+     "line",
+     "sign"
+    ],
+    "use": [
+     "cause"
+    ],
+    "tones": [
+     "standard",
+     "casual",
+     "professional"
+    ]
+   }
+  ],
+  "examples": [
+   "Excessive homework may lead to stress.",
+   "Too much water can lead to rotten roots."
+  ],
+  "never": [
+   "The path leads to the river."
+  ]
+ },
+ "result|VERB": {
+  "rules": [
+   {
+    "with_next": "in",
+    "use": [
+     "cause"
+    ]
+   }
+  ],
+  "examples": [
+   "Poor sleep can result in lower grades."
+  ]
+ },
+ "reach|VERB": {
+  "rules": [
+   {
+    "object": [
+     "platform",
+     "station",
+     "destination",
+     "town",
+     "city",
+     "village",
+     "top",
+     "summit",
+     "shore",
+     "beach",
+     "river",
+     "hospital",
+     "school",
+     "office",
+     "home",
+     "airport",
+     "border",
+     "coast",
+     "island",
+     "camp",
+     "hut",
+     "house"
+    ],
+    "use": [
+     "get to"
+    ]
+   }
+  ],
+  "examples": [
+   "They reached a small ranger station."
+  ]
+ },
+ "arrive|VERB": {
+  "rules": [
+   {
+    "with_next": "at",
+    "use": [
+     "get to"
+    ]
+   },
+   {
+    "with_next": "in",
+    "next2_proper": true,
+    "use": [
+     "get to"
+    ]
+   },
+   {
+    "no_subject": true,
+    "prep_not": [
+     "at",
+     "in",
+     "on",
+     "from",
+     "for"
+    ],
+    "use": [
+     "get there"
+    ],
+    "tones": [
+     "standard",
+     "casual"
+    ],
+    "dep": [
+     "ROOT",
+     "conj"
+    ]
+   }
+  ],
+  "examples": [
+   "Many students arrive at school tired.",
+   "Dress professionally and arrive a few minutes early."
+  ],
+  "never": [
+   "The package arrived two weeks late.",
+   "They were supposed to arrive within five business days."
+  ]
+ },
+ "decline|VERB": {
+  "rules": [
+   {
+    "object": "none",
+    "child_not": [
+     "xcomp"
+    ],
+    "use": [
+     "fall",
+     "drop"
+    ]
+   }
+  ],
+  "examples": [
+   "Bee populations have declined in many places."
+  ],
+  "never": [
+   "She declined to comment."
+  ]
+ },
+ "spread|VERB": {
+  "rules": []
+ },
+ "recognize|VERB": {
+  "rules": [
+   {
+    "object": [
+     "sign",
+     "symptom",
+     "pattern",
+     "face",
+     "voice",
+     "germ",
+     "threat",
+     "danger",
+     "word",
+     "letter",
+     "shape",
+     "sound",
+     "smell",
+     "song",
+     "landmark",
+     "bird",
+     "warning",
+     "scam",
+     "tune",
+     "bacterium",
+     "virus",
+     "pathogen"
+    ],
+    "use": [
+     "spot"
+    ]
+   }
+  ],
+  "examples": [
+   "Vaccines train the immune system to recognize germs."
+  ],
+  "never": [
+   "Leaders should recognize individual contributions."
+  ]
+ },
+ "easy|ADJ": {
+  "rules": [
+   {
+    "tags": [
+     "JJ"
+    ],
+    "dep": [
+     "amod",
+     "acomp",
+     "oprd",
+     "conj"
+    ],
+    "not_before": [
+     "chair",
+     "going",
+     "listening",
+     "money",
+     "on",
+     "rider",
+     "street"
+    ],
+    "not_after": [
+     "n't",
+     "not",
+     "take",
+     "takes",
+     "taking",
+     "took"
+    ],
+    "use": [
+     "simple"
+    ]
+   },
+   {
+    "tags": [
+     "JJR"
+    ],
+    "use": [
+     "simpler"
+    ],
+    "not_before": [
+     "on"
+    ],
+    "not_after": [
+     "n't",
+     "not"
+    ]
+   }
+  ],
+  "examples": [
+   "Meditation is easy to learn.",
+   "It makes it easier to remember."
+  ],
+  "never": [
+   "Take it easy this weekend.",
+   "The new dark mode is easier on the eyes.",
+   "It is not easy to find a good plumber."
+  ]
+ },
+ "simple|ADJ": {
+  "rules": [
+   {
+    "tags": [
+     "JJ"
+    ],
+    "head": [
+     "ingredient",
+     "tool",
+     "rule",
+     "test",
+     "design",
+     "structure",
+     "form",
+     "recipe",
+     "meal",
+     "model",
+     "machine",
+     "equipment"
+    ],
+    "use": [
+     "basic"
+    ]
+   },
+   {
+    "tags": [
+     "JJ"
+    ],
+    "head": [
+     "way",
+     "step",
+     "task",
+     "action",
+     "change",
+     "practice",
+     "method",
+     "process",
+     "trick",
+     "exercise",
+     "habit",
+     "solution",
+     "activity",
+     "thing",
+     "measure",
+     "fix",
+     "idea"
+    ],
+    "use": [
+     "easy"
+    ]
+   }
+  ],
+  "examples": [
+   "Simple actions such as planning meals can reduce waste."
+  ],
+  "never": [
+   "Simple sugars raise blood glucose quickly."
+  ]
+ },
+ "difficult|ADJ": {
+  "rules": [
+   {
+    "tags": [
+     "JJ"
+    ],
+    "use": [
+     "hard"
+    ],
+    "not_after": [
+     "more",
+     "most",
+     "less",
+     "least"
+    ],
+    "head_not": [
+     "class:person",
+     "emotion",
+     "feeling",
+     "memory",
+     "relationship"
+    ]
+   }
+  ],
+  "examples": [
+   "Support during difficult times matters.",
+   "It is difficult to see the stars."
+  ],
+  "never": [
+   "Noise makes it more difficult for children to follow instructions.",
+   "Writing helps people process difficult emotions."
+  ]
+ },
+ "hard|ADJ": {
+  "rules": [
+   {
+    "tags": [
+     "JJ"
+    ],
+    "dep": [
+     "acomp",
+     "oprd"
+    ],
+    "next": [
+     "to"
+    ],
+    "use": [
+     "difficult"
+    ]
+   },
+   {
+    "tags": [
+     "JJR"
+    ],
+    "next": [
+     "to"
+    ],
+    "use": [
+     "more difficult"
+    ]
+   }
+  ],
+  "examples": [
+   "It is hard to fall asleep early."
+  ],
+  "never": [
+   "The bread has a hard crust."
+  ]
+ },
+ "strong|ADJ": {
+  "rules": [
+   {
+    "head": [
+     "connection",
+     "relationship",
+     "bond",
+     "friendship",
+     "tie"
+    ],
+    "use": [
+     "close"
+    ]
+   },
+   {
+    "head": [
+     "storm",
+     "wind",
+     "earthquake",
+     "current",
+     "shaking",
+     "signal",
+     "gust",
+     "tremor",
+     "wave"
+    ],
+    "use": [
+     "powerful"
+    ]
+   },
+   {
+    "head": [
+     "program",
+     "programme",
+     "foundation",
+     "base",
+     "case",
+     "argument",
+     "evidence",
+     "performance",
+     "start",
+     "record",
+     "economy",
+     "position"
+    ],
+    "use": [
+     "solid"
+    ]
+   },
+   {
+    "head": [
+     "impression",
+     "desire",
+     "interest",
+     "preference",
+     "feeling"
+    ],
+    "use": [
+     "deep"
+    ]
+   }
+  ],
+  "examples": [
+   "People with strong social connections live longer.",
+   "Rising temperatures bring stronger storms."
+  ],
+  "never": [
+   "Create a strong password.",
+   "She drinks strong coffee."
+  ]
+ },
+ "large|ADJ": {
+  "rules": [
+   {
+    "tags": [
+     "JJ"
+    ],
+    "head_not": [
+     "number",
+     "amount",
+     "quantity",
+     "scale",
+     "proportion",
+     "majority",
+     "sample",
+     "percentage",
+     "share",
+     "extent",
+     "part",
+     "degree",
+     "print",
+     "intestine",
+     "area",
+     "region",
+     "portion",
+     "tract",
+     "territory",
+     "swathe",
+     "expanse",
+     "section",
+     "segment",
+     "population",
+     "organization",
+     "organisation",
+     "corporation",
+     "institution",
+     "dataset",
+     "enterprise"
+    ],
+    "use": [
+     "big"
+    ],
+    "dep": [
+     "amod",
+     "acomp"
+    ]
+   }
+  ],
+  "examples": [
+   "Break large projects into smaller steps."
+  ],
+  "never": [
+   "A large number of people attended.",
+   "Sizes come in small, medium and large.",
+   "Large areas of rainforest are cleared every year."
+  ]
+ },
+ "small|ADJ": {
+  "off": [
+   "academic"
+  ],
+  "rules": [
+   {
+    "tags": [
+     "JJ"
+    ],
+    "head": [
+     "step",
+     "change",
+     "thing",
+     "detail",
+     "gesture",
+     "gift",
+     "piece",
+     "cup",
+     "bowl",
+     "dog",
+     "boat",
+     "plot",
+     "room",
+     "garden",
+     "kitchen",
+     "table"
+    ],
+    "use": [
+     "little"
+    ],
+    "dep": [
+     "amod"
+    ]
+   }
+  ],
+  "examples": [
+   "He planted tomatoes in a small plot."
+  ],
+  "never": [
+   "A small number of patients responded.",
+   "Some people move to quieter suburbs or small towns."
+  ]
+ },
+ "major|ADJ": {
+  "rules": [
+   {
+    "tags": [
+     "JJ"
+    ],
+    "head_not": [
+     "depression",
+     "league",
+     "surgery",
+     "key",
+     "general",
+     "road",
+     "chord",
+     "scale",
+     "limitation",
+     "barrier",
+     "obstacle",
+     "drawback",
+     "weakness",
+     "contributor",
+     "determinant",
+     "predictor",
+     "cause",
+     "factor",
+     "theme",
+     "finding",
+     "focus"
+    ],
+    "dep": [
+     "amod"
+    ],
+    "use": [
+     "big"
+    ]
+   }
+  ],
+  "examples": [
+   "Excessive screen time can be a major source of distraction."
+  ],
+  "never": [
+   "A major limitation of existing research is its short study periods."
+  ]
+ },
+ "quick|ADJ": {
+  "rules": [
+   {
+    "tags": [
+     "JJ"
+    ],
+    "head": [
+     "charge",
+     "trip",
+     "fix",
+     "meal",
+     "change",
+     "response",
+     "recovery",
+     "growth",
+     "decision",
+     "start",
+     "turnaround",
+     "lunch",
+     "walk",
+     "visit"
+    ],
+    "use": [
+     "fast"
+    ]
+   },
+   {
+    "tags": [
+     "JJ"
+    ],
+    "head": [
+     "update",
+     "look",
+     "question",
+     "glance",
+     "note",
+     "word",
+     "reminder",
+     "summary",
+     "break",
+     "chat",
+     "call"
+    ],
+    "use": [
+     "brief"
+    ]
+   }
+  ],
+  "examples": [
+   "I wanted to share a quick update."
+  ],
+  "never": [
+   "She is a quick learner."
+  ]
+ },
+ "short|ADJ": {
+  "rules": [
+   {
+    "tags": [
+     "JJ"
+    ],
+    "head": [
+     "break",
+     "walk",
+     "trip",
+     "period",
+     "time",
+     "description",
+     "summary",
+     "video",
+     "meeting",
+     "pause",
+     "stay",
+     "visit",
+     "conversation",
+     "task",
+     "answer",
+     "speech",
+     "delay",
+     "wait",
+     "message",
+     "note",
+     "paragraph",
+     "introduction",
+     "nap",
+     "rest",
+     "quiz",
+     "test",
+     "video",
+     "clip",
+     "lesson",
+     "story",
+     "film",
+     "survey",
+     "questionnaire",
+     "course",
+     "session",
+     "article",
+     "trip",
+     "sentence"
+    ],
+    "use": [
+     "brief"
+    ]
+   }
+  ],
+  "examples": [
+   "Taking short breaks every 30 minutes helps.",
+   "Each module included short quizzes."
+  ],
+  "never": [
+   "He has short hair."
+  ]
+ },
+ "brief|ADJ": {
+  "rules": [
+   {
+    "tags": [
+     "JJ"
+    ],
+    "use": [
+     "short"
+    ]
+   }
+  ],
+  "examples": [
+   "After a brief argument, they agreed."
+  ]
+ },
+ "long|ADJ": {
+  "rules": [
+   {
+    "tags": [
+     "JJ"
+    ],
+    "head": [
+     "commute",
+     "wait",
+     "journey",
+     "process",
+     "meeting",
+     "delay",
+     "discussion",
+     "report",
+     "document",
+     "line",
+     "queue",
+     "list",
+     "walk",
+     "flight",
+     "drive",
+     "speech",
+     "conversation",
+     "argument"
+    ],
+    "use": [
+     "lengthy"
+    ]
+   }
+  ],
+  "examples": [
+   "Many employees avoid long daily commutes."
+  ],
+  "never": [
+   "She has long hair."
+  ]
+ },
+ "excessive|ADJ": {
+  "rules": [
+   {
+    "tags": [
+     "JJ"
+    ],
+    "head_tag": [
+     "NN"
+    ],
+    "no_det_on_head": true,
+    "dep": [
+     "amod"
+    ],
+    "use": [
+     "too much"
+    ]
+   }
+  ],
+  "examples": [
+   "Excessive use has been linked to anxiety.",
+   "Excessive screen time may affect sleep."
+  ]
+ },
+ "harmful|ADJ": {
+  "rules": [
+   {
+    "tags": [
+     "JJ"
+    ],
+    "use": [
+     "damaging"
+    ]
+   }
+  ],
+  "examples": [
+   "Many young users are exposed to harmful content."
+  ]
+ },
+ "helpful|ADJ": {
+  "rules": [
+   {
+    "tags": [
+     "JJ"
+    ],
+    "use": [
+     "useful"
+    ],
+    "head_not": [
+     "class:person",
+     "staff",
+     "team",
+     "people",
+     "crew",
+     "host",
+     "guide",
+     "neighbour",
+     "neighbor",
+     "stranger"
+    ]
+   }
+  ],
+  "examples": [
+   "Clear expectations are helpful for new hires."
+  ],
+  "never": [
+   "The staff were very friendly and helpful."
+  ]
+ },
+ "useful|ADJ": {
+  "off": [
+   "academic",
+   "professional"
+  ],
+  "rules": [
+   {
+    "tags": [
+     "JJ"
+    ],
+    "use": [
+     "handy"
+    ],
+    "tones": [
+     "casual"
+    ]
+   }
+  ]
+ },
+ "ideal|ADJ": {
+  "rules": [
+   {
+    "tags": [
+     "JJ"
+    ],
+    "use": [
+     "perfect"
+    ]
+   }
+  ],
+  "examples": [
+   "Jezero Crater is an ideal location."
+  ]
+ },
+ "typical|ADJ": {
+  "rules": [
+   {
+    "tags": [
+     "JJ"
+    ],
+    "use": [
+     "usual"
+    ]
+   }
+  ]
+ },
+ "specific|ADJ": {
+  "rules": []
+ },
+ "particular|ADJ": {
+  "rules": [
+   {
+    "tags": [
+     "JJ"
+    ],
+    "dep": [
+     "amod"
+    ],
+    "use": [
+     "specific"
+    ]
+   }
+  ]
+ },
+ "whole|ADJ": {
+  "rules": [
+   {
+    "tags": [
+     "JJ"
+    ],
+    "dep": [
+     "amod"
+    ],
+    "head_not": [
+     "number",
+     "grain",
+     "food",
+     "milk",
+     "wheat",
+     "bean",
+     "note"
+    ],
+    "use": [
+     "entire"
+    ]
+   }
+  ],
+  "examples": [
+   "Asha cried for the whole afternoon."
+  ],
+  "never": [
+   "Eat more whole grains."
+  ]
+ },
+ "extra|ADJ": {
+  "rules": [
+   {
+    "tags": [
+     "JJ"
+    ],
+    "dep": [
+     "amod"
+    ],
+    "use": [
+     "additional"
+    ]
+   }
+  ],
+  "examples": [
+   "Two-factor authentication adds an extra layer of security."
+  ],
+  "off": []
+ },
+ "delicate|ADJ": {
+  "rules": [
+   {
+    "tags": [
+     "JJ"
+    ],
+    "head": [
+     "ecosystem",
+     "balance",
+     "structure",
+     "environment",
+     "system",
+     "habitat",
+     "web",
+     "chain",
+     "shell"
+    ],
+    "use": [
+     "fragile"
+    ]
+   },
+   {
+    "tags": [
+     "JJ"
+    ],
+    "head": [
+     "skin"
+    ],
+    "use": [
+     "sensitive"
+    ]
+   }
+  ],
+  "examples": [
+   "Pollution continues to harm these delicate ecosystems."
+  ],
+  "never": [
+   "They discussed a delicate matter.",
+   "The sauce has a delicate flavor.",
+   "Boiling water can scorch the delicate leaves."
+  ]
+ },
+ "complex|ADJ": {
+  "rules": [
+   {
+    "tags": [
+     "JJ"
+    ],
+    "head_not": [
+     "carbohydrate",
+     "molecule",
+     "number",
+     "sugar",
+     "protein",
+     "compound",
+     "sentence",
+     "organism",
+     "plane"
+    ],
+    "use": [
+     "complicated"
+    ],
+    "head": [
+     "problem",
+     "issue",
+     "topic",
+     "idea",
+     "system",
+     "process",
+     "task",
+     "question",
+     "situation",
+     "procedure",
+     "rule",
+     "instruction",
+     "network",
+     "calculation",
+     "equation",
+     "subject",
+     "concept",
+     "theory",
+     "puzzle",
+     "design",
+     "form",
+     "set"
+    ]
+   }
+  ],
+  "examples": [
+   "Interactive exhibits explain complex ideas."
+  ],
+  "never": [
+   "Eat complex carbohydrates.",
+   "The main character is complex and believable."
+  ]
+ },
+ "harmless|ADJ": {
+  "rules": []
+ },
+ "realistic|ADJ": {
+  "rules": [
+   {
+    "tags": [
+     "JJ"
+    ],
+    "head": [
+     "goal",
+     "target",
+     "deadline",
+     "timeline",
+     "expectation"
+    ],
+    "use": [
+     "achievable"
+    ]
+   }
+  ],
+  "examples": [
+   "Set realistic goals that everyone can work toward."
+  ],
+  "never": [
+   "Set a realistic spending limit."
+  ]
+ },
+ "daily|ADJ": {
+  "rules": [
+   {
+    "tags": [
+     "JJ"
+    ],
+    "head": [
+     "life",
+     "routine",
+     "task",
+     "activity",
+     "use",
+     "struggle",
+     "chore",
+     "responsibility",
+     "work",
+     "business",
+     "experience"
+    ],
+    "use": [
+     "everyday"
+    ]
+   }
+  ],
+  "examples": [
+   "Hobbies offer a break from daily responsibilities."
+  ]
+ },
+ "overall|ADJ": {
+  "rules": [
+   {
+    "tags": [
+     "JJ"
+    ],
+    "dep": [
+     "amod"
+    ],
+    "head": [
+     "health",
+     "wellbeing",
+     "satisfaction",
+     "quality",
+     "performance",
+     "development",
+     "picture",
+     "experience",
+     "impression",
+     "fitness",
+     "sense",
+     "growth",
+     "cost",
+     "goal"
+    ],
+    "use": [
+     "general"
+    ]
+   }
+  ],
+  "examples": [
+   "Regular practice may improve overall life satisfaction."
+  ]
+ },
+ "limited|ADJ": {
+  "rules": [
+   {
+    "tags": [
+     "JJ"
+    ],
+    "head": [
+     "budget"
+    ],
+    "use": [
+     "tight"
+    ]
+   }
+  ],
+  "examples": [
+   "Libraries help families with limited budgets."
+  ]
+ },
+ "busy|ADJ": {
+  "rules": [
+   {
+    "tags": [
+     "JJ"
+    ],
+    "head": [
+     "schedule",
+     "calendar",
+     "week",
+     "day",
+     "life",
+     "lifestyle"
+    ],
+    "use": [
+     "packed"
+    ]
+   }
+  ],
+  "examples": [
+   "Teenagers struggle with busy schedules."
+  ]
+ },
+ "enjoyable|ADJ": {
+  "off": [
+   "academic"
+  ],
+  "rules": [
+   {
+    "tags": [
+     "JJ"
+    ],
+    "use": [
+     "fun"
+    ]
+   }
+  ],
+  "examples": [
+   "Riding a bicycle is a simple and enjoyable way to get around."
+  ]
+ },
+ "serious|ADJ": {
+  "rules": [
+   {
+    "tags": [
+     "JJ"
+    ],
+    "dep": [
+     "amod"
+    ],
+    "head": [
+     "problem",
+     "issue",
+     "threat",
+     "concern",
+     "risk",
+     "challenge",
+     "damage",
+     "harm",
+     "shortage",
+     "flaw"
+    ],
+    "use": [
+     "major",
+     "real"
+    ]
+   }
+  ],
+  "examples": [
+   "Food waste is a serious problem."
+  ]
+ },
+ "common|ADJ": {
+  "rules": [
+   {
+    "tags": [
+     "JJ"
+    ],
+    "dep": [
+     "amod"
+    ],
+    "head": [
+     "mistake",
+     "error",
+     "complaint",
+     "misconception",
+     "myth",
+     "cause",
+     "symptom"
+    ],
+    "use": [
+     "frequent"
+    ]
+   }
+  ],
+  "examples": [
+   "Overwatering is one of the most common mistakes."
+  ]
+ },
+ "clear|ADJ": {
+  "rules": [
+   {
+    "tags": [
+     "JJ"
+    ],
+    "dep": [
+     "amod"
+    ],
+    "head": [
+     "expectation",
+     "goal",
+     "instruction",
+     "deadline",
+     "rule",
+     "guideline",
+     "role",
+     "boundary",
+     "procedure",
+     "objective",
+     "policy",
+     "plan"
+    ],
+    "use": [
+     "well-defined"
+    ]
+   }
+  ],
+  "examples": [
+   "Setting clear deadlines can help you stay on track."
+  ]
+ },
+ "modern|ADJ": {
+  "rules": [
+   {
+    "tags": [
+     "JJ"
+    ],
+    "head": [
+     "grid",
+     "technology",
+     "equipment",
+     "system",
+     "tool",
+     "method",
+     "design",
+     "facility",
+     "infrastructure",
+     "device",
+     "machine",
+     "software",
+     "technique",
+     "kitchen"
+    ],
+    "use": [
+     "up-to-date"
+    ]
+   }
+  ],
+  "examples": [
+   "We need better energy storage and modern power grids."
+  ]
+ },
+ "unexpected|ADJ": {
+  "rules": []
+ },
+ "fresh|ADJ": {
+  "rules": []
+ },
+ "healthy|ADJ": {
+  "rules": [
+   {
+    "tags": [
+     "JJ"
+    ],
+    "head": [
+     "food",
+     "meal",
+     "diet",
+     "snack",
+     "option",
+     "choice",
+     "breakfast",
+     "lunch",
+     "dinner",
+     "eating",
+     "recipe"
+    ],
+    "use": [
+     "nutritious"
+    ]
+   },
+   {
+    "tags": [
+     "JJ"
+    ],
+    "head": [
+     "habit",
+     "lifestyle",
+     "routine"
+    ],
+    "use": [
+     "good"
+    ]
+   }
+  ],
+  "examples": [
+   "Shared plots provide access to fresh and healthy food."
+  ]
+ },
+ "excellent|ADJ": {
+  "rules": [
+   {
+    "tags": [
+     "JJ"
+    ],
+    "use": [
+     "great",
+     "superb"
+    ]
+   }
+  ],
+  "examples": [
+   "Walking and swimming are excellent options."
+  ]
+ },
+ "wonderful|ADJ": {
+  "rules": [
+   {
+    "tags": [
+     "JJ"
+    ],
+    "use": [
+     "lovely",
+     "great"
+    ]
+   }
+  ],
+  "examples": [
+   "It was a wonderful evening."
+  ]
+ },
+ "huge|ADJ": {
+  "rules": []
+ },
+ "tiny|ADJ": {
+  "rules": [
+   {
+    "tags": [
+     "JJ"
+    ],
+    "use": [
+     "very small"
+    ],
+    "tones": [
+     "professional",
+     "academic"
+    ]
+   }
+  ]
+ },
+ "previous|ADJ": {
+  "rules": [
+   {
+    "tags": [
+     "JJ"
+    ],
+    "head": [
+     "phone",
+     "job",
+     "car",
+     "house",
+     "home",
+     "apartment",
+     "flat",
+     "employer",
+     "role",
+     "position",
+     "owner",
+     "laptop",
+     "computer",
+     "school",
+     "company",
+     "team",
+     "boss",
+     "partner",
+     "landlord",
+     "address"
+    ],
+    "use": [
+     "last"
+    ]
+   }
+  ],
+  "examples": [
+   "This is a big improvement over my previous phone."
+  ],
+  "never": [
+   "Previous studies found similar effects."
+  ]
+ },
+ "frequent|ADJ": {
+  "rules": [
+   {
+    "tags": [
+     "JJ"
+    ],
+    "dep": [
+     "amod"
+    ],
+    "use": [
+     "regular"
+    ],
+    "head": [
+     "visit",
+     "check-in",
+     "break",
+     "update",
+     "meeting",
+     "trip",
+     "user",
+     "flyer",
+     "traveler",
+     "customer"
+    ]
+   }
+  ]
+ },
+ "affordable|ADJ": {
+  "rules": []
+ },
+ "slight|ADJ": {
+  "rules": [
+   {
+    "tags": [
+     "JJ"
+    ],
+    "use": [
+     "small",
+     "minor"
+    ]
+   }
+  ]
+ },
+ "minor|ADJ": {
+  "rules": [
+   {
+    "tags": [
+     "JJ"
+    ],
+    "dep": [
+     "amod"
+    ],
+    "head": [
+     "issue",
+     "problem",
+     "flaw",
+     "detail",
+     "change",
+     "injury",
+     "complaint",
+     "mistake",
+     "error",
+     "setback",
+     "adjustment",
+     "improvement"
+    ],
+    "use": [
+     "small"
+    ]
+   }
+  ],
+  "examples": [
+   "Despite these minor flaws, I recommend this book."
+  ]
+ },
+ "massive|ADJ": {
+  "rules": []
+ },
+ "especially|ADV": {
+  "rules": [
+   {
+    "use": [
+     "particularly"
+    ]
+   }
+  ],
+  "examples": [
+   "Excessive use has been linked to poor sleep, especially among teenagers."
+  ]
+ },
+ "almost|ADV": {
+  "rules": [
+   {
+    "not_before": [
+     "certainly",
+     "always",
+     "never"
+    ],
+    "use": [
+     "nearly"
+    ],
+    "not_after": [
+     "very",
+     "not",
+     "n't"
+    ],
+    "no_neg_head": true
+   }
+  ],
+  "examples": [
+   "Meditation can be done almost anywhere."
+  ]
+ },
+ "simply|ADV": {
+  "rules": [
+   {
+    "not_after": [
+     "not",
+     "n't",
+     "quite"
+    ],
+    "not_before": [
+     "put"
+    ],
+    "dep": [
+     "advmod"
+    ],
+    "use": [
+     "just"
+    ]
+   }
+  ],
+  "examples": [
+   "Mr. Patel simply smiled."
+  ],
+  "never": [
+   "Simply put, it works."
+  ]
+ },
+ "completely|ADV": {
+  "rules": [
+   {
+    "use": [
+     "fully",
+     "entirely"
+    ]
+   }
+  ],
+  "examples": [
+   "Feeling nervous is completely normal."
+  ]
+ },
+ "fully|ADV": {
+  "rules": [
+   {
+    "use": [
+     "completely"
+    ]
+   }
+  ]
+ },
+ "entirely|ADV": {
+  "rules": [
+   {
+    "use": [
+     "completely"
+    ]
+   }
+  ]
+ },
+ "mainly|ADV": {
+  "rules": [
+   {
+    "use": [
+     "mostly",
+     "largely"
+    ]
+   }
+  ]
+ },
+ "mostly|ADV": {
+  "rules": [
+   {
+    "use": [
+     "mainly"
+    ]
+   }
+  ],
+  "examples": [
+   "Our stay was mostly enjoyable."
+  ]
+ },
+ "usually|ADV": {
+  "rules": [
+   {
+    "use": [
+     "normally",
+     "typically"
+    ]
+   }
+  ],
+  "examples": [
+   "Vaccines usually contain a weakened form of a virus."
+  ]
+ },
+ "generally|ADV": {
+  "rules": [
+   {
+    "position": "not_first",
+    "use": [
+     "usually"
+    ]
+   }
+  ],
+  "examples": [
+   "Adults generally need seven to nine hours of sleep."
+  ]
+ },
+ "recently|ADV": {
+  "rules": [
+   {
+    "aux_have": true,
+    "use": [
+     "lately"
+    ]
+   }
+  ],
+  "examples": [
+   "Researchers have recently examined the link."
+  ]
+ },
+ "slightly|ADV": {
+  "rules": [
+   {
+    "use": [
+     "a little",
+     "a bit"
+    ]
+   }
+  ],
+  "examples": [
+   "The tiramisu was slightly too sweet."
+  ]
+ },
+ "somewhat|ADV": {
+  "rules": [
+   {
+    "use": [
+     "a bit",
+     "rather"
+    ]
+   }
+  ],
+  "examples": [
+   "The breakfast buffet was somewhat disappointing."
+  ]
+ },
+ "really|ADV": {
+  "off": [
+   "academic"
+  ],
+  "rules": [
+   {
+    "dep": [
+     "advmod"
+    ],
+    "head_pos": "ADJ",
+    "use": [
+     "truly"
+    ],
+    "tones": [
+     "professional"
+    ]
+   }
+  ]
+ },
+ "very|ADV": {
+  "off": [
+   "academic",
+   "professional"
+  ],
+  "rules": [
+   {
+    "head_pos": "ADJ",
+    "not_after": [
+     "the",
+     "this",
+     "that",
+     "not",
+     "n't"
+    ],
+    "use": [
+     "really"
+    ]
+   }
+  ],
+  "examples": [
+   "It is very important to rest."
+  ]
+ },
+ "probably|ADV": {
+  "rules": [
+   {
+    "use": [
+     "likely"
+    ],
+    "aux_will": true
+   }
+  ]
+ },
+ "perhaps|ADV": {
+  "off": [
+   "academic",
+   "professional"
+  ],
+  "rules": [
+   {
+    "use": [
+     "maybe"
+    ]
+   }
+  ]
+ },
+ "quickly|ADV": {
+  "rules": [
+   {
+    "position": "after_head",
+    "use": [
+     "fast"
+    ],
+    "not_after": [
+     "more",
+     "most",
+     "so",
+     "very",
+     "too",
+     "as",
+     "how",
+     "fairly",
+     "really",
+     "quite",
+     "less"
+    ]
+   }
+  ],
+  "examples": [
+   "Children can become dehydrated quickly."
+  ]
+ },
+ "carefully|ADV": {
+  "rules": [
+   {
+    "position": "after_head",
+    "use": [
+     "with care"
+    ]
+   }
+  ],
+  "examples": [
+   "Proofread your resume carefully."
+  ]
+ },
+ "eventually|ADV": {
+  "rules": [
+   {
+    "position": "first",
+    "use": [
+     "in the end"
+    ]
+   },
+   {
+    "position": "last",
+    "use": [
+     "in the end"
+    ]
+   }
+  ]
+ },
+ "suddenly|ADV": {
+  "rules": [
+   {
+    "position": "first",
+    "use": [
+     "all of a sudden"
+    ]
+   },
+   {
+    "head_pos": "VERB",
+    "position": "not_first",
+    "use": [
+     "abruptly"
+    ],
+    "tones": [
+     "professional",
+     "academic",
+     "standard"
+    ]
+   }
+  ],
+  "examples": [
+   "Tectonic plates suddenly shift along fault lines."
+  ]
+ },
+ "rarely|ADV": {
+  "rules": [
+   {
+    "use": [
+     "seldom"
+    ],
+    "tones": [
+     "professional",
+     "academic"
+    ]
+   }
+  ]
+ },
+ "constantly|ADV": {
+  "rules": [
+   {
+    "use": [
+     "all the time"
+    ],
+    "position": "after_head",
+    "tones": [
+     "standard",
+     "casual"
+    ]
+   }
+  ]
+ },
+ "properly|ADV": {
+  "rules": [
+   {
+    "use": [
+     "correctly"
+    ],
+    "head_not": [
+     "work",
+     "fit",
+     "dress"
+    ]
+   }
+  ],
+  "examples": [
+   "Recycling only works when items are sorted properly."
+  ]
+ },
+ "regularly|ADV": {
+  "rules": []
+ },
+ "directly|ADV": {
+  "rules": []
+ },
+ "relatively|ADV": {
+  "rules": [
+   {
+    "use": [
+     "fairly"
+    ]
+   }
+  ]
+ },
+ "benefit|NOUN": {
+  "rules": [
+   {
+    "no_compound": true,
+    "use": [
+     "advantage"
+    ]
+   }
+  ],
+  "examples": [
+   "Team sports offer many benefits for young people."
+  ],
+  "never": [
+   "The company offers good employee benefits."
+  ]
+ },
+ "advantage|NOUN": {
+  "rules": [
+   {
+    "no_compound": true,
+    "not_after": [
+     "take",
+     "taking",
+     "takes",
+     "took",
+     "taken"
+    ],
+    "use": [
+     "benefit"
+    ]
+   }
+  ],
+  "examples": [
+   "Bilingualism may offer cognitive advantages."
+  ],
+  "never": [
+   "Take advantage of the offer."
+  ]
+ },
+ "challenge|NOUN": {
+  "rules": []
+ },
+ "issue|NOUN": {
+  "rules": []
+ },
+ "problem|NOUN": {
+  "rules": [
+   {
+    "no_compound": true,
+    "use": [
+     "issue"
+    ]
+   }
+  ],
+  "examples": [
+   "Food waste is a serious problem."
+  ]
+ },
+ "goal|NOUN": {
+  "rules": [
+   {
+    "no_compound": true,
+    "use": [
+     "aim"
+    ],
+    "head_not": [
+     "score",
+     "concede",
+     "net",
+     "kick",
+     "save",
+     "miss"
+    ]
+   }
+  ],
+  "examples": [
+   "Set realistic goals that everyone can work toward."
+  ],
+  "never": [
+   "He scored a goal in the final minute."
+  ]
+ },
+ "aim|NOUN": {
+  "rules": [
+   {
+    "no_compound": true,
+    "use": [
+     "goal"
+    ]
+   }
+  ]
+ },
+ "concern|NOUN": {
+  "rules": [
+   {
+    "no_compound": true,
+    "use": [
+     "worry"
+    ],
+    "tones": [
+     "standard",
+     "casual"
+    ]
+   }
+  ],
+  "examples": [
+   "Concerns about driving range still prevent some people from switching."
+  ]
+ },
+ "worry|NOUN": {
+  "rules": [
+   {
+    "no_compound": true,
+    "use": [
+     "concern"
+    ]
+   }
+  ]
+ },
+ "mistake|NOUN": {
+  "rules": [
+   {
+    "no_compound": true,
+    "use": [
+     "error"
+    ]
+   }
+  ],
+  "examples": [
+   "Overwatering is one of the most common mistakes."
+  ]
+ },
+ "error|NOUN": {
+  "rules": [
+   {
+    "no_compound": true,
+    "not_after": [
+     "of"
+    ],
+    "use": [
+     "mistake"
+    ]
+   }
+  ],
+  "never": [
+   "Allow a margin of error."
+  ]
+ },
+ "choice|NOUN": {
+  "rules": []
+ },
+ "option|NOUN": {
+  "rules": [
+   {
+    "no_compound": true,
+    "use": [
+     "choice"
+    ],
+    "child_prep_not": "of"
+   }
+  ],
+  "examples": [
+   "Walking and cycling are excellent options."
+  ]
+ },
+ "type|NOUN": {
+  "rules": [
+   {
+    "no_compound": true,
+    "child_prep": "of",
+    "use": [
+     "kind"
+    ]
+   }
+  ],
+  "examples": [
+   "Keep three copies on two different types of storage."
+  ]
+ },
+ "kind|NOUN": {
+  "rules": [
+   {
+    "no_compound": true,
+    "child_prep": "of",
+    "use": [
+     "type"
+    ]
+   }
+  ]
+ },
+ "increase|NOUN": {
+  "rules": [
+   {
+    "no_compound": true,
+    "use": [
+     "rise"
+    ]
+   }
+  ],
+  "examples": [
+   "Telehealth visits saw an increase of 3,000 percent."
+  ]
+ },
+ "rise|NOUN": {
+  "rules": [
+   {
+    "no_compound": true,
+    "child_not": [
+     "amod"
+    ],
+    "det_not": [
+     "a",
+     "an"
+    ],
+    "use": [
+     "growth",
+     "increase"
+    ]
+   },
+   {
+    "no_compound": true,
+    "child_not": [
+     "amod"
+    ],
+    "use": [
+     "increase"
+    ]
+   }
+  ],
+  "examples": [
+   "The rise of online shopping created challenges.",
+   "Experts predict a rise in demand."
+  ],
+  "never": [
+   "Analysts anticipate a sharp rise in prices next year."
+  ]
+ },
+ "decrease|NOUN": {
+  "rules": [
+   {
+    "no_compound": true,
+    "use": [
+     "drop",
+     "fall"
+    ]
+   }
+  ]
+ },
+ "decline|NOUN": {
+  "rules": [
+   {
+    "no_compound": true,
+    "use": [
+     "drop"
+    ]
+   }
+  ],
+  "examples": [
+   "Students show measurable declines in memory consolidation."
+  ]
+ },
+ "reduction|NOUN": {
+  "rules": [
+   {
+    "no_compound": true,
+    "use": [
+     "drop",
+     "cut"
+    ]
+   }
+  ]
+ },
+ "improvement|NOUN": {
+  "rules": []
+ },
+ "expert|NOUN": {
+  "rules": [
+   {
+    "no_compound": true,
+    "use": [
+     "specialist"
+    ]
+   }
+  ],
+  "examples": [
+   "Experts often recommend the 50/30/20 rule."
+  ]
+ },
+ "employee|NOUN": {
+  "rules": [
+   {
+    "no_compound": true,
+    "dep_not": [
+     "compound"
+    ],
+    "use": [
+     "worker"
+    ]
+   }
+  ],
+  "examples": [
+   "Many employees appreciate the flexibility."
+  ]
+ },
+ "worker|NOUN": {
+  "rules": [
+   {
+    "no_compound": true,
+    "dep_not": [
+     "compound"
+    ],
+    "use": [
+     "employee"
+    ],
+    "tones": [
+     "professional",
+     "academic"
+    ]
+   }
+  ]
+ },
+ "customer|NOUN": {
+  "rules": [
+   {
+    "no_compound": true,
+    "dep_not": [
+     "compound"
+    ],
+    "use": [
+     "client"
+    ],
+    "tones": [
+     "professional"
+    ]
+   }
+  ]
+ },
+ "teenager|NOUN": {
+  "off": [
+   "academic"
+  ],
+  "rules": [
+   {
+    "no_compound": true,
+    "use": [
+     "teen"
+    ]
+   }
+  ],
+  "examples": [
+   "Teenagers often struggle to get enough sleep."
+  ]
+ },
+ "child|NOUN": {
+  "rules": [
+   {
+    "no_compound": true,
+    "tags": [
+     "NNS"
+    ],
+    "use": [
+     "kid"
+    ],
+    "tones": [
+     "casual"
+    ]
+   }
+  ]
+ },
+ "tip|NOUN": {
+  "rules": [
+   {
+    "no_compound": true,
+    "use": [
+     "pointer"
+    ],
+    "head_not": [
+     "leave",
+     "give",
+     "receive",
+     "add",
+     "include",
+     "expect"
+    ],
+    "tags": [
+     "NNS"
+    ],
+    "child_prep_not": "of"
+   }
+  ],
+  "never": [
+   "Leave a tip for the waiter.",
+   "Ships had to sail around the southern tip of South America.",
+   "He touched the tips of his fingers."
+  ]
+ },
+ "task|NOUN": {
+  "rules": []
+ },
+ "instance|NOUN": {
+  "rules": [
+   {
+    "no_compound": true,
+    "not_after": [
+     "for"
+    ],
+    "use": [
+     "case"
+    ]
+   }
+  ]
+ },
+ "method|NOUN": {
+  "rules": [
+   {
+    "no_compound": true,
+    "use": [
+     "way"
+    ],
+    "tones": [
+     "standard",
+     "casual"
+    ]
+   }
+  ],
+  "examples": [
+   "Researchers compared several methods."
+  ]
+ },
+ "strategy|NOUN": {
+  "rules": []
+ },
+ "company|NOUN": {
+  "rules": [
+   {
+    "no_compound": true,
+    "not_after": [
+     "of",
+     "keep",
+     "keeps",
+     "kept",
+     "keeping"
+    ],
+    "dep_not": [
+     "compound"
+    ],
+    "use": [
+     "firm"
+    ],
+    "tones": [
+     "professional",
+     "standard"
+    ]
+   }
+  ],
+  "examples": [
+   "Companies with strong onboarding programs retain staff."
+  ]
+ },
+ "about|ADV": {
+  "rules": [
+   {
+    "dep": [
+     "advmod",
+     "quantmod"
+    ],
+    "next_num_or_fraction": true,
+    "use": [
+     "around",
+     "roughly"
+    ],
+    "tones": [
+     "standard",
+     "casual",
+     "professional"
+    ]
+   },
+   {
+    "dep": [
+     "advmod",
+     "quantmod"
+    ],
+    "next_num_or_fraction": true,
+    "use": [
+     "approximately",
+     "roughly"
+    ],
+    "tones": [
+     "academic"
+    ]
+   }
+  ],
+  "examples": [
+   "Knead the dough for about ten minutes."
+  ],
+  "never": [
+   "Tell me about the trip.",
+   "They walked about the town."
+  ]
+ },
+ "around|ADV": {
+  "rules": [
+   {
+    "dep": [
+     "advmod",
+     "quantmod"
+    ],
+    "next_num": true,
+    "use": [
+     "about"
+    ]
+   }
+  ],
+  "examples": [
+   "Around 240 athletes took part."
+  ]
+ },
+ "become|VERB": {
+  "rules": [
+   {
+    "child": "acomp",
+    "child_tag": "JJR",
+    "use": [
+     "grow",
+     "get"
+    ]
+   },
+   {
+    "child": "acomp",
+    "use": [
+     "get"
+    ],
+    "tones": [
+     "standard",
+     "casual"
+    ],
+    "acomp_in": [
+     "tired",
+     "angry",
+     "sick",
+     "ill",
+     "bored",
+     "hungry",
+     "dark",
+     "cold",
+     "hot",
+     "warm",
+     "wet",
+     "dry",
+     "old",
+     "ready",
+     "busy",
+     "lost",
+     "upset",
+     "nervous",
+     "worried",
+     "confused",
+     "frustrated",
+     "excited",
+     "scared",
+     "stuck",
+     "rich",
+     "involved",
+     "sleepy",
+     "thirsty",
+     "dirty",
+     "crowded",
+     "serious",
+     "used"
+    ]
+   },
+   {
+    "child": "attr",
+    "attr_det": true,
+    "use": [
+     "turn into"
+    ],
+    "subject_not": [
+     "class:person",
+     "people",
+     "he",
+     "she",
+     "they",
+     "i",
+     "we",
+     "you",
+     "who"
+    ],
+    "subject_not_propn": true,
+    "attr_plain": true
+   }
+  ],
+  "examples": [
+   "Smartphones have become an essential part of modern life.",
+   "Children become tired after long trips."
+  ],
+  "never": [
+   "She became president in 2010.",
+   "Neil Armstrong became the first person to walk on the Moon.",
+   "Many desert animals stay underground and become active at night."
+  ]
+ },
+ "place|VERB": {
+  "rules": [
+   {
+    "object": "any",
+    "object_not": [
+     "order",
+     "emphasis",
+     "bet",
+     "call",
+     "ad",
+     "advertisement",
+     "value",
+     "importance",
+     "trust",
+     "blame",
+     "limit",
+     "restriction",
+     "ban",
+     "focus",
+     "pressure",
+     "strain",
+     "burden",
+     "demand",
+     "hold",
+     "priority",
+     "faith",
+     "hope",
+     "bid",
+     "cap",
+     "tax",
+     "sanction",
+     "stress"
+    ],
+    "use": [
+     "put"
+    ]
+   }
+  ],
+  "examples": [
+   "Then place it in a greased bowl.",
+   "Placing them near a window is a good choice."
+  ],
+  "never": [
+   "Customers can place an order online.",
+   "Schools place great emphasis on reading."
+  ]
+ },
+ "perform|VERB": {
+  "rules": [
+   {
+    "object": [
+     "task",
+     "test",
+     "dance",
+     "movement",
+     "series",
+     "operation",
+     "surgery",
+     "procedure",
+     "experiment",
+     "analysis",
+     "check",
+     "ritual",
+     "ceremony",
+     "duty",
+     "function",
+     "service",
+     "calculation",
+     "search",
+     "action",
+     "exercise",
+     "role",
+     "step",
+     "inspection",
+     "review",
+     "job",
+     "work",
+     "maintenance",
+     "repair"
+    ],
+    "use": [
+     "carry out"
+    ]
+   }
+  ],
+  "examples": [
+   "The bee performs a series of movements.",
+   "Every movement in the ceremony is carefully performed."
+  ],
+  "never": [
+   "The band performed a new song."
+  ]
+ },
+ "indicate|VERB": {
+  "rules": [
+   {
+    "child": "ccomp",
+    "child_wh": true,
+    "use": [
+     "show"
+    ]
+   },
+   {
+    "subject": [
+     "sign",
+     "signal",
+     "light",
+     "arrow",
+     "direction",
+     "color",
+     "colour",
+     "dance",
+     "map",
+     "symbol",
+     "label",
+     "number",
+     "line",
+     "length",
+     "mark",
+     "icon",
+     "needle",
+     "gauge"
+    ],
+    "use": [
+     "show"
+    ]
+   }
+  ],
+  "examples": [
+   "The direction of the dance indicates where the food is located."
+  ],
+  "never": [
+   "Survey data indicated that students lost motivation."
+  ]
+ },
+ "review|VERB": {
+  "rules": [
+   {
+    "object": [
+     "document",
+     "report",
+     "plan",
+     "mockup",
+     "policy",
+     "draft",
+     "contract",
+     "application",
+     "file",
+     "budget",
+     "attachment",
+     "proposal",
+     "material",
+     "note",
+     "term",
+     "agreement",
+     "list",
+     "code",
+     "page",
+     "schedule",
+     "form",
+     "slide",
+     "summary",
+     "statement",
+     "invoice",
+     "manuscript",
+     "copy"
+    ],
+    "use": [
+     "look over",
+     "go over"
+    ]
+   },
+   {
+    "object": [
+     "budget",
+     "goal",
+     "progress",
+     "plan",
+     "strategy"
+    ],
+    "use": [
+     "check"
+    ]
+   }
+  ],
+  "examples": [
+   "Please review the full policy document.",
+   "Please review the attached mockups."
+  ]
+ },
+ "disrupt|VERB": {
+  "rules": [
+   {
+    "object": "any",
+    "tags": [
+     "VB",
+     "VBZ",
+     "VBP",
+     "VBD",
+     "VBG"
+    ],
+    "use": [
+     "interfere with"
+    ]
+   }
+  ],
+  "examples": [
+   "Artificial lighting disrupts the natural behavior of many animals."
+  ]
+ },
+ "adjust|VERB": {
+  "rules": [
+   {
+    "object": [
+     "height",
+     "setting",
+     "temperature",
+     "volume",
+     "level",
+     "angle",
+     "position",
+     "speed",
+     "brightness",
+     "chair",
+     "seat",
+     "schedule",
+     "budget",
+     "plan",
+     "strategy",
+     "size",
+     "timer",
+     "price",
+     "rate"
+    ],
+    "use": [
+     "change"
+    ]
+   },
+   {
+    "object": "none",
+    "prep": "to",
+    "use": [
+     "adapt"
+    ]
+   }
+  ],
+  "examples": [
+   "You can smoothly adjust the height from 28 to 48 inches."
+  ]
+ },
+ "actually|ADV": {
+  "rules": []
+ },
+ "happen|VERB": {
+  "rules": [
+   {
+    "use": [
+     "occur"
+    ],
+    "tones": [
+     "professional",
+     "academic"
+    ]
+   },
+   {
+    "use": [
+     "take place"
+    ],
+    "tones": [
+     "standard"
+    ],
+    "subject": [
+     "event",
+     "meeting",
+     "festival",
+     "ceremony",
+     "parade",
+     "game",
+     "match",
+     "race",
+     "election",
+     "concert",
+     "conference",
+     "wedding"
+    ]
+   }
+  ]
+ },
+ "restore|VERB": {
+  "rules": [
+   {
+    "object": [
+     "file",
+     "data",
+     "document",
+     "photo",
+     "backup",
+     "account",
+     "message",
+     "folder",
+     "contact",
+     "setting"
+    ],
+    "use": [
+     "recover",
+     "get back"
+    ]
+   }
+  ],
+  "examples": [
+   "You can restore your files if something goes wrong."
+  ]
+ },
+ "lean|VERB": {
+  "rules": [
+   {
+    "subject_not": [
+     "class:person",
+     "people",
+     "he",
+     "she",
+     "they",
+     "i",
+     "you",
+     "we",
+     "who"
+    ],
+    "prep_any": [
+     "toward",
+     "towards",
+     "away"
+    ],
+    "use": [
+     "tilt"
+    ]
+   }
+  ],
+  "examples": [
+   "When the northern half of the planet leans toward the sun, it is summer."
+  ],
+  "never": [
+   "She leaned toward the window."
+  ]
+ },
+ "give|VERB": {
+  "rules": [
+   {
+    "object": [
+     "chance",
+     "opportunity",
+     "time",
+     "space",
+     "advice",
+     "support",
+     "feedback",
+     "information",
+     "access",
+     "energy",
+     "insight",
+     "guidance",
+     "help",
+     "warning",
+     "overview",
+     "idea",
+     "example",
+     "option",
+     "choice",
+     "tip",
+     "update",
+     "explanation"
+    ],
+    "use": [
+     "offer"
+    ]
+   },
+   {
+    "object": [
+     "food",
+     "shelter",
+     "water",
+     "oxygen",
+     "nutrient",
+     "care",
+     "protection",
+     "comfort",
+     "warmth",
+     "light",
+     "shade",
+     "habitat",
+     "income",
+     "medicine"
+    ],
+    "use": [
+     "provide"
+    ]
+   }
+  ],
+  "examples": [
+   "It gives parents and children a chance to talk.",
+   "Nature acts as the source of life by giving the food we need."
+  ],
+  "never": [
+   "She gave a speech at the ceremony.",
+   "He gave up smoking.",
+   "This change gave millions of women a voice in their government."
+  ]
+ },
+ "survive|VERB": {
+  "off": [
+   "academic"
+  ],
+  "rules": [
+   {
+    "object": "none",
+    "use": [
+     "stay alive"
+    ]
+   }
+  ],
+  "examples": [
+   "Nature gives the clean oxygen we need to survive."
+  ],
+  "never": [
+   "Few buildings survived the earthquake."
+  ]
+ },
+ "value|VERB": {
+  "rules": [
+   {
+    "object": "any",
+    "object_not": [
+     "class:person"
+    ],
+    "tags": [
+     "VB",
+     "VBZ",
+     "VBP",
+     "VBD",
+     "VBG"
+    ],
+    "prep_not": [
+     "at"
+    ],
+    "use": [
+     "appreciate",
+     "prize"
+    ]
+   }
+  ],
+  "examples": [
+   "Strong leaders value their input and feedback."
+  ],
+  "never": [
+   "The house was valued at $300,000."
+  ]
+ },
+ "strengthen|VERB": {
+  "rules": [
+   {
+    "object": [
+     "muscle",
+     "leg",
+     "bone",
+     "core",
+     "back",
+     "arm",
+     "joint",
+     "immune"
+    ],
+    "use": [
+     "build up"
+    ]
+   },
+   {
+    "object": [
+     "bond",
+     "relationship",
+     "connection",
+     "friendship",
+     "tie",
+     "trust",
+     "community"
+    ],
+    "use": [
+     "deepen"
+    ]
+   },
+   {
+    "object": [
+     "economy",
+     "position",
+     "case",
+     "argument",
+     "team",
+     "brand",
+     "defence",
+     "defense",
+     "security"
+    ],
+    "use": [
+     "reinforce"
+    ]
+   }
+  ],
+  "examples": [
+   "Cycling strengthens the legs.",
+   "Sharing a meal strengthens family bonds."
+  ],
+  "never": [
+   "Regular exercise strengthens the heart."
+  ]
+ },
+ "resemble|VERB": {
+  "rules": [
+   {
+    "use": [
+     "look like"
+    ]
+   }
+  ],
+  "examples": [
+   "Its structure resembles a twisted ladder."
+  ]
+ },
+ "symbolize|VERB": {
+  "rules": [
+   {
+    "use": [
+     "stand for"
+    ]
+   }
+  ],
+  "examples": [
+   "Lamps and fireworks symbolize the victory of light over darkness."
+  ]
+ },
+ "celebrate|VERB": {
+  "rules": [
+   {
+    "object": [
+     "holiday",
+     "festival",
+     "event",
+     "anniversary",
+     "birthday",
+     "occasion",
+     "day",
+     "victory",
+     "win",
+     "success",
+     "achievement",
+     "milestone",
+     "christmas",
+     "diwali",
+     "eid",
+     "wedding",
+     "graduation",
+     "independence",
+     "harvest"
+    ],
+    "use": [
+     "mark"
+    ]
+   }
+  ],
+  "examples": [
+   "In India, Diwali is celebrated with lamps and fireworks."
+  ]
+ },
+ "bypass|VERB": {
+  "rules": [
+   {
+    "use": [
+     "get around"
+    ]
+   }
+  ],
+  "examples": [
+   "These age limits are easy to bypass."
+  ]
+ },
+ "choose|VERB": {
+  "rules": [
+   {
+    "object": "any",
+    "child_not": [
+     "xcomp",
+     "ccomp"
+    ],
+    "use": [
+     "pick"
+    ],
+    "tones": [
+     "standard",
+     "casual"
+    ]
+   },
+   {
+    "object": "any",
+    "child_not": [
+     "xcomp",
+     "ccomp"
+    ],
+    "use": [
+     "select"
+    ],
+    "tones": [
+     "professional",
+     "academic"
+    ]
+   }
+  ],
+  "examples": [
+   "Developers must choose an expiry policy."
+  ],
+  "never": [
+   "Many people choose to work from home."
+  ]
+ },
+ "fix|VERB": {
+  "rules": [
+   {
+    "object": [
+     "problem",
+     "issue",
+     "bug",
+     "error",
+     "mistake",
+     "flaw",
+     "glitch",
+     "fault"
+    ],
+    "use": [
+     "solve",
+     "correct"
+    ]
+   },
+   {
+    "object": [
+     "heating",
+     "leak",
+     "car",
+     "bike",
+     "bicycle",
+     "roof",
+     "pipe",
+     "phone",
+     "computer",
+     "door",
+     "window",
+     "lock",
+     "tap",
+     "light",
+     "engine",
+     "device",
+     "machine"
+    ],
+    "use": [
+     "repair"
+    ]
+   }
+  ],
+  "examples": [
+   "If these issues are fixed in a future update, the phone could be great."
+  ]
+ },
+ "solve|VERB": {
+  "rules": [
+   {
+    "object": [
+     "problem",
+     "issue"
+    ],
+    "use": [
+     "fix",
+     "resolve"
+    ]
+   }
+  ],
+  "examples": [
+   "Employees can combine their skills to solve complex problems."
+  ]
+ },
+ "check|VERB": {
+  "rules": [
+   {
+    "child": "ccomp",
+    "child_mark": [
+     "whether",
+     "if"
+    ],
+    "use": [
+     "see"
+    ]
+   }
+  ],
+  "examples": [
+   "Check whether the top inch of soil is dry."
+  ]
+ },
+ "damage|VERB": {
+  "rules": [
+   {
+    "object": "any",
+    "use": [
+     "harm"
+    ]
+   }
+  ],
+  "examples": [
+   "Rising temperatures damage coral reefs."
+  ]
+ },
+ "harm|VERB": {
+  "rules": [
+   {
+    "object": "any",
+    "use": [
+     "damage",
+     "hurt"
+    ]
+   }
+  ],
+  "examples": [
+   "Human activities harm these delicate ecosystems."
+  ]
+ },
+ "earn|VERB": {
+  "rules": [
+   {
+    "object": [
+     "point",
+     "reward",
+     "badge",
+     "star",
+     "credit",
+     "mile",
+     "bonus",
+     "token"
+    ],
+    "use": [
+     "collect"
+    ]
+   }
+  ],
+  "examples": [
+   "Customers would earn points for every purchase."
+  ]
+ },
+ "cause|VERB": {
+  "rules": [
+   {
+    "object": "any",
+    "tags": [
+     "VB",
+     "VBZ",
+     "VBP",
+     "VBD",
+     "VBG"
+    ],
+    "child_not": [
+     "xcomp",
+     "ccomp",
+     "dative"
+    ],
+    "use": [
+     "lead to"
+    ],
+    "tones": [
+     "standard",
+     "casual",
+     "professional"
+    ]
+   }
+  ],
+  "examples": [
+   "Boiling water can cause a bitter taste."
+  ],
+  "never": [
+   "Boiling water can cause the leaves to burn."
+  ]
+ },
+ "easily|ADV": {
+  "rules": [
+   {
+    "head_pos": "ADJ",
+    "use": [
+     "readily"
+    ]
+   },
+   {
+    "head_tag": [
+     "VBN"
+    ],
+    "use": [
+     "readily"
+    ]
+   }
+  ],
+  "examples": [
+   "Keep savings in an easily accessible account.",
+   "Personal details can be easily guessed."
+  ]
+ },
+ "sturdy|ADJ": {
+  "rules": [
+   {
+    "tags": [
+     "JJ"
+    ],
+    "use": [
+     "solid"
+    ]
+   }
+  ],
+  "examples": [
+   "The sturdy steel frame supports up to 300 pounds."
+  ]
+ },
+ "expensive|ADJ": {
+  "rules": [
+   {
+    "tags": [
+     "JJ"
+    ],
+    "head_not": [
+     "class:person",
+     "taste"
+    ],
+    "use": [
+     "costly"
+    ]
+   }
+  ],
+  "examples": [
+   "Books were copied by hand, a slow and expensive process."
+  ]
+ },
+ "popular|ADJ": {
+  "rules": [
+   {
+    "tags": [
+     "JJ"
+    ],
+    "dep": [
+     "amod"
+    ],
+    "head": [
+     "service",
+     "app",
+     "application",
+     "platform",
+     "tool",
+     "program",
+     "programme",
+     "site",
+     "website",
+     "game",
+     "brand",
+     "browser",
+     "model",
+     "product",
+     "device",
+     "phone",
+     "method"
+    ],
+    "use": [
+     "widely used"
+    ]
+   }
+  ],
+  "examples": [
+   "Many popular services now offer two-factor authentication."
+  ]
+ },
+ "nervous|ADJ": {
+  "rules": [
+   {
+    "tags": [
+     "JJ"
+    ],
+    "use": [
+     "anxious"
+    ]
+   }
+  ],
+  "examples": [
+   "Remember that feeling nervous is normal."
+  ]
+ },
+ "about|ADP": {
+  "rules": [
+   {
+    "dep": [
+     "quantmod",
+     "advmod"
+    ],
+    "use": [
+     "around",
+     "roughly"
+    ],
+    "tones": [
+     "standard",
+     "casual",
+     "professional"
+    ],
+    "next_num_or_fraction": true
+   },
+   {
+    "dep": [
+     "quantmod",
+     "advmod"
+    ],
+    "use": [
+     "approximately",
+     "roughly"
+    ],
+    "tones": [
+     "academic"
+    ],
+    "next_num_or_fraction": true
+   }
+  ],
+  "examples": [
+   "The pyramid was built from about 2.3 million stone blocks.",
+   "Reefs support about a quarter of all marine species."
+  ],
+  "never": [
+   "Tell me about 2020."
+  ]
+ },
+ "become|AUX": {
+  "rules": [
+   {
+    "dep": [
+     "auxpass"
+    ],
+    "head_tag": [
+     "VBN"
+    ],
+    "use": [
+     "get"
+    ],
+    "tones": [
+     "standard",
+     "casual"
+    ]
+   }
+  ],
+  "examples": [
+   "Hatchlings can become disoriented by bright lights."
+  ]
+ },
+ "many|ADJ": {
+  "off": [
+   "academic",
+   "professional"
+  ],
+  "rules": [
+   {
+    "dep": [
+     "amod"
+    ],
+    "tags": [
+     "JJ"
+    ],
+    "head_tag": [
+     "NNS",
+     "NNPS"
+    ],
+    "not_after": [
+     "how",
+     "so",
+     "too",
+     "as",
+     "the",
+     "these",
+     "those",
+     "its",
+     "their",
+     "his",
+     "her",
+     "our",
+     "my",
+     "your",
+     "of",
+     "very",
+     "in",
+     "for",
+     "with",
+     "over",
+     "after",
+     "before",
+     "since",
+     "during",
+     "across",
+     "by",
+     "from",
+     "on",
+     "at",
+     "to",
+     "into",
+     "among",
+     "within"
+    ],
+    "use": [
+     "a lot of"
+    ],
+    "tones": [
+     "standard"
+    ],
+    "head_not": [
+     "other",
+     "others",
+     "year",
+     "decade",
+     "century",
+     "month",
+     "week",
+     "day",
+     "hour",
+     "minute",
+     "generation",
+     "time",
+     "second"
+    ],
+    "not_before": [
+     "other",
+     "more",
+     "different",
+     "such",
+     "of"
+    ]
+   },
+   {
+    "dep": [
+     "amod"
+    ],
+    "tags": [
+     "JJ"
+    ],
+    "head_tag": [
+     "NNS",
+     "NNPS"
+    ],
+    "not_after": [
+     "how",
+     "so",
+     "too",
+     "as",
+     "the",
+     "these",
+     "those",
+     "its",
+     "their",
+     "his",
+     "her",
+     "our",
+     "my",
+     "your",
+     "of",
+     "very",
+     "in",
+     "for",
+     "with",
+     "over",
+     "after",
+     "before",
+     "since",
+     "during",
+     "across",
+     "by",
+     "from",
+     "on",
+     "at",
+     "to",
+     "into",
+     "among",
+     "within"
+    ],
+    "use": [
+     "lots of",
+     "a lot of"
+    ],
+    "tones": [
+     "casual"
+    ],
+    "head_not": [
+     "other",
+     "others",
+     "year",
+     "decade",
+     "century",
+     "month",
+     "week",
+     "day",
+     "hour",
+     "minute",
+     "generation",
+     "time",
+     "second"
+    ],
+    "not_before": [
+     "other",
+     "more",
+     "different",
+     "such",
+     "of"
+    ]
+   }
+  ],
+  "examples": [
+   "Many communities rely on forests for food.",
+   "Many people ride their bikes to work."
+  ],
+  "never": [
+   "How many people came?",
+   "There are so many options.",
+   "The many benefits of exercise are clear.",
+   "Gandhi, Nehru, and many others fought for freedom.",
+   "Glaciers form over many years as snow builds up.",
+   "Many years later, she returned."
+  ]
+ },
+ "need|VERB": {
+  "rules": [
+   {
+    "child": "xcomp",
+    "next": [
+     "to"
+    ],
+    "child_not": [
+     "auxpass",
+     "neg"
+    ],
+    "not_after": [
+     "not",
+     "n't"
+    ],
+    "use": [
+     "have"
+    ],
+    "tones": [
+     "standard",
+     "casual"
+    ],
+    "dep_not": [
+     "relcl",
+     "acl",
+     "advcl",
+     "pcomp",
+     "ccomp",
+     "relcl",
+     "acl"
+    ],
+    "tags": [
+     "VB",
+     "VBP",
+     "VBZ",
+     "VBD"
+    ],
+    "no_reduced_relative": true
+   },
+   {
+    "object": "any",
+    "child_not": [
+     "auxpass",
+     "neg",
+     "xcomp"
+    ],
+    "use": [
+     "require"
+    ],
+    "tones": [
+     "professional",
+     "academic"
+    ],
+    "dep_not": [
+     "relcl",
+     "acl",
+     "advcl",
+     "pcomp",
+     "ccomp",
+     "relcl",
+     "acl"
+    ],
+    "tags": [
+     "VB",
+     "VBP",
+     "VBZ",
+     "VBD"
+    ],
+    "no_reduced_relative": true
+   }
+  ],
+  "examples": [
+   "Companies need to invest in training.",
+   "You will need to practice every day."
+  ],
+  "never": [
+   "You do not need to apologize.",
+   "Nature gives the clean oxygen we need to survive.",
+   "Further research is therefore needed to establish reliable methods.",
+   "Nature gives us the food, shelter, and clean oxygen we need to survive."
+  ]
+ },
+ "find|VERB": {
+  "rules": [
+   {
+    "object": [
+     "balance"
+    ],
+    "use": [
+     "strike"
+    ]
+   },
+   {
+    "object": [
+     "time"
+    ],
+    "use": [
+     "make"
+    ]
+   },
+   {
+    "object": [
+     "solution",
+     "way",
+     "answer",
+     "compromise",
+     "fix"
+    ],
+    "use": [
+     "come up with",
+     "work out"
+    ]
+   }
+  ],
+  "examples": [
+   "Finding a healthy balance is important.",
+   "Engineers found a way to cut costs."
+  ],
+  "never": [
+   "She found a wallet on the street."
+  ]
+ },
+ "save|VERB": {
+  "rules": [
+   {
+    "object": [
+     "water",
+     "energy",
+     "electricity",
+     "power",
+     "fuel",
+     "resource",
+     "gas",
+     "heat"
+    ],
+    "use": [
+     "conserve"
+    ]
+   }
+  ],
+  "examples": [
+   "Families can save water by fixing leaks."
+  ],
+  "never": [
+   "Booking early can save you money."
+  ]
+ },
+ "read|VERB": {
+  "rules": [
+   {
+    "object": [
+     "review",
+     "label",
+     "instruction",
+     "news",
+     "comment",
+     "rating",
+     "reply",
+     "message",
+     "email",
+     "note",
+     "update"
+    ],
+    "use": [
+     "check"
+    ]
+   }
+  ],
+  "examples": [
+   "Consumers can compare prices and read reviews."
+  ],
+  "never": [
+   "She read a book before bed."
+  ]
+ },
+ "call|VERB": {
+  "rules": [
+   {
+    "tags": [
+     "VBN"
+    ],
+    "prt_not": [
+     "off",
+     "on",
+     "for",
+     "up",
+     "out",
+     "in",
+     "back"
+    ],
+    "child_any": [
+     "oprd",
+     "attr"
+    ],
+    "use": [
+     "know as"
+    ]
+   }
+  ],
+  "examples": [
+   "Coral reefs are often called the rainforests of the sea."
+  ],
+  "never": [
+   "She called her mother.",
+   "They called off the match."
+  ]
+ },
+ "bring|VERB": {
+  "rules": [
+   {
+    "object": [
+     "benefit",
+     "reward",
+     "advantage",
+     "joy",
+     "happiness",
+     "comfort",
+     "relief",
+     "opportunity",
+     "convenience"
+    ],
+    "prt_not": [
+     "up",
+     "back",
+     "in",
+     "out",
+     "about",
+     "down"
+    ],
+    "use": [
+     "offer"
+    ]
+   }
+  ],
+  "examples": [
+   "Eating meals together can bring many rewards."
+  ],
+  "never": [
+   "Bring a water bottle to school.",
+   "However, this period also brought major challenges."
+  ]
+ },
+ "remember|VERB": {
+  "rules": [
+   {
+    "child": "xcomp",
+    "next": [
+     "to"
+    ],
+    "use": [
+     "be sure"
+    ],
+    "not_after": [
+     "not",
+     "n't",
+     "to"
+    ]
+   }
+  ],
+  "examples": [
+   "Dress professionally and remember to bring copies of your resume."
+  ],
+  "never": [
+   "I remember the day we met."
+  ]
+ },
+ "cover|VERB": {
+  "rules": [
+   {
+    "object": [
+     "percent",
+     "percentage",
+     "area",
+     "surface",
+     "acre",
+     "hectare",
+     "floor",
+     "land",
+     "space",
+     "part",
+     "fraction",
+     "third",
+     "quarter",
+     "half",
+     "square"
+    ],
+    "use": [
+     "take up",
+     "occupy"
+    ],
+    "need_subject": true,
+    "child_prep_not": "with"
+   }
+  ],
+  "examples": [
+   "Although they cover less than one percent of the ocean floor, reefs matter."
+  ],
+  "never": [
+   "The course covers basic statistics.",
+   "Insurance covers the cost.",
+   "Cover the area loosely with a clean bandage.",
+   "Snow covered the area with a thick layer."
+  ]
+ },
+ "good|ADJ": {
+  "rules": [
+   {
+    "tags": [
+     "JJ"
+    ],
+    "dep": [
+     "amod"
+    ],
+    "head": [
+     "way",
+     "idea",
+     "choice",
+     "option",
+     "decision",
+     "move",
+     "plan",
+     "strategy",
+     "investment",
+     "approach"
+    ],
+    "use": [
+     "smart",
+     "sensible"
+    ]
+   },
+   {
+    "tags": [
+     "JJ"
+    ],
+    "dep": [
+     "amod"
+    ],
+    "head": [
+     "reason",
+     "argument",
+     "example",
+     "explanation"
+    ],
+    "use": [
+     "solid"
+    ]
+   }
+  ],
+  "examples": [
+   "Placing them near a window is often a good choice."
+  ],
+  "never": [
+   "Good friends offer support."
+  ]
+ },
+ "important|ADJ": {
+  "rules": [
+   {
+    "tags": [
+     "JJ"
+    ],
+    "dep": [
+     "amod"
+    ],
+    "head": [
+     "step",
+     "part",
+     "decision",
+     "change",
+     "difference",
+     "milestone",
+     "moment",
+     "shift"
+    ],
+    "use": [
+     "big"
+    ],
+    "tones": [
+     "standard",
+     "casual"
+    ]
+   },
+   {
+    "tags": [
+     "JJ"
+    ],
+    "dep": [
+     "amod"
+    ],
+    "head": [
+     "lesson",
+     "skill",
+     "tool",
+     "resource",
+     "source",
+     "insight",
+     "contribution"
+    ],
+    "use": [
+     "valuable"
+    ]
+   }
+  ],
+  "examples": [
+   "Creating a budget is an important step.",
+   "Libraries are important resources for job seekers."
+  ]
+ },
+ "certain|ADJ": {
+  "rules": [
+   {
+    "tags": [
+     "JJ"
+    ],
+    "dep": [
+     "amod"
+    ],
+    "use": [
+     "particular"
+    ]
+   }
+  ],
+  "examples": [
+   "Guests are expected to observe certain customs."
+  ],
+  "never": [
+   "I am certain that she left."
+  ]
+ },
+ "cheap|ADJ": {
+  "rules": [
+   {
+    "tags": [
+     "JJ"
+    ],
+    "dep": [
+     "amod"
+    ],
+    "head_not": [
+     "class:person",
+     "trick",
+     "shot",
+     "talk",
+     "thrill"
+    ],
+    "use": [
+     "low-cost"
+    ]
+   }
+  ],
+  "examples": [
+   "Brands copy designs and use cheap materials."
+  ]
+ },
+ "calm|ADJ": {
+  "rules": [
+   {
+    "tags": [
+     "JJ"
+    ],
+    "dep": [
+     "amod"
+    ],
+    "head": [
+     "music",
+     "voice",
+     "sound",
+     "color",
+     "colour",
+     "environment",
+     "space",
+     "place",
+     "atmosphere",
+     "setting",
+     "room",
+     "scene",
+     "evening",
+     "morning"
+    ],
+    "use": [
+     "soothing",
+     "peaceful"
+    ]
+   }
+  ],
+  "examples": [
+   "Try listening to calm music."
+  ]
+ },
+ "much|ADV": {
+  "rules": [
+   {
+    "head_tag": [
+     "JJR",
+     "RBR"
+    ],
+    "not_after": [
+     "very",
+     "too",
+     "so",
+     "how",
+     "as",
+     "that",
+     "this",
+     "pretty",
+     "not",
+     "n't"
+    ],
+    "use": [
+     "far"
+    ],
+    "tones": [
+     "standard",
+     "professional",
+     "academic"
+    ]
+   },
+   {
+    "head_tag": [
+     "JJR",
+     "RBR"
+    ],
+    "not_after": [
+     "very",
+     "too",
+     "so",
+     "how",
+     "as",
+     "that",
+     "this",
+     "pretty",
+     "not",
+     "n't"
+    ],
+    "use": [
+     "a lot"
+    ],
+    "tones": [
+     "casual"
+    ]
+   }
+  ],
+  "examples": [
+   "The building seemed much bigger than the one he had left.",
+   "Electric cars are much cheaper to run."
+  ],
+  "never": [
+   "Thank you very much for your help.",
+   "How much does it cost?",
+   "We did not eat much at dinner.",
+   "There is so much more to see."
+  ]
+ },
+ "seem|VERB": {
+  "rules": [
+   {
+    "child_any": [
+     "acomp",
+     "xcomp",
+     "attr",
+     "oprd",
+     "ccomp"
+    ],
+    "child_not": [
+     "neg"
+    ],
+    "prep_not": [
+     "like"
+    ],
+    "not_after": [
+     "n't",
+     "not",
+     "never"
+    ],
+    "use": [
+     "appear"
+    ]
+   }
+  ],
+  "examples": [
+   "The building seemed much bigger than the old one.",
+   "The plan seems to be working."
+  ],
+  "never": [
+   "She seems like a kind person.",
+   "I can't seem to find my keys."
+  ]
+ },
+ "show|VERB": {
+  "rules": [
+   {
+    "tags": [
+     "VBN"
+    ],
+    "child": "auxpass",
+    "child_any": [
+     "xcomp",
+     "advcl"
+    ],
+    "next": [
+     "to"
+    ],
+    "use": [
+     "find"
+    ]
+   }
+  ],
+  "examples": [
+   "Ten minutes of daily meditation has been shown to lower anxiety.",
+   "Exercise is shown to improve mood."
+  ],
+  "never": [
+   "The results were shown to the committee.",
+   "She showed me the photos."
+  ]
+ },
+ "final|ADJ": {
+  "rules": [
+   {
+    "dep": [
+     "amod"
+    ],
+    "head": [
+     "day",
+     "week",
+     "month",
+     "year",
+     "moment",
+     "minute",
+     "hour",
+     "mission",
+     "chapter",
+     "scene",
+     "game",
+     "match",
+     "round",
+     "stage",
+     "attempt",
+     "night",
+     "season",
+     "lap",
+     "stop",
+     "trip",
+     "visit"
+    ],
+    "use": [
+     "last"
+    ],
+    "prev_tag": [
+     "DT",
+     "PRP$",
+     "CD",
+     "POS",
+     "WP$"
+    ]
+   }
+  ],
+  "examples": [
+   "On her final day before retirement, her students surprised her.",
+   "He returns to space for one final mission."
+  ],
+  "never": [
+   "The final project instructions were vague.",
+   "The decision is final.",
+   "The actors shine in the emotional final scenes."
+  ]
+ },
+ "beautiful|ADJ": {
+  "rules": [
+   {
+    "not_after": [
+     "most",
+     "more",
+     "less",
+     "least"
+    ],
+    "head_not": [
+     "class:person",
+     "woman",
+     "girl",
+     "man",
+     "boy",
+     "face",
+     "people"
+    ],
+    "use": [
+     "lovely"
+    ],
+    "tones": [
+     "standard",
+     "casual"
+    ]
+   }
+  ],
+  "examples": [
+   "The room had a beautiful view of the ocean.",
+   "It was a beautiful morning in the village."
+  ],
+  "never": [
+   "It was the most beautiful gift she had ever received.",
+   "She was a beautiful woman."
+  ]
+ },
+ "fantastic|ADJ": {
+  "off": [
+   "academic"
+  ],
+  "rules": [
+   {
+    "head_not": [
+     "creature",
+     "beast",
+     "story",
+     "tale",
+     "world",
+     "novel",
+     "fiction",
+     "realm",
+     "animal",
+     "monster"
+    ],
+    "use": [
+     "great"
+    ]
+   }
+  ],
+  "examples": [
+   "The location is fantastic, with easy access to the trails.",
+   "The team did a fantastic job."
+  ],
+  "never": [
+   "The book describes fantastic creatures from old legends."
+  ]
+ },
+ "delicious|ADJ": {
+  "off": [
+   "academic"
+  ],
+  "rules": [
+   {
+    "head_not": [
+     "irony",
+     "moment",
+     "sense",
+     "feeling",
+     "secret",
+     "gossip",
+     "thrill"
+    ],
+    "use": [
+     "tasty"
+    ]
+   }
+  ],
+  "examples": [
+   "The restaurant served delicious food.",
+   "The cake was delicious."
+  ],
+  "never": [
+   "There was a delicious irony in his words."
+  ]
+ },
+ "vague|ADJ": {
+  "rules": [
+   {
+    "head_not": [
+     "memory",
+     "recollection",
+     "idea",
+     "notion",
+     "sense",
+     "feeling",
+     "impression",
+     "smile",
+     "shape",
+     "outline",
+     "resemblance",
+     "hint"
+    ],
+    "use": [
+     "unclear"
+    ]
+   }
+  ],
+  "examples": [
+   "The final project instructions were a bit vague.",
+   "The policy uses vague language."
+  ],
+  "never": [
+   "I have a vague memory of the trip."
+  ]
+ },
+ "nervously|ADV": {
+  "rules": [
+   {
+    "head_not": [
+     "laugh",
+     "giggle",
+     "chuckle",
+     "smile",
+     "grin"
+    ],
+    "use": [
+     "anxiously"
+    ]
+   }
+  ],
+  "examples": [
+   "Leo stood nervously at the gate of his new school."
+  ],
+  "never": [
+   "She laughed nervously at the joke."
+  ]
+ },
+ "clutch|VERB": {
+  "rules": [
+   {
+    "object": "any",
+    "object_not": [
+     "chest",
+     "heart",
+     "straw",
+     "side",
+     "stomach",
+     "head"
+    ],
+    "prep_not": [
+     "at"
+    ],
+    "use": [
+     "grip"
+    ]
+   }
+  ],
+  "examples": [
+   "Leo stood at the gate, clutching the straps of his backpack."
+  ],
+  "never": [
+   "He fell to the floor, clutching his chest."
+  ]
+ },
+ "durable|ADJ": {
+  "rules": [
+   {
+    "head": [
+     "frame",
+     "case",
+     "construction",
+     "build",
+     "shell",
+     "body",
+     "housing",
+     "container",
+     "bottle",
+     "table",
+     "chair",
+     "desk",
+     "steel",
+     "lid",
+     "handle",
+     "zipper"
+    ],
+    "use": [
+     "sturdy"
+    ]
+   },
+   {
+    "head": [
+     "fabric",
+     "material",
+     "cloth",
+     "carpet",
+     "rug",
+     "shoe",
+     "boot",
+     "sole",
+     "outsole",
+     "leather",
+     "canvas",
+     "cover",
+     "nylon"
+    ],
+    "use": [
+     "hard-wearing"
+    ]
+   }
+  ],
+  "examples": [
+   "Made from durable stainless steel, it keeps drinks cold.",
+   "The bag is made of durable fabric."
+  ],
+  "never": [
+   "Durable peace requires trust between nations."
+  ]
+ },
+ "reliable|ADJ": {
+  "off": [
+   "academic"
+  ],
+  "rules": [
+   {
+    "head_not": [
+     "estimate",
+     "data",
+     "datum",
+     "result",
+     "measure",
+     "measurement",
+     "evidence",
+     "source",
+     "method",
+     "test",
+     "indicator",
+     "predictor",
+     "information",
+     "finding",
+     "statistic",
+     "figure",
+     "sample",
+     "connection",
+     "internet",
+     "supply",
+     "power",
+     "electricity",
+     "network",
+     "signal",
+     "service"
+    ],
+    "use": [
+     "dependable"
+    ]
+   }
+  ],
+  "examples": [
+   "A rubber outsole provides reliable grip on roads and trails.",
+   "We need a reliable car for the trip."
+  ],
+  "never": [
+   "Reliable estimates are hard to obtain.",
+   "Remote work depends on a reliable internet connection."
+  ]
+ },
+ "multiple|ADJ": {
+  "off": [
+   "academic"
+  ],
+  "rules": [
+   {
+    "dep": [
+     "amod"
+    ],
+    "head_tag": [
+     "NNS"
+    ],
+    "not_after": [
+     "the",
+     "these",
+     "those",
+     "his",
+     "her",
+     "their",
+     "its",
+     "our",
+     "my",
+     "your"
+    ],
+    "use": [
+     "several"
+    ],
+    "not_before": [
+     "choice",
+     "sclerosis",
+     "personality",
+     "myeloma",
+     "births",
+     "intelligences"
+    ]
+   }
+  ],
+  "examples": [
+   "The frame can easily hold multiple monitors."
+  ],
+  "never": [
+   "The multiple roles she plays at work are exhausting.",
+   "The test uses multiple choice questions."
+  ]
+ },
+ "quietly|ADV": {
+  "rules": [
+   {
+    "head": [
+     "say",
+     "speak",
+     "reply",
+     "answer",
+     "ask",
+     "add",
+     "sing",
+     "whisper",
+     "murmur",
+     "talk",
+     "hum",
+     "explain"
+    ],
+    "use": [
+     "softly"
+    ]
+   }
+  ],
+  "examples": [
+   "Leo quietly said that he loved octopuses."
+  ],
+  "never": [
+   "She quietly left the room."
+  ]
+ },
+ "spot|VERB": {
+  "rules": [
+   {
+    "object": "any",
+    "object_not": [
+     "error",
+     "mistake",
+     "typo",
+     "trend",
+     "opportunity",
+     "problem",
+     "flaw",
+     "difference",
+     "sign",
+     "pattern",
+     "gap",
+     "issue",
+     "bug",
+     "change"
+    ],
+    "use": [
+     "catch sight of"
+    ],
+    "child_not": [
+     "auxpass"
+    ]
+   }
+  ],
+  "examples": [
+   "Tom finally spotted the ship through the rain."
+  ],
+  "never": [
+   "Can you spot the mistake in this sentence?",
+   "Many common birds can be spotted in local parks."
+  ]
+ },
+ "rush|VERB": {
+  "rules": [
+   {
+    "object": "none",
+    "prep_not": [
+     "into"
+    ],
+    "use": [
+     "hurry"
+    ]
+   }
+  ],
+  "examples": [
+   "She rushed to the station after work."
+  ],
+  "never": [
+   "They rushed him to the hospital.",
+   "Do not rush into a decision."
+  ]
+ },
+ "decide|VERB": {
+  "rules": [
+   {
+    "child": "xcomp",
+    "next": [
+     "to"
+    ],
+    "use": [
+     "choose"
+    ],
+    "tones": [
+     "standard",
+     "casual"
+    ]
+   }
+  ],
+  "examples": [
+   "She decided to stay at home that evening."
+  ],
+  "never": [
+   "The court will decide the case next week.",
+   "We decided that the plan was too risky."
+  ]
+ },
+ "often|ADV": {
+  "rules": [
+   {
+    "not_after": [
+     "as",
+     "how",
+     "so",
+     "too",
+     "more",
+     "most",
+     "very",
+     "quite",
+     "all",
+     "every",
+     "less",
+     "fairly",
+     "pretty",
+     "not"
+    ],
+    "not_before": [
+     "than",
+     "enough",
+     "within",
+     "at",
+     "with",
+     "in",
+     "for",
+     "by",
+     "on",
+     "from",
+     "without",
+     "as",
+     "to",
+     "after",
+     "before",
+     "during",
+     "because",
+     "when",
+     "in",
+     "than",
+     "a",
+     "an",
+     "the"
+    ],
+    "use": [
+     "frequently"
+    ],
+    "tones": [
+     "standard",
+     "professional",
+     "academic"
+    ],
+    "head_pos": "VERB",
+    "head_not": [
+     "be"
+    ]
+   }
+  ],
+  "examples": [
+   "Students often struggle to focus in the morning.",
+   "Experts often recommend saving a fixed share of income."
+  ],
+  "never": [
+   "How often do you exercise?",
+   "More often than not, it rains in April.",
+   "We see each other every so often.",
+   "Home-cooked meals are often healthier than fast food.",
+   "Parks are often within walking distance.",
+   "Placing them near a window is often a good choice."
+  ]
+ },
+ "comfortable|ADJ": {
+  "rules": [
+   {
+    "head_not": [
+     "class:person",
+     "lead",
+     "margin",
+     "win",
+     "victory",
+     "living",
+     "salary",
+     "income",
+     "majority",
+     "he",
+     "she",
+     "they",
+     "i",
+     "we",
+     "you"
+    ],
+    "use": [
+     "comfy"
+    ],
+    "tones": [
+     "casual"
+    ]
+   }
+  ],
+  "examples": [
+   "The bed was very comfortable."
+  ],
+  "never": [
+   "She felt comfortable speaking in public.",
+   "The team built a comfortable lead."
+  ]
+ }
+}

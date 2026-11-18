@@ -134,6 +134,7 @@
         <div class="card stat stat-quote reveal" style="--d: 4">
             <div class="stat-title">Longest unchanged run</div>
             <blockquote id="longestUnchanged">Run the humanizer to see which passage stayed the same.</blockquote>
+            <div class="stat-desc" id="removedNote" hidden></div>
         </div>
     </section>
 
@@ -286,7 +287,9 @@
         });
         outputEl.scrollTop = 0;
 
-        const totalWords = countWords(input);
+        // Lines the chat assistant wrapped the text in ("Here's a paragraph about X:") were taken off, not rewritten
+        const removed = data.removed_lines || [];
+        const totalWords = countWords(removed.reduce((text, line) => text.replace(line, ''), input));
         const changed = totalWords ? Math.min(100, data.changed_words / totalWords * 100) : 0;
         const structural = parseFloat(data.structural_changes) || 0;
 
@@ -303,6 +306,11 @@
             : 'No sentence was restructured';
         document.getElementById('longestUnchanged').textContent =
             data.longest_unchanged === 'None' ? 'Every passage was rewritten.' : `“${data.longest_unchanged}”`;
+        const removedNote = document.getElementById('removedNote');
+        removedNote.hidden = !removed.length;
+        removedNote.textContent = removed.length
+            ? `Removed the chat assistant's ${removed.length === 1 ? 'line' : 'lines'}: ${removed.map(line => `“${line}”`).join(' ')}`
+            : '';
         document.getElementById('statsSection').classList.add('has-data');
     }
 

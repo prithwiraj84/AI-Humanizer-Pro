@@ -1,0 +1,1015 @@
+{
+ "_about": "Multi-word paraphrases (round 10), read by humanizer.apply_planner_phrases in one pass (no chains: a phrase written by one entry is never rewritten by another). Each entry: 'phrases' (exact wordings, matched case-insensitively at word boundaries), 'options' by tone ('*' for every tone not listed; a tone mapped to [] keeps the wording), optional 'after' (a regex the text right after the phrase must match, e.g. a negative lookahead) and 'before' (a regex the text right before must NOT end with). 'examples' and 'never' are checked by test_r10_phrases.py.",
+ "entries": [
+  {
+   "phrases": [
+    "across the globe",
+    "all over the globe",
+    "throughout the globe",
+    "all over the world",
+    "throughout the world"
+   ],
+   "options": {
+    "*": [
+     "around the world",
+     "worldwide"
+    ],
+    "academic": [
+     "worldwide"
+    ]
+   },
+   "examples": [
+    "Friends and family across the globe stay in touch."
+   ]
+  },
+  {
+   "phrases": [
+    "every year"
+   ],
+   "options": {
+    "*": [
+     "each year"
+    ]
+   }
+  },
+  {
+   "phrases": [
+    "each year"
+   ],
+   "options": {
+    "*": [
+     "every year"
+    ]
+   }
+  },
+  {
+   "phrases": [
+    "every day"
+   ],
+   "options": {
+    "*": [
+     "each day"
+    ]
+   }
+  },
+  {
+   "phrases": [
+    "each day"
+   ],
+   "options": {
+    "*": [
+     "every day"
+    ]
+   }
+  },
+  {
+   "phrases": [
+    "every night"
+   ],
+   "options": {
+    "*": [
+     "each night"
+    ]
+   }
+  },
+  {
+   "phrases": [
+    "each night"
+   ],
+   "options": {
+    "*": [
+     "every night"
+    ]
+   }
+  },
+  {
+   "phrases": [
+    "every week"
+   ],
+   "options": {
+    "*": [
+     "each week"
+    ]
+   }
+  },
+  {
+   "phrases": [
+    "each week"
+   ],
+   "options": {
+    "*": [
+     "every week"
+    ]
+   }
+  },
+  {
+   "phrases": [
+    "every morning"
+   ],
+   "options": {
+    "*": [
+     "each morning"
+    ]
+   }
+  },
+  {
+   "phrases": [
+    "every evening"
+   ],
+   "options": {
+    "*": [
+     "each evening"
+    ]
+   }
+  },
+  {
+   "phrases": [
+    "is necessary to"
+   ],
+   "options": {
+    "*": [
+     "is needed to"
+    ]
+   },
+   "examples": [
+    "Preserving nature is necessary to protect life on Earth."
+   ],
+   "before": "(?:it|this|that|which|what)\\s+",
+   "never": [
+    "It is necessary to take the necessary precautions near water.",
+    "It is important for parents to teach safety."
+   ]
+  },
+  {
+   "phrases": [
+    "are necessary to"
+   ],
+   "options": {
+    "*": [
+     "are needed to"
+    ]
+   },
+   "before": "(?:it|this|that|which|what)\\s+",
+   "never": [
+    "It is necessary to take the necessary precautions near water.",
+    "It is important for parents to teach safety."
+   ]
+  },
+  {
+   "phrases": [
+    "is necessary for"
+   ],
+   "options": {
+    "*": [
+     "is needed for"
+    ]
+   },
+   "before": "(?:it|this|that|which|what)\\s+",
+   "never": [
+    "It is necessary to take the necessary precautions near water.",
+    "It is important for parents to teach safety."
+   ]
+  },
+  {
+   "phrases": [
+    "is important for"
+   ],
+   "options": {
+    "*": [
+     "matters for"
+    ],
+    "academic": []
+   },
+   "before": "(?:it|this|that|which|what)\\s+",
+   "never": [
+    "It is necessary to take the necessary precautions near water.",
+    "It is important for parents to teach safety."
+   ]
+  },
+  {
+   "phrases": [
+    "are important for"
+   ],
+   "options": {
+    "*": [
+     "matter for"
+    ],
+    "academic": []
+   },
+   "before": "(?:it|this|that|which|what)\\s+",
+   "never": [
+    "It is necessary to take the necessary precautions near water.",
+    "It is important for parents to teach safety."
+   ]
+  },
+  {
+   "phrases": [
+    "known as"
+   ],
+   "options": {
+    "*": [
+     "called"
+    ]
+   },
+   "before": "(?:well|best|widely|commonly|less|better|mostly|also)\\s+",
+   "examples": [
+    "Tiny structures known as chloroplasts capture light."
+   ],
+   "never": [
+    "She is best known as a painter."
+   ]
+  },
+  {
+   "phrases": [
+    "a variety of"
+   ],
+   "options": {
+    "*": [
+     "many kinds of",
+     "different kinds of"
+    ],
+    "casual": [
+     "all sorts of"
+    ],
+    "academic": [
+     "various"
+    ]
+   }
+  },
+  {
+   "phrases": [
+    "a number of"
+   ],
+   "options": {
+    "*": [
+     "several"
+    ]
+   },
+   "before": "(?:the|large|small|growing|great|huge|record|increasing|significant|considerable|rising|substantial)\\s+"
+  },
+  {
+   "phrases": [
+    "a lot of"
+   ],
+   "options": {
+    "standard": [
+     "lots of"
+    ],
+    "casual": [
+     "lots of",
+     "loads of"
+    ]
+   }
+  },
+  {
+   "phrases": [
+    "lots of"
+   ],
+   "options": {
+    "professional": [
+     "many"
+    ],
+    "academic": [
+     "many"
+    ]
+   },
+   "after": "\\s+(?:[a-z]+s\\b)"
+  },
+  {
+   "phrases": [
+    "has the ability to"
+   ],
+   "options": {
+    "*": [
+     "can"
+    ]
+   }
+  },
+  {
+   "phrases": [
+    "on the rise"
+   ],
+   "options": {
+    "*": [
+     "rising",
+     "growing"
+    ]
+   }
+  },
+  {
+   "phrases": [
+    "nowadays"
+   ],
+   "options": {
+    "*": [
+     "these days"
+    ],
+    "academic": [
+     "today"
+    ]
+   }
+  },
+  {
+   "phrases": [
+    "at the moment"
+   ],
+   "options": {
+    "standard": [
+     "right now"
+    ],
+    "casual": [
+     "right now"
+    ],
+    "professional": [
+     "currently"
+    ]
+   }
+  },
+  {
+   "phrases": [
+    "in fact"
+   ],
+   "options": {
+    "*": [
+     "actually"
+    ],
+    "academic": [
+     "indeed"
+    ]
+   },
+   "before": "(?:the|this|that|a)\\s+"
+  },
+  {
+   "phrases": [
+    "instead of"
+   ],
+   "options": {
+    "*": [
+     "rather than"
+    ]
+   }
+  },
+  {
+   "phrases": [
+    "each other"
+   ],
+   "options": {
+    "*": [
+     "one another"
+    ]
+   }
+  },
+  {
+   "phrases": [
+    "one another"
+   ],
+   "options": {
+    "*": [
+     "each other"
+    ]
+   }
+  },
+  {
+   "phrases": [
+    "on their own"
+   ],
+   "options": {
+    "*": [
+     "by themselves"
+    ]
+   }
+  },
+  {
+   "phrases": [
+    "by themselves"
+   ],
+   "options": {
+    "*": [
+     "on their own"
+    ]
+   }
+  },
+  {
+   "phrases": [
+    "on its own"
+   ],
+   "options": {
+    "*": [
+     "by itself"
+    ]
+   }
+  },
+  {
+   "phrases": [
+    "from time to time"
+   ],
+   "options": {
+    "*": [
+     "now and then",
+     "every so often"
+    ],
+    "academic": [
+     "occasionally"
+    ]
+   }
+  },
+  {
+   "phrases": [
+    "in the meantime"
+   ],
+   "options": {
+    "*": [
+     "meanwhile"
+    ]
+   }
+  },
+  {
+   "phrases": [
+    "a bit"
+   ],
+   "options": {
+    "*": [
+     "a little"
+    ]
+   },
+   "after": "(?!\\s+of\\b)"
+  },
+  {
+   "phrases": [
+    "make a big difference",
+    "make a huge difference"
+   ],
+   "options": {
+    "*": [
+     "matter a lot"
+    ],
+    "academic": []
+   }
+  },
+  {
+   "phrases": [
+    "makes a big difference",
+    "makes a huge difference"
+   ],
+   "options": {
+    "*": [
+     "matters a lot"
+    ],
+    "academic": []
+   }
+  },
+  {
+   "phrases": [
+    "made a big difference",
+    "made a huge difference"
+   ],
+   "options": {
+    "*": [
+     "mattered a lot"
+    ],
+    "academic": []
+   }
+  },
+  {
+   "phrases": [
+    "take steps to"
+   ],
+   "options": {
+    "*": [
+     "act to"
+    ]
+   }
+  },
+  {
+   "phrases": [
+    "takes steps to"
+   ],
+   "options": {
+    "*": [
+     "acts to"
+    ]
+   }
+  },
+  {
+   "phrases": [
+    "took steps to"
+   ],
+   "options": {
+    "*": [
+     "acted to"
+    ]
+   }
+  },
+  {
+   "phrases": [
+    "find it difficult to",
+    "find it hard to"
+   ],
+   "options": {
+    "*": [
+     "struggle to"
+    ]
+   }
+  },
+  {
+   "phrases": [
+    "finds it difficult to",
+    "finds it hard to"
+   ],
+   "options": {
+    "*": [
+     "struggles to"
+    ]
+   }
+  },
+  {
+   "phrases": [
+    "found it difficult to",
+    "found it hard to"
+   ],
+   "options": {
+    "*": [
+     "struggled to"
+    ]
+   }
+  },
+  {
+   "phrases": [
+    "get rid of"
+   ],
+   "options": {
+    "standard": [
+     "remove"
+    ],
+    "professional": [
+     "remove"
+    ],
+    "academic": [
+     "remove"
+    ]
+   }
+  },
+  {
+   "phrases": [
+    "look for"
+   ],
+   "options": {
+    "*": [
+     "search for"
+    ]
+   },
+   "examples": [
+    "Travelers can look for free attractions."
+   ]
+  },
+  {
+   "phrases": [
+    "looking for"
+   ],
+   "options": {
+    "*": [
+     "searching for"
+    ]
+   }
+  },
+  {
+   "phrases": [
+    "come up with"
+   ],
+   "options": {
+    "*": [
+     "think of"
+    ]
+   }
+  },
+  {
+   "phrases": [
+    "comes up with"
+   ],
+   "options": {
+    "*": [
+     "thinks of"
+    ]
+   }
+  },
+  {
+   "phrases": [
+    "came up with"
+   ],
+   "options": {
+    "*": [
+     "thought of"
+    ]
+   }
+  },
+  {
+   "phrases": [
+    "acts as"
+   ],
+   "options": {
+    "*": [
+     "works as"
+    ]
+   }
+  },
+  {
+   "phrases": [
+    "act as"
+   ],
+   "options": {
+    "*": [
+     "work as"
+    ]
+   }
+  },
+  {
+   "phrases": [
+    "acted as"
+   ],
+   "options": {
+    "*": [
+     "worked as"
+    ]
+   }
+  },
+  {
+   "phrases": [
+    "of all ages"
+   ],
+   "options": {
+    "*": [
+     "of every age"
+    ]
+   },
+   "after": "(?!\\s+and\\b)",
+   "never": [
+    "Procrastination affects people of all ages and backgrounds."
+   ]
+  },
+  {
+   "phrases": [
+    "of all sizes"
+   ],
+   "options": {
+    "*": [
+     "big and small"
+    ],
+    "academic": [
+     "of every size"
+    ]
+   }
+  },
+  {
+   "phrases": [
+    "of all backgrounds"
+   ],
+   "options": {
+    "*": [
+     "from every background"
+    ]
+   }
+  },
+  {
+   "phrases": [
+    "a top priority"
+   ],
+   "options": {
+    "*": [
+     "a high priority"
+    ]
+   }
+  },
+  {
+   "phrases": [
+    "in many regions"
+   ],
+   "options": {
+    "*": [
+     "in many places",
+     "in many areas"
+    ]
+   }
+  },
+  {
+   "phrases": [
+    "in many parts of the world"
+   ],
+   "options": {
+    "*": [
+     "in many places"
+    ]
+   }
+  },
+  {
+   "phrases": [
+    "at their best"
+   ],
+   "options": {
+    "*": [
+     "at their peak"
+    ]
+   }
+  },
+  {
+   "phrases": [
+    "throughout the day"
+   ],
+   "options": {
+    "*": [
+     "all day long",
+     "all day"
+    ],
+    "academic": [
+     "during the day"
+    ]
+   }
+  },
+  {
+   "phrases": [
+    "at the end of the day"
+   ],
+   "options": {
+    "*": [
+     "in the end"
+    ],
+    "academic": [
+     "ultimately"
+    ]
+   },
+   "after": "(?=\\s*,)"
+  },
+  {
+   "phrases": [
+    "more than ever"
+   ],
+   "options": {
+    "*": [
+     "like never before"
+    ],
+    "academic": []
+   }
+  },
+  {
+   "phrases": [
+    "in the first place"
+   ],
+   "options": {
+    "*": [
+     "to begin with"
+    ]
+   }
+  },
+  {
+   "phrases": [
+    "right away"
+   ],
+   "options": {
+    "professional": [
+     "immediately"
+    ],
+    "academic": [
+     "immediately"
+    ]
+   }
+  },
+  {
+   "phrases": [
+    "as a whole"
+   ],
+   "options": {
+    "*": [
+     "overall"
+    ]
+   },
+   "before": "(?:the|a)\\s+"
+  },
+  {
+   "phrases": [
+    "over the past decade"
+   ],
+   "options": {
+    "*": [
+     "in the last ten years",
+     "over the last decade"
+    ]
+   }
+  },
+  {
+   "phrases": [
+    "from the comfort of their homes",
+    "from the comfort of their own homes",
+    "from the comfort of your home",
+    "from the comfort of your own home",
+    "from the comfort of home",
+    "from the comfort of their home",
+    "from the comfort of our homes",
+    "from the comfort of one's home"
+   ],
+   "options": {
+    "*": [
+     "from home"
+    ]
+   },
+   "examples": [
+    "Consumers can now shop from the comfort of their homes."
+   ]
+  },
+  {
+   "phrases": [
+    "in a matter of"
+   ],
+   "options": {
+    "*": [
+     "within"
+    ]
+   },
+   "after": "\\s+(?:seconds|minutes|hours|days|weeks|months|years)\\b",
+   "examples": [
+    "Brands produce clothing in a matter of weeks."
+   ]
+  },
+  {
+   "phrases": [
+    "in relation to"
+   ],
+   "options": {
+    "*": [
+     "relative to"
+    ]
+   }
+  },
+  {
+   "phrases": [
+    "with the touch of a button",
+    "at the touch of a button"
+   ],
+   "options": {
+    "*": [
+     "at the press of a button"
+    ]
+   }
+  },
+  {
+   "phrases": [
+    "a series of"
+   ],
+   "options": {
+    "*": [
+     "a sequence of"
+    ]
+   },
+   "after": "\\s+(?:[a-z]+\\s+)?(?:movements|steps|events|actions|moves|tests|questions)\\b"
+  },
+  {
+   "phrases": [
+    "make sure"
+   ],
+   "options": {
+    "*": [
+     "be sure"
+    ],
+    "academic": [
+     "ensure"
+    ]
+   },
+   "before": "(?:i|you|we|they|he|she|it|people|who|that|which|will|would|always|must|might|can|could)\\s+",
+   "examples": [
+    "Finally, make sure your bedroom is cool."
+   ],
+   "never": [
+    "They make sure the doors are locked."
+   ]
+  },
+  {
+   "phrases": [
+    "take care of"
+   ],
+   "options": {
+    "*": [
+     "look after"
+    ]
+   }
+  },
+  {
+   "phrases": [
+    "takes care of"
+   ],
+   "options": {
+    "*": [
+     "looks after"
+    ]
+   }
+  },
+  {
+   "phrases": [
+    "taking care of"
+   ],
+   "options": {
+    "*": [
+     "looking after"
+    ]
+   }
+  },
+  {
+   "phrases": [
+    "took care of"
+   ],
+   "options": {
+    "*": [
+     "looked after"
+    ]
+   }
+  },
+  {
+   "phrases": [
+    "take advantage of"
+   ],
+   "options": {
+    "*": [
+     "make use of"
+    ]
+   }
+  },
+  {
+   "phrases": [
+    "takes advantage of"
+   ],
+   "options": {
+    "*": [
+     "makes use of"
+    ]
+   }
+  },
+  {
+   "phrases": [
+    "taking advantage of"
+   ],
+   "options": {
+    "*": [
+     "making use of"
+    ]
+   }
+  },
+  {
+   "phrases": [
+    "because of"
+   ],
+   "options": {
+    "*": [
+     "due to"
+    ],
+    "academic": [
+     "owing to"
+    ]
+   },
+   "before": "(?:just|partly|mainly|largely|only|not|precisely|simply|exactly)\\s+",
+   "examples": [
+    "Coral reefs are called the rainforests of the sea because of their biodiversity."
+   ],
+   "after": "(?!\\s+the\\s+fact\\b)"
+  },
+  {
+   "phrases": [
+    "made of"
+   ],
+   "options": {
+    "*": [
+     "made from"
+    ]
+   }
+  },
+  {
+   "phrases": [
+    "due to"
+   ],
+   "options": {
+    "*": [
+     "because of"
+    ],
+    "academic": [
+     "owing to"
+    ]
+   },
+   "after": "(?!\\s+(?:be|arrive|start|begin|open|close|end|finish|launch|expire|take|return|appear|retire|land|leave|meet|go|come|report|give|deliver)\\b)(?!\\s+the\\s+fact\\b)",
+   "before": "(?:is|are|was|were|be|been)\\s+",
+   "never": [
+    "The train is due to arrive at noon.",
+    "It failed due to the fact that it rained."
+   ]
+  },
+  {
+   "phrases": [
+    "a great deal"
+   ],
+   "options": {
+    "*": [
+     "a lot"
+    ],
+    "academic": [
+     "considerably"
+    ]
+   },
+   "after": "(?!\\s+of\\b)"
+  }
+ ]
+}
